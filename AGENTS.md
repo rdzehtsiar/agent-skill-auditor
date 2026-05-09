@@ -47,6 +47,33 @@ how to fix it
 how to suppress it safely
 ```
 
+## Strict Source License Header Rule
+
+All coding agents must include SPDX license headers in source code files they create or edit.
+
+This is a strict must-follow rule:
+
+- When creating a source code file, add an SPDX license header before any code.
+- When editing an existing source code file, make sure the file already has an SPDX license header; if it does not, add one as part of the edit.
+- Use the file's native comment syntax.
+- Use the project license identifier: `SPDX-License-Identifier: Apache-2.0`.
+- Do not add duplicate SPDX headers when one already exists.
+- Do not add SPDX headers to generated files, vendored third-party files, lockfiles, binary files, or data fixtures unless the project later documents a specific convention for those files.
+
+Examples:
+
+```rust
+// SPDX-License-Identifier: Apache-2.0
+```
+
+```ts
+// SPDX-License-Identifier: Apache-2.0
+```
+
+```bash
+# SPDX-License-Identifier: Apache-2.0
+```
+
 ## Preferred Implementation Direction
 
 Use Rust for the core scanner unless the user explicitly chooses another stack.
