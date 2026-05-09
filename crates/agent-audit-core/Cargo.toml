@@ -1,0 +1,12 @@
+[package]
+name = "agent-audit-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ignore.workspace = true
+pulldown-cmark.workspace = true
+serde.workspace = true
+serde_yaml.workspace = true
+thiserror.workspace = true
