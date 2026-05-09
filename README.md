@@ -65,6 +65,21 @@ The tool is intended to help compare whether a skill package is likely to work a
 
 Compatibility findings should explain whether a package is likely to pass, warn, or fail for a given host, and why.
 
+## Roadmap
+
+| Milestone | Focus |
+| --- | --- |
+| `v0.1.0` | Discover skill packages and report structural issues. |
+| `v0.2.0` | Add deterministic, documented findings. |
+| `v0.3.0` | Report cross-host compatibility. |
+| `v0.4.0` | Add offline static security checks. |
+| `v0.5.0` | Report provenance, dependencies, permissions, and offline readiness. |
+| `v0.6.0` | Generate self-contained HTML audit reports. |
+| `v0.7.0` | Support CI workflows and SARIF output. |
+| `v0.8.0` | Publish a reproducible public ecosystem audit. |
+| `v0.9.0` | Add offline behavior fixtures for skill packages. |
+| `v1.0.0` | Stabilize CLI behavior, schemas, docs, releases, and benchmarks. |
+
 ## License
 
 Licensed under the Apache License, Version 2.0.
