@@ -329,4 +329,6 @@ Avoid vague claims such as "AI-powered" unless the tool truly uses AI and the be
 
 This repo may be in an early or dirty state. Do not revert user changes. If git reports dubious ownership, do not change global git config unless the user asks or the task requires git operations.
 
+Use imperative mood for commit messages. Prefer subjects such as `Add license metadata`, `Initialize Rust workspace`, or `Document compatibility profiles` instead of past-tense forms such as `Added`, `Initialized`, or `Documented`.
+
 When editing, keep changes scoped to the requested task and preserve the plan's product direction.
