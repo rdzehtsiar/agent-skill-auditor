@@ -555,6 +555,23 @@ name: [unterminated
     }
 
     #[test]
+    fn returns_frontmatter_error_for_non_map_yaml_frontmatter() {
+        let content = r#"---
+- name
+- description
+---
+
+# Non Map
+"#;
+
+        let error = parse_skill_manifest(Path::new("SKILL.md"), content)
+            .expect_err("sequence frontmatter should fail");
+
+        assert!(matches!(error, AuditError::Frontmatter { .. }));
+        assert!(error.to_string().contains("failed to parse frontmatter"));
+    }
+
+    #[test]
     fn maps_heading_levels_to_numeric_ranks() {
         assert_eq!(heading_rank(HeadingLevel::H1), 1);
         assert_eq!(heading_rank(HeadingLevel::H2), 2);

@@ -305,7 +305,11 @@ name: [unterminated
             &mut Vec::new(),
         );
 
-        assert!(result.is_err());
+        let error = result.expect_err("malformed frontmatter should fail");
+        let message = error.to_string();
+
+        assert!(message.contains("failed to parse frontmatter"));
+        assert!(message.contains("SKILL.md"));
     }
 
     fn run_scan_output(command: ScanCommand) -> Result<String> {

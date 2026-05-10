@@ -425,6 +425,7 @@ fn unknown_frontmatter_field_finding(field: &str, path: &str, line: Option<usize
 mod tests {
     use super::*;
     use crate::test_support::TestWorkspace;
+    use std::io::ErrorKind;
 
     #[test]
     fn scan_reports_valid_manifest_with_references_and_artifacts() {
@@ -1335,6 +1336,85 @@ name: [unterminated
             scan_path(workspace.root(), &ScanOptions::default()).expect_err("scan should fail");
 
         assert!(matches!(error, AuditError::Frontmatter { .. }));
+        assert!(error.to_string().contains("failed to parse frontmatter"));
+    }
+
+    #[test]
+    fn scan_phase1_malformed_frontmatter_fixture_returns_frontmatter_error() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/spec/phase1/malformed-frontmatter");
+
+        let error = scan_path(&fixture, &ScanOptions::default()).expect_err("scan should fail");
+
+        match &error {
+            AuditError::Frontmatter { path, .. } => {
+                assert!(path.ends_with("SKILL.md"), "unexpected path: {path:?}");
+            }
+            _ => panic!("expected frontmatter error, got {error:?}"),
+        }
+        assert!(error.to_string().contains("failed to parse frontmatter"));
+    }
+
+    #[test]
+    fn scan_returns_read_error_for_invalid_utf8_manifest() {
+        let workspace = TestWorkspace::new("scan-invalid-utf8");
+        let path = workspace.root().join("SKILL.md");
+        std::fs::write(&path, [0xff, 0xfe, b'\n']).expect("write invalid UTF-8 manifest");
+
+        let error =
+            scan_path(workspace.root(), &ScanOptions::default()).expect_err("scan should fail");
+
+        match error {
+            AuditError::Read { path, source } => {
+                assert!(path.ends_with("SKILL.md"), "unexpected path: {path:?}");
+                assert_eq!(source.kind(), ErrorKind::InvalidData);
+            }
+            _ => panic!("expected read error"),
+        }
+    }
+
+    #[test]
+    fn scan_reports_missing_name_and_description_for_nul_byte_manifest() {
+        let workspace = TestWorkspace::new("scan-nul-byte-manifest");
+        let path = workspace.root().join("SKILL.md");
+        std::fs::write(&path, b"```\n\0\0\0\n```\n")
+            .expect("write valid UTF-8 manifest with NUL bytes");
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_eq!(report.summary.package_count, 1);
+        assert_eq!(
+            report
+                .findings
+                .iter()
+                .map(|finding| finding.rule_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["SKILL001", "SKILL002"]
+        );
+    }
+
+    #[test]
+    fn scan_phase1_oversized_manifest_fixture_reports_only_skill020() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/spec/phase1/oversized-manifest");
+
+        let report = scan_path(
+            &fixture,
+            &ScanOptions {
+                max_manifest_bytes: 120,
+            },
+        )
+        .expect("oversized manifest should still parse");
+
+        assert_eq!(report.summary.package_count, 1);
+        assert_eq!(
+            report
+                .findings
+                .iter()
+                .map(|finding| finding.rule_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["SKILL020"]
+        );
     }
 
     #[test]
