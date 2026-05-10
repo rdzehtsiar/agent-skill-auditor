@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::fmt;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RuleId {
     Skill001,
@@ -25,6 +27,12 @@ impl RuleId {
     }
 }
 
+impl fmt::Display for RuleId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RuleSeverity {
     Info,
@@ -32,6 +40,24 @@ pub enum RuleSeverity {
     Medium,
     High,
     Critical,
+}
+
+impl RuleSeverity {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Info => "info",
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::Critical => "critical",
+        }
+    }
+}
+
+impl fmt::Display for RuleSeverity {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -44,6 +70,25 @@ pub enum RuleCategory {
     Reproducibility,
 }
 
+impl RuleCategory {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Spec => "spec",
+            Self::Compatibility => "compatibility",
+            Self::Security => "security",
+            Self::Quality => "quality",
+            Self::Portability => "portability",
+            Self::Reproducibility => "reproducibility",
+        }
+    }
+}
+
+impl fmt::Display for RuleCategory {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum HostProfile {
     AgentSkillsSpec,
@@ -54,12 +99,48 @@ pub enum HostProfile {
     Generic,
 }
 
+impl HostProfile {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::AgentSkillsSpec => "agent-skills-spec",
+            Self::ClaudeCode => "claude-code",
+            Self::Codex => "codex",
+            Self::GithubCopilot => "github-copilot",
+            Self::VscodeCopilot => "vscode-copilot",
+            Self::Generic => "generic",
+        }
+    }
+}
+
+impl fmt::Display for HostProfile {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RuleInputNodeType {
     SkillManifest,
     Frontmatter,
     RelativeReference,
     SkillPackage,
+}
+
+impl RuleInputNodeType {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SkillManifest => "skill-manifest",
+            Self::Frontmatter => "frontmatter",
+            Self::RelativeReference => "relative-reference",
+            Self::SkillPackage => "skill-package",
+        }
+    }
+}
+
+impl fmt::Display for RuleInputNodeType {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -268,9 +349,132 @@ pub fn rule_metadata(rule_id: &str) -> Option<&'static RuleMetadata> {
     RULE_REGISTRY.metadata(rule_id)
 }
 
+pub fn render_rule_documentation() -> String {
+    render_rule_documentation_for(&RULE_REGISTRY)
+}
+
+pub fn render_rule_documentation_for(registry: &RuleRegistry) -> String {
+    let mut markdown = String::new();
+
+    markdown.push_str("# Rules\n\n");
+    markdown.push_str(
+        "This document is generated from `agent-audit-rules` metadata. Keep rule changes in source and regenerate this file when metadata changes.\n\n",
+    );
+    markdown.push_str("The initial rule set is intentionally conservative. Rules report deterministic, explainable findings for offline skill audits.\n\n");
+    markdown.push_str("## Rule Index\n\n");
+    markdown.push_str("| Rule | Severity | Category | Title |\n");
+    markdown.push_str("| --- | --- | --- | --- |\n");
+
+    for metadata in registry.rules() {
+        markdown.push_str("| [");
+        markdown.push_str(metadata.id.as_str());
+        markdown.push_str("](#");
+        markdown.push_str(&rule_anchor(metadata));
+        markdown.push_str(") | `");
+        markdown.push_str(metadata.severity.as_str());
+        markdown.push_str("` | `");
+        markdown.push_str(metadata.category.as_str());
+        markdown.push_str("` | ");
+        markdown.push_str(metadata.title);
+        markdown.push_str(" |\n");
+    }
+
+    for metadata in registry.rules() {
+        markdown.push('\n');
+        markdown.push_str("## ");
+        markdown.push_str(metadata.id.as_str());
+        markdown.push_str(": ");
+        markdown.push_str(metadata.title);
+        markdown.push_str("\n\n");
+        markdown.push_str("- Severity: `");
+        markdown.push_str(metadata.severity.as_str());
+        markdown.push_str("`\n");
+        markdown.push_str("- Category: `");
+        markdown.push_str(metadata.category.as_str());
+        markdown.push_str("`\n");
+        markdown.push_str("- Applies to: ");
+        push_backticked_list(
+            &mut markdown,
+            metadata
+                .applicable_profiles
+                .iter()
+                .map(|profile| profile.as_str()),
+        );
+        markdown.push('\n');
+        markdown.push_str("- Input nodes: ");
+        push_backticked_list(
+            &mut markdown,
+            metadata.input_node_types.iter().map(|node| node.as_str()),
+        );
+        markdown.push_str("\n\n");
+        markdown.push_str("### Why It Matters\n\n");
+        markdown.push_str(metadata.rationale);
+        markdown.push_str("\n\n");
+        markdown.push_str("### How To Fix\n\n");
+        markdown.push_str(metadata.remediation);
+        markdown.push_str("\n\n");
+        markdown.push_str("### Safe Suppression\n\n");
+        markdown.push_str(metadata.suppression_guidance);
+        markdown.push_str("\n\n");
+        markdown.push_str("### Examples\n");
+
+        for example in metadata.examples {
+            markdown.push('\n');
+            markdown.push_str(example.summary);
+            markdown.push_str("\n\n");
+            markdown.push_str("Non-compliant:\n\n");
+            push_fenced_block(&mut markdown, example.non_compliant);
+            markdown.push('\n');
+            markdown.push_str("Compliant:\n\n");
+            push_fenced_block(&mut markdown, example.compliant);
+        }
+    }
+
+    markdown
+}
+
+fn rule_anchor(metadata: &RuleMetadata) -> String {
+    let mut anchor = metadata.id.as_str().to_ascii_lowercase();
+    anchor.push('-');
+
+    for character in metadata.title.chars() {
+        if character.is_ascii_alphanumeric() {
+            anchor.push(character.to_ascii_lowercase());
+        } else if !anchor.ends_with('-') {
+            anchor.push('-');
+        }
+    }
+
+    anchor.trim_end_matches('-').to_owned()
+}
+
+fn push_backticked_list<'a>(markdown: &mut String, values: impl Iterator<Item = &'a str>) {
+    for (index, value) in values.enumerate() {
+        if index > 0 {
+            markdown.push_str(", ");
+        }
+        markdown.push('`');
+        markdown.push_str(value);
+        markdown.push('`');
+    }
+}
+
+fn push_fenced_block(markdown: &mut String, content: &str) {
+    markdown.push_str("```text\n");
+    markdown.push_str(content);
+    if !content.ends_with('\n') {
+        markdown.push('\n');
+    }
+    markdown.push_str("```\n");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn normalize_line_endings(value: &str) -> String {
+        value.replace("\r\n", "\n")
+    }
 
     #[test]
     fn structural_rule_ids_cover_current_implemented_rules() {
@@ -434,5 +638,34 @@ mod tests {
         );
         assert!(rule_metadata("SEC001").is_none());
         assert!(RULE_REGISTRY.metadata("SEC001").is_none());
+    }
+
+    #[test]
+    fn rendered_rule_documentation_is_deterministic_and_complete() {
+        let first_render = render_rule_documentation();
+        let second_render = render_rule_documentation();
+
+        assert_eq!(first_render, second_render);
+        assert!(first_render.ends_with('\n'));
+        assert!(first_render.contains("## Rule Index"));
+
+        for metadata in RULE_REGISTRY.rules() {
+            assert!(first_render.contains(metadata.id.as_str()));
+            assert!(first_render.contains(metadata.title));
+            assert!(first_render.contains(metadata.rationale));
+            assert!(first_render.contains(metadata.remediation));
+            assert!(first_render.contains(metadata.suppression_guidance));
+        }
+    }
+
+    #[test]
+    fn checked_in_rule_documentation_matches_generated_markdown() {
+        let checked_in = normalize_line_endings(include_str!("../../../docs/rules/README.md"));
+        let generated = render_rule_documentation();
+
+        assert_eq!(
+            checked_in, generated,
+            "docs/rules/README.md has drifted from agent-audit-rules metadata"
+        );
     }
 }
