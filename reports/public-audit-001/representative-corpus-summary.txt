@@ -1,6 +1,7 @@
 Agent Skill Auditor scan summary
 Packages: 30
 Findings: 16
+Suppressed findings: 0
 Invalid manifests: 5
 Broken references: 4
 

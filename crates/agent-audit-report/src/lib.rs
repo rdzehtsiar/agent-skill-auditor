@@ -86,6 +86,10 @@ pub fn render_summary(report: &ScanReport) -> String {
         format!("Packages: {}", report.summary.package_count),
         format!("Findings: {}", report.summary.finding_count),
         format!(
+            "Suppressed findings: {}",
+            report.summary.suppressed_finding_count
+        ),
+        format!(
             "Invalid manifests: {}",
             report.summary.invalid_manifest_count
         ),
@@ -148,6 +152,10 @@ th{background:#f0f4f8}
     html.push_str("<section aria-labelledby=\"summary\"><h2 id=\"summary\">Summary</h2><div class=\"summary\">");
     html.push_str(&summary_count("Packages", report.summary.package_count));
     html.push_str(&summary_count("Findings", report.summary.finding_count));
+    html.push_str(&summary_count(
+        "Suppressed findings",
+        report.summary.suppressed_finding_count,
+    ));
     html.push_str(&summary_count(
         "Invalid manifests",
         report.summary.invalid_manifest_count,
@@ -443,6 +451,7 @@ mod tests {
     use agent_audit_core::model::ScanSummary;
     use agent_audit_core::{
         FindingLocation, SkillFinding, SkillGraph, SkillManifest, SkillPackage, SkillReference,
+        SuppressedFinding, SuppressionMatch,
     };
     use std::collections::BTreeMap;
     use std::path::Path;
@@ -532,13 +541,13 @@ mod tests {
 
     #[test]
     fn summary_output_includes_counts_and_no_finding_state() {
-        let report = report_with_summary(2, 0, 1, 0);
+        let report = report_with_summary(2, 0, 4, 1, 0);
 
         let summary = render_summary(&report);
 
         assert_eq!(
             summary,
-            "Agent Skill Auditor scan summary\nPackages: 2\nFindings: 0\nInvalid manifests: 1\nBroken references: 0\n\nNo findings."
+            "Agent Skill Auditor scan summary\nPackages: 2\nFindings: 0\nSuppressed findings: 4\nInvalid manifests: 1\nBroken references: 0\n\nNo findings."
         );
     }
 
@@ -587,6 +596,7 @@ mod tests {
 
         assert!(summary.contains("Packages: 0"));
         assert!(summary.contains("Findings: 4"));
+        assert!(summary.contains("Suppressed findings: 0"));
         assert!(summary.contains("Invalid manifests: 0"));
         assert!(summary.contains("Broken references: 1"));
         assert_in_order(
@@ -794,12 +804,13 @@ mod tests {
 
     #[test]
     fn html_output_renders_all_summary_counts() {
-        let report = report_with_summary(2, 3, 1, 2);
+        let report = report_with_summary(2, 3, 4, 1, 2);
 
         let html = render_html(&report);
 
         assert!(html.contains("<span class=\"count\">2</span>Packages"));
         assert!(html.contains("<span class=\"count\">3</span>Findings"));
+        assert!(html.contains("<span class=\"count\">4</span>Suppressed findings"));
         assert!(html.contains("<span class=\"count\">1</span>Invalid manifests"));
         assert!(html.contains("<span class=\"count\">2</span>Broken references"));
     }
@@ -1034,6 +1045,48 @@ mod tests {
                 .len(),
             0
         );
+    }
+
+    #[test]
+    fn sarif_output_uses_only_unsuppressed_findings() {
+        let mut report = report_with_findings(vec![finding(
+            "SKILL002",
+            Severity::Low,
+            FindingCategory::Spec,
+            "Missing skill description",
+            "The skill manifest does not declare a description.",
+            "SKILL.md",
+            Some(1),
+        )]);
+        report.suppressed_findings = vec![SuppressedFinding {
+            finding: finding(
+                "SKILL001",
+                Severity::Low,
+                FindingCategory::Spec,
+                "Missing skill name",
+                "The skill manifest does not declare a name.",
+                "SKILL.md",
+                Some(1),
+            ),
+            suppression: SuppressionMatch {
+                matched_rule: "SKILL001".to_owned(),
+                matched_path: "SKILL.md".to_owned(),
+                reason: "Accepted fixture.".to_owned(),
+            },
+        }];
+        report.summary.suppressed_finding_count = 1;
+
+        let value = render_sarif_value(&report);
+
+        assert_eq!(sarif_rule_ids(&value), vec!["SKILL002"]);
+        assert_eq!(
+            value["runs"][0]["results"]
+                .as_array()
+                .expect("results array")
+                .len(),
+            1
+        );
+        assert_eq!(value["runs"][0]["results"][0]["ruleId"], "SKILL002");
     }
 
     #[test]
@@ -1382,6 +1435,7 @@ mod tests {
     fn report_with_summary(
         package_count: usize,
         finding_count: usize,
+        suppressed_finding_count: usize,
         invalid_manifest_count: usize,
         broken_reference_count: usize,
     ) -> ScanReport {
@@ -1390,10 +1444,12 @@ mod tests {
             summary: ScanSummary {
                 package_count,
                 finding_count,
+                suppressed_finding_count,
                 invalid_manifest_count,
                 broken_reference_count,
             },
             findings: Vec::new(),
+            suppressed_findings: Vec::new(),
         }
     }
 
@@ -1408,6 +1464,7 @@ mod tests {
             summary: ScanSummary {
                 package_count,
                 finding_count: findings.len(),
+                suppressed_finding_count: 0,
                 invalid_manifest_count: 0,
                 broken_reference_count: findings
                     .iter()
@@ -1415,6 +1472,7 @@ mod tests {
                     .count(),
             },
             findings,
+            suppressed_findings: Vec::new(),
         }
     }
 

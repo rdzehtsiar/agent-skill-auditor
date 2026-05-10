@@ -29,6 +29,7 @@ mod tests {
         assert!((20..=50).contains(&report.summary.package_count));
         assert_eq!(report.summary.package_count, 30);
         assert_eq!(report.summary.finding_count, 16);
+        assert_eq!(report.summary.suppressed_finding_count, 0);
         assert_eq!(report.summary.invalid_manifest_count, 5);
         assert_eq!(report.summary.broken_reference_count, 4);
 
@@ -101,6 +102,7 @@ mod tests {
         let summary = render_summary(&report);
         assert!(summary.contains("Packages: 30"));
         assert!(summary.contains("Findings: 16"));
+        assert!(summary.contains("Suppressed findings: 0"));
         assert!(summary.contains("SKILL010 [low/spec]"));
 
         let sarif = render_sarif(&report).expect("render SARIF");
@@ -116,6 +118,7 @@ mod tests {
         assert!(html.contains("<h2 id=\"summary\">Summary</h2>"));
         assert!(html.contains("<span class=\"count\">30</span>Packages"));
         assert!(html.contains("<span class=\"count\">16</span>Findings"));
+        assert!(html.contains("<span class=\"count\">0</span>Suppressed findings"));
         assert!(html.contains("generic/broken-reference/SKILL.md:8"));
 
         for format in [
@@ -151,6 +154,7 @@ mod tests {
             serde_json::from_str(&first_json).expect("parse rendered JSON");
         assert_eq!(value["summary"]["package_count"], 30);
         assert_eq!(value["summary"]["finding_count"], 16);
+        assert_eq!(value["summary"]["suppressed_finding_count"], 0);
 
         let finding_keys = json_finding_order_keys(&value);
         let mut sorted_finding_keys = finding_keys.clone();
@@ -163,7 +167,9 @@ mod tests {
     }
 
     fn expected_representative_corpus_json() -> &'static str {
-        include_str!("../../../fixtures/spec/phase2/expected/representative-corpus.json")
+        let expected =
+            include_str!("../../../fixtures/spec/phase2/expected/representative-corpus.json");
+        expected.strip_suffix('\n').unwrap_or(expected)
     }
 
     fn workspace_root() -> PathBuf {

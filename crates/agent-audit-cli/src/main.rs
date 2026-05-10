@@ -4,7 +4,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use agent_audit_core::{parse_audit_config, scan_path, AuditError, ScanOptions};
+use agent_audit_core::{parse_audit_config, scan_path, AuditConfig, AuditError, ScanOptions};
 use agent_audit_report::{
     render_report, ReportFormat, UnsupportedReportFormat, SUPPORTED_REPORT_FORMATS_HELP,
 };
@@ -60,11 +60,19 @@ fn run_scan(command: ScanCommand) -> Result<()> {
 }
 
 fn run_scan_with_writer(command: ScanCommand, writer: &mut impl Write) -> Result<()> {
-    if let Some(config_path) = &command.config {
-        load_explicit_config(config_path)?;
-    }
+    let config = command
+        .config
+        .as_deref()
+        .map(load_explicit_config)
+        .transpose()?;
 
-    let report = scan_path(&command.path, &ScanOptions::default())?;
+    let report = scan_path(
+        &command.path,
+        &ScanOptions {
+            config,
+            ..ScanOptions::default()
+        },
+    )?;
     let rendered = render_report(&report, command.format)?;
 
     writer.write_all(rendered.as_bytes())?;
@@ -72,13 +80,11 @@ fn run_scan_with_writer(command: ScanCommand, writer: &mut impl Write) -> Result
     Ok(())
 }
 
-fn load_explicit_config(config_path: &Path) -> Result<()> {
+fn load_explicit_config(config_path: &Path) -> Result<AuditConfig> {
     let content = fs::read_to_string(config_path)
         .with_context(|| format!("failed to read config {}", config_path.display()))?;
 
-    parse_audit_config(&content).map_err(|error| config_error_with_path(config_path, error))?;
-
-    Ok(())
+    parse_audit_config(&content).map_err(|error| config_error_with_path(config_path, error))
 }
 
 fn config_error_with_path(config_path: &Path, error: AuditError) -> anyhow::Error {
@@ -454,6 +460,49 @@ ignore:
 
         assert!(output.contains("Packages: 1\n"));
         assert!(output.ends_with('\n'));
+    }
+
+    #[test]
+    fn run_scan_applies_explicit_config_suppressions() {
+        let workspace = CliTestWorkspace::new("config-suppression");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+description: CLI suppression fixture.
+---
+
+Read [missing](references/missing.md).
+"#,
+        );
+        workspace.write_file(
+            "agent-audit.yaml",
+            r#"
+ignore:
+  - rule: SKILL001
+    path: SKILL.md
+    reason: Name omitted for CLI suppression regression.
+"#,
+        );
+
+        let output = run_scan_output(ScanCommand {
+            path: workspace.root.clone(),
+            format: ReportFormat::Json,
+            config: Some(workspace.root.join("agent-audit.yaml")),
+        })
+        .expect("explicit config should suppress matching finding");
+        let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
+
+        assert_eq!(value["summary"]["finding_count"], 1);
+        assert_eq!(value["summary"]["suppressed_finding_count"], 1);
+        assert_eq!(value["findings"][0]["rule_id"], "SKILL010");
+        assert_eq!(
+            value["suppressed_findings"][0]["finding"]["rule_id"],
+            "SKILL001"
+        );
+        assert_eq!(
+            value["suppressed_findings"][0]["suppression"]["reason"],
+            "Name omitted for CLI suppression regression."
+        );
     }
 
     #[test]

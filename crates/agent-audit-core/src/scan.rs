@@ -3,11 +3,12 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use crate::config::{AuditConfig, ConfigIgnoreEntry};
 use crate::discovery::discover_skill_manifests;
 use crate::error::{AuditError, AuditResult};
 use crate::model::{
-    ScanReport, ScanSummary, SkillArtifactKind, SkillFile, SkillFileKind, SkillGraph,
-    SkillManifest, SkillPackage, SkillReference,
+    ScanReport, ScanSummary, SkillArtifactKind, SkillFile, SkillFileKind, SkillFinding, SkillGraph,
+    SkillManifest, SkillPackage, SkillReference, SuppressedFinding, SuppressionMatch,
 };
 use crate::parse::parse_skill_manifest;
 use crate::structural_rules::{
@@ -20,12 +21,14 @@ const UTF8_BOM: &str = "\u{feff}";
 #[derive(Debug, Clone)]
 pub struct ScanOptions {
     pub max_manifest_bytes: u64,
+    pub config: Option<AuditConfig>,
 }
 
 impl Default for ScanOptions {
     fn default() -> Self {
         Self {
             max_manifest_bytes: 256 * 1024,
+            config: None,
         }
     }
 }
@@ -144,6 +147,7 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
     }
 
     let findings = evaluate_structural_rules(&package_facts);
+    let (findings, suppressed_findings) = apply_suppressions(findings, options.config.as_ref());
 
     let invalid_manifest_count = findings
         .iter()
@@ -163,12 +167,57 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         summary: ScanSummary {
             package_count: packages.len(),
             finding_count: findings.len(),
+            suppressed_finding_count: suppressed_findings.len(),
             invalid_manifest_count,
             broken_reference_count,
         },
         packages,
         findings,
+        suppressed_findings,
     })
+}
+
+fn apply_suppressions(
+    findings: Vec<SkillFinding>,
+    config: Option<&AuditConfig>,
+) -> (Vec<SkillFinding>, Vec<SuppressedFinding>) {
+    let Some(config) = config else {
+        return (findings, Vec::new());
+    };
+
+    let mut unsuppressed = Vec::new();
+    let mut suppressed = Vec::new();
+
+    for finding in findings {
+        match matching_ignore_entry(&finding, &config.ignore) {
+            Some(entry) => suppressed.push(SuppressedFinding {
+                finding,
+                suppression: SuppressionMatch {
+                    matched_rule: entry.rule.clone(),
+                    matched_path: entry.path.clone(),
+                    reason: entry.reason.clone(),
+                },
+            }),
+            None => unsuppressed.push(finding),
+        }
+    }
+
+    (unsuppressed, suppressed)
+}
+
+fn matching_ignore_entry<'a>(
+    finding: &SkillFinding,
+    entries: &'a [ConfigIgnoreEntry],
+) -> Option<&'a ConfigIgnoreEntry> {
+    let finding_path = normalize_report_path(&finding.location.path);
+
+    entries
+        .iter()
+        .find(|entry| entry.rule == finding.rule_id && entry.path == finding_path)
+}
+
+fn normalize_report_path(path: &str) -> String {
+    path.replace('\\', "/")
 }
 
 fn resolve_references(skill_root: &Path, references: &[SkillReference]) -> Vec<SkillReference> {
@@ -490,6 +539,7 @@ fn empty_skill_graph() -> SkillGraph {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::parse_audit_config;
     use crate::model::{FindingCategory, Severity, SkillFinding};
     use crate::test_support::TestWorkspace;
     use agent_audit_rules::{
@@ -771,6 +821,7 @@ This manifest is valid but deliberately longer than the low test threshold.
             workspace.root(),
             &ScanOptions {
                 max_manifest_bytes: 80,
+                ..ScanOptions::default()
             },
         )
         .expect("scan path");
@@ -1140,6 +1191,7 @@ This second extra line makes the intended `SKILL020` case unambiguous.
             workspace.root(),
             &ScanOptions {
                 max_manifest_bytes: 180,
+                ..ScanOptions::default()
             },
         )
         .expect("scan path");
@@ -1775,6 +1827,7 @@ description: Valid manifest after malformed frontmatter.
             workspace.root(),
             &ScanOptions {
                 max_manifest_bytes: 128,
+                ..ScanOptions::default()
             },
         )
         .expect("oversized manifest should not be fully read");
@@ -1828,6 +1881,199 @@ description: Valid manifest after malformed frontmatter.
     }
 
     #[test]
+    fn config_suppression_matches_exact_rule_and_normalized_relative_path() {
+        let workspace = TestWorkspace::new("scan-suppression-exact");
+        workspace.write_file(
+            "nested/SKILL.md",
+            r#"---
+description: Missing name fixture.
+---
+
+This manifest intentionally has no heading fallback.
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+ignore:
+  - rule: SKILL001
+    path: nested\SKILL.md
+    reason: Accepted missing name fixture.
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(report.summary.finding_count, 0);
+        assert_eq!(report.summary.suppressed_finding_count, 1);
+        assert!(report.findings.is_empty());
+        assert_eq!(report.suppressed_findings.len(), 1);
+        assert_eq!(report.suppressed_findings[0].finding.rule_id, "SKILL001");
+        assert_eq!(
+            report.suppressed_findings[0].finding.location.path,
+            "nested/SKILL.md"
+        );
+        assert_eq!(
+            report.suppressed_findings[0].suppression.matched_rule,
+            "SKILL001"
+        );
+        assert_eq!(
+            report.suppressed_findings[0].suppression.matched_path,
+            "nested/SKILL.md"
+        );
+        assert_eq!(
+            report.suppressed_findings[0].suppression.reason,
+            "Accepted missing name fixture."
+        );
+    }
+
+    #[test]
+    fn config_suppression_does_not_match_unmatched_rule_or_path() {
+        let workspace = TestWorkspace::new("scan-suppression-unmatched");
+        workspace.write_file("SKILL.md", "```\nno manifest metadata\n```\n");
+        let config = parse_audit_config(
+            r#"
+ignore:
+  - rule: SKILL002
+    path: other/SKILL.md
+    reason: Wrong path.
+  - rule: SKILL010
+    path: SKILL.md
+    reason: Wrong rule.
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(report.summary.finding_count, 2);
+        assert_eq!(report.summary.suppressed_finding_count, 0);
+        assert!(report.suppressed_findings.is_empty());
+        assert_eq!(
+            report
+                .findings
+                .iter()
+                .map(|finding| finding.rule_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["SKILL001", "SKILL002"]
+        );
+    }
+
+    #[test]
+    fn config_suppression_leaves_unrelated_findings_unaffected() {
+        let workspace = TestWorkspace::new("scan-suppression-unrelated");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: suppression-unrelated
+owner: platform
+---
+
+# Suppression Unrelated
+
+Read [missing](references/missing.md).
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+ignore:
+  - rule: SKILL010
+    path: SKILL.md
+    reason: Broken reference tracked elsewhere.
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(report.summary.finding_count, 1);
+        assert_eq!(report.summary.suppressed_finding_count, 1);
+        assert_eq!(report.summary.broken_reference_count, 0);
+        assert_eq!(
+            report
+                .findings
+                .iter()
+                .map(|finding| finding.rule_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["SKILL040"]
+        );
+        assert_eq!(report.suppressed_findings[0].finding.rule_id, "SKILL010");
+    }
+
+    #[test]
+    fn json_output_includes_suppression_summary_and_details() {
+        let workspace = TestWorkspace::new("scan-json-suppression-details");
+        workspace.write_file("SKILL.md", "```\nno manifest metadata\n```\n");
+        let config = parse_audit_config(
+            r#"
+ignore:
+  - rule: SKILL001
+    path: SKILL.md
+    reason: Name intentionally omitted in regression fixture.
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+        let (_json, value) = report_json_value(&report);
+
+        assert_eq!(value["summary"]["finding_count"], 1);
+        assert_eq!(value["summary"]["suppressed_finding_count"], 1);
+        assert_eq!(
+            json_string_array(&value["findings"], "rule_id"),
+            vec!["SKILL002"]
+        );
+        assert_eq!(
+            value["suppressed_findings"][0]["finding"]["rule_id"],
+            "SKILL001"
+        );
+        assert_eq!(
+            value["suppressed_findings"][0]["finding"]["location"]["path"],
+            "SKILL.md"
+        );
+        assert_eq!(
+            value["suppressed_findings"][0]["suppression"]["matched_rule"],
+            "SKILL001"
+        );
+        assert_eq!(
+            value["suppressed_findings"][0]["suppression"]["matched_path"],
+            "SKILL.md"
+        );
+        assert_eq!(
+            value["suppressed_findings"][0]["suppression"]["reason"],
+            "Name intentionally omitted in regression fixture."
+        );
+    }
+
+    #[test]
     fn scan_phase1_oversized_manifest_fixture_reports_only_skill020() {
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/spec/phase1/oversized-manifest");
@@ -1836,6 +2082,7 @@ description: Valid manifest after malformed frontmatter.
             &fixture,
             &ScanOptions {
                 max_manifest_bytes: 120,
+                ..ScanOptions::default()
             },
         )
         .expect("oversized manifest should still parse");
@@ -1919,9 +2166,11 @@ description: JSON stability fixture.
     }
   ],
   "findings": [],
+  "suppressed_findings": [],
   "summary": {
     "package_count": 1,
     "finding_count": 0,
+    "suppressed_finding_count": 0,
     "invalid_manifest_count": 0,
     "broken_reference_count": 0
   }
@@ -2100,6 +2349,7 @@ This second extra line makes the intended `SKILL020` case unambiguous.
             workspace.root(),
             &ScanOptions {
                 max_manifest_bytes: 180,
+                ..ScanOptions::default()
             },
         )
         .expect("scan path");

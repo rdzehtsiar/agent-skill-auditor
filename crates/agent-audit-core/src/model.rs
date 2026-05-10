@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 pub struct ScanReport {
     pub packages: Vec<SkillPackage>,
     pub findings: Vec<SkillFinding>,
+    pub suppressed_findings: Vec<SuppressedFinding>,
     pub summary: ScanSummary,
 }
 
@@ -15,6 +16,7 @@ pub struct ScanReport {
 pub struct ScanSummary {
     pub package_count: usize,
     pub finding_count: usize,
+    pub suppressed_finding_count: usize,
     pub invalid_manifest_count: usize,
     pub broken_reference_count: usize,
 }
@@ -105,6 +107,19 @@ pub struct SkillFinding {
 pub struct FindingLocation {
     pub path: String,
     pub line: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SuppressedFinding {
+    pub finding: SkillFinding,
+    pub suppression: SuppressionMatch,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SuppressionMatch {
+    pub matched_rule: String,
+    pub matched_path: String,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

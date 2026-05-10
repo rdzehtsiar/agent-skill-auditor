@@ -1217,9 +1217,11 @@
       "suppression": "Suppress `SKILL010` only with a documented reason in the project audit config."
     }
   ],
+  "suppressed_findings": [],
   "summary": {
     "package_count": 30,
     "finding_count": 16,
+    "suppressed_finding_count": 0,
     "invalid_manifest_count": 5,
     "broken_reference_count": 4
   }

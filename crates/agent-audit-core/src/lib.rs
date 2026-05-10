@@ -16,6 +16,6 @@ pub use error::{AuditError, AuditResult};
 pub use model::{
     FindingCategory, FindingLocation, MarkdownCodeBlock, ScanReport, Severity, SkillArtifactKind,
     SkillFile, SkillFileKind, SkillFinding, SkillGraph, SkillManifest, SkillPackage,
-    SkillReference,
+    SkillReference, SuppressedFinding, SuppressionMatch,
 };
 pub use scan::{scan_path, ScanOptions};
