@@ -165,3 +165,110 @@ fn heading_rank(level: HeadingLevel) -> u8 {
         HeadingLevel::H6 => 6,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn parses_frontmatter_markdown_and_declared_capabilities() {
+        let content = r#"---
+name: parser-fixture
+description: Parser fixture description.
+tools:
+  - shell
+  - git
+permissions: read-files
+---
+
+# Parser Fixture
+
+Use [local docs](references/docs.md), [remote docs](https://example.test/docs),
+and `inline-code`.
+
+```bash
+echo parser
+```
+"#;
+
+        let manifest =
+            parse_skill_manifest(Path::new("SKILL.md"), content).expect("parse manifest");
+
+        assert_eq!(manifest.name.as_deref(), Some("parser-fixture"));
+        assert_eq!(
+            manifest.description.as_deref(),
+            Some("Parser fixture description.")
+        );
+        assert_eq!(manifest.headings, vec!["Parser Fixture"]);
+        assert_eq!(
+            manifest
+                .links
+                .iter()
+                .map(|reference| reference.target.as_str())
+                .collect::<Vec<_>>(),
+            vec!["references/docs.md", "https://example.test/docs"]
+        );
+        assert_eq!(manifest.inline_code, vec!["inline-code"]);
+        assert_eq!(manifest.code_blocks.len(), 1);
+        assert_eq!(manifest.code_blocks[0].language.as_deref(), Some("bash"));
+        assert_eq!(manifest.code_blocks[0].content, "echo parser\n");
+        assert_eq!(manifest.declared_tools, vec!["shell", "git"]);
+        assert_eq!(manifest.declared_permissions, vec!["read-files"]);
+    }
+
+    #[test]
+    fn falls_back_to_heading_and_first_paragraph_without_frontmatter() {
+        let content = r#"# Fallback Name
+
+Fallback description paragraph.
+
+Second paragraph.
+"#;
+
+        let manifest =
+            parse_skill_manifest(Path::new("SKILL.md"), content).expect("parse manifest");
+
+        assert_eq!(manifest.name.as_deref(), Some("Fallback Name"));
+        assert_eq!(
+            manifest.description.as_deref(),
+            Some("Fallback description paragraph.")
+        );
+        assert!(manifest.frontmatter.is_empty());
+    }
+
+    #[test]
+    fn treats_unclosed_frontmatter_delimiter_as_markdown_body() {
+        let content = r#"---
+name: ignored-without-closing-delimiter
+
+# Body Heading
+"#;
+
+        let manifest =
+            parse_skill_manifest(Path::new("SKILL.md"), content).expect("parse manifest");
+
+        assert!(manifest.frontmatter.is_empty());
+        assert_eq!(manifest.name.as_deref(), Some("Body Heading"));
+        assert_eq!(
+            manifest.description.as_deref(),
+            Some("name: ignored-without-closing-delimiter")
+        );
+    }
+
+    #[test]
+    fn returns_frontmatter_error_for_malformed_yaml() {
+        let content = r#"---
+name: [unterminated
+---
+
+# Malformed
+"#;
+
+        let error = parse_skill_manifest(Path::new("SKILL.md"), content)
+            .expect_err("malformed frontmatter should fail");
+
+        assert!(matches!(error, AuditError::Frontmatter { .. }));
+        assert!(error.to_string().contains("failed to parse frontmatter"));
+    }
+}

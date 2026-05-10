@@ -72,3 +72,38 @@ fn run_scan(command: ScanCommand) -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_default_scan_command() {
+        let cli = Cli::parse_from(["agent-audit", "scan"]);
+
+        match cli.command {
+            Command::Scan(command) => {
+                assert_eq!(command.path, PathBuf::from("."));
+                assert!(matches!(command.format, OutputFormat::Summary));
+            }
+        }
+    }
+
+    #[test]
+    fn parses_json_scan_format() {
+        let cli = Cli::parse_from([
+            "agent-audit",
+            "scan",
+            "fixtures/spec/basic",
+            "--format",
+            "json",
+        ]);
+
+        match cli.command {
+            Command::Scan(command) => {
+                assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
+                assert!(matches!(command.format, OutputFormat::Json));
+            }
+        }
+    }
+}

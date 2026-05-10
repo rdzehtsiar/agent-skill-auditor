@@ -5,6 +5,8 @@ pub mod error;
 pub mod model;
 pub mod parse;
 pub mod scan;
+#[cfg(test)]
+mod test_support;
 
 pub use discovery::discover_skill_manifests;
 pub use error::{AuditError, AuditResult};
