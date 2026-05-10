@@ -6,6 +6,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use agent_audit_core::{FindingCategory, ScanReport, Severity, SkillFinding, SkillPackage};
+use agent_audit_rules::{active_rule_metadata, RuleMetadata, RuleSeverity};
 use serde_json::{json, Value};
 
 pub const SUPPORTED_REPORT_FORMATS: &[&str] = &["summary", "json", "sarif", "html"];
@@ -327,36 +328,70 @@ fn rule_ids(findings: &[&SkillFinding]) -> Vec<String> {
 }
 
 fn sarif_rules(findings: &[&SkillFinding]) -> Vec<Value> {
-    let findings_by_rule = findings
+    findings_by_rule(findings)
+        .values()
+        .map(|finding| sarif_rule(finding))
+        .collect()
+}
+
+fn findings_by_rule<'a>(findings: &[&'a SkillFinding]) -> BTreeMap<&'a str, &'a SkillFinding> {
+    findings
         .iter()
         .map(|finding| (finding.rule_id.as_str(), *finding))
-        .collect::<BTreeMap<_, _>>();
-
-    findings_by_rule
-        .values()
-        .map(|finding| {
-            json!({
-                "id": finding.rule_id,
-                "name": finding.title,
-                "shortDescription": {
-                    "text": finding.title
-                },
-                "fullDescription": {
-                    "text": finding.rationale
-                },
-                "help": {
-                    "text": format!("{}\n\n{}", finding.remediation, finding.suppression)
-                },
-                "defaultConfiguration": {
-                    "level": sarif_level(finding.severity)
-                },
-                "properties": {
-                    "agentAuditSeverity": severity_name(finding.severity),
-                    "category": category_name(finding.category)
-                }
-            })
-        })
         .collect()
+}
+
+fn sarif_rule(finding: &SkillFinding) -> Value {
+    match active_rule_metadata(&finding.rule_id) {
+        Some(metadata) => sarif_rule_from_registry(metadata),
+        None => sarif_rule_from_finding(finding),
+    }
+}
+
+fn sarif_rule_from_registry(metadata: &RuleMetadata) -> Value {
+    json!({
+        "id": metadata.id.as_str(),
+        "name": metadata.title,
+        "shortDescription": {
+            "text": metadata.title
+        },
+        "fullDescription": {
+            "text": metadata.rationale
+        },
+        "help": {
+            "text": format!("{}\n\n{}", metadata.remediation, metadata.suppression_guidance)
+        },
+        "defaultConfiguration": {
+            "level": sarif_level_for_rule_severity(metadata.severity)
+        },
+        "properties": {
+            "agentAuditSeverity": metadata.severity.as_str(),
+            "category": metadata.category.as_str()
+        }
+    })
+}
+
+fn sarif_rule_from_finding(finding: &SkillFinding) -> Value {
+    json!({
+        "id": finding.rule_id,
+        "name": finding.title,
+        "shortDescription": {
+            "text": finding.title
+        },
+        "fullDescription": {
+            "text": finding.rationale
+        },
+        "help": {
+            "text": format!("{}\n\n{}", finding.remediation, finding.suppression)
+        },
+        "defaultConfiguration": {
+            "level": sarif_level(finding.severity)
+        },
+        "properties": {
+            "agentAuditSeverity": severity_name(finding.severity),
+            "category": category_name(finding.category)
+        }
+    })
 }
 
 fn sarif_results(findings: &[&SkillFinding], rule_indexes: &BTreeMap<String, usize>) -> Vec<Value> {
@@ -421,6 +456,14 @@ fn sarif_level(severity: Severity) -> &'static str {
         Severity::Info => "note",
         Severity::Low | Severity::Medium => "warning",
         Severity::High | Severity::Critical => "error",
+    }
+}
+
+fn sarif_level_for_rule_severity(severity: RuleSeverity) -> &'static str {
+    match severity {
+        RuleSeverity::Info => "note",
+        RuleSeverity::Low | RuleSeverity::Medium => "warning",
+        RuleSeverity::High | RuleSeverity::Critical => "error",
     }
 }
 
@@ -638,6 +681,45 @@ mod tests {
         assert_eq!(value["packages"][0]["manifest"]["name"], "review-skill");
         assert_eq!(value["findings"][0]["rule_id"], "SKILL002");
         assert!(rendered.ends_with('\n'));
+    }
+
+    #[test]
+    fn json_and_html_outputs_include_finding_explanation_fields() {
+        let report = report_with_findings(vec![finding_with_details(
+            "CUSTOM001",
+            Severity::Medium,
+            FindingCategory::Quality,
+            "Custom explanation",
+            "Custom finding message.",
+            "skills/custom/SKILL.md",
+            Some(4),
+            "Explain why the custom finding matters.",
+            "Explain how to fix the custom finding.",
+            "Explain how to suppress the custom finding safely.",
+        )]);
+
+        let json = render_json(&report).expect("render JSON");
+        let value: Value = serde_json::from_str(&json).expect("parse JSON report");
+        let finding = &value["findings"][0];
+
+        assert_eq!(
+            finding["rationale"],
+            "Explain why the custom finding matters."
+        );
+        assert_eq!(
+            finding["remediation"],
+            "Explain how to fix the custom finding."
+        );
+        assert_eq!(
+            finding["suppression"],
+            "Explain how to suppress the custom finding safely."
+        );
+
+        let html = render_html(&report);
+
+        assert!(html.contains("Explain why the custom finding matters."));
+        assert!(html.contains("Explain how to fix the custom finding."));
+        assert!(html.contains("Explain how to suppress the custom finding safely."));
     }
 
     #[test]
@@ -1090,6 +1172,50 @@ mod tests {
     }
 
     #[test]
+    fn sarif_rule_descriptor_for_known_rule_comes_from_registry() {
+        let report = report_with_findings(vec![finding_with_details(
+            "SKILL001",
+            Severity::High,
+            FindingCategory::Security,
+            "Conflicting finding title",
+            "Finding-specific message stays on the result.",
+            "skills/conflict/SKILL.md",
+            Some(9),
+            "Conflicting finding rationale.",
+            "Conflicting finding remediation.",
+            "Conflicting finding suppression.",
+        )]);
+
+        let value = render_sarif_value(&report);
+        let rule = &value["runs"][0]["tool"]["driver"]["rules"][0];
+        let result = &value["runs"][0]["results"][0];
+
+        assert_eq!(rule["id"], "SKILL001");
+        assert_eq!(rule["name"], "Missing skill name");
+        assert_eq!(rule["shortDescription"]["text"], "Missing skill name");
+        assert_eq!(
+            rule["fullDescription"]["text"],
+            "Skills without stable names are hard to inventory and compare across hosts."
+        );
+        assert_eq!(
+            rule["help"]["text"],
+            "Add a non-empty `name` field to frontmatter or a clear top-level heading.\n\nSuppress `SKILL001` only with a documented reason in the project audit config."
+        );
+        assert_eq!(rule["defaultConfiguration"]["level"], "warning");
+        assert_eq!(rule["properties"]["agentAuditSeverity"], "low");
+        assert_eq!(rule["properties"]["category"], "spec");
+
+        assert_eq!(result["ruleId"], "SKILL001");
+        assert_eq!(
+            result["message"]["text"],
+            "Finding-specific message stays on the result."
+        );
+        assert_eq!(result["level"], "error");
+        assert_eq!(result["properties"]["agentAuditSeverity"], "high");
+        assert_eq!(result["properties"]["category"], "security");
+    }
+
+    #[test]
     fn sarif_output_preserves_finding_metadata_and_location() {
         let report = report_with_findings(vec![finding(
             "SEC005",
@@ -1130,6 +1256,74 @@ mod tests {
         );
         assert_eq!(result["properties"]["agentAuditSeverity"], "high");
         assert_eq!(result["properties"]["category"], "security");
+    }
+
+    #[test]
+    fn sarif_output_falls_back_to_finding_metadata_for_unknown_rule_descriptor() {
+        let report = report_with_findings(vec![finding_with_details(
+            "CUSTOM900",
+            Severity::Critical,
+            FindingCategory::Reproducibility,
+            "Custom reproducibility rule",
+            "The custom rule produced a finding.",
+            "custom/SKILL.md",
+            Some(3),
+            "Custom rationale.",
+            "Custom remediation.",
+            "Custom suppression.",
+        )]);
+
+        let value = render_sarif_value(&report);
+        let rule = &value["runs"][0]["tool"]["driver"]["rules"][0];
+
+        assert_eq!(rule["id"], "CUSTOM900");
+        assert_eq!(rule["name"], "Custom reproducibility rule");
+        assert_eq!(
+            rule["shortDescription"]["text"],
+            "Custom reproducibility rule"
+        );
+        assert_eq!(rule["fullDescription"]["text"], "Custom rationale.");
+        assert_eq!(
+            rule["help"]["text"],
+            "Custom remediation.\n\nCustom suppression."
+        );
+        assert_eq!(rule["defaultConfiguration"]["level"], "error");
+        assert_eq!(rule["properties"]["agentAuditSeverity"], "critical");
+        assert_eq!(rule["properties"]["category"], "reproducibility");
+    }
+
+    #[test]
+    fn sarif_output_falls_back_to_finding_metadata_for_reserved_rule_descriptor() {
+        let report = report_with_findings(vec![finding_with_details(
+            "SKILL050",
+            Severity::Medium,
+            FindingCategory::Portability,
+            "Synthetic host metadata issue",
+            "The synthetic reserved rule produced a finding.",
+            "reserved/SKILL.md",
+            Some(5),
+            "Synthetic rationale.",
+            "Synthetic remediation.",
+            "Synthetic suppression.",
+        )]);
+
+        let value = render_sarif_value(&report);
+        let rule = &value["runs"][0]["tool"]["driver"]["rules"][0];
+
+        assert_eq!(rule["id"], "SKILL050");
+        assert_eq!(rule["name"], "Synthetic host metadata issue");
+        assert_eq!(
+            rule["shortDescription"]["text"],
+            "Synthetic host metadata issue"
+        );
+        assert_eq!(rule["fullDescription"]["text"], "Synthetic rationale.");
+        assert_eq!(
+            rule["help"]["text"],
+            "Synthetic remediation.\n\nSynthetic suppression."
+        );
+        assert_eq!(rule["defaultConfiguration"]["level"], "warning");
+        assert_eq!(rule["properties"]["agentAuditSeverity"], "medium");
+        assert_eq!(rule["properties"]["category"], "portability");
     }
 
     #[test]
@@ -1259,6 +1453,50 @@ mod tests {
         assert_eq!(
             sarif_result_rule_indexes(&value),
             vec![("SKILL020", 1), ("SKILL001", 0), ("SKILL020", 1),]
+        );
+    }
+
+    #[test]
+    fn sarif_output_uses_deterministic_rule_indexes_for_known_and_unknown_rules() {
+        let report = report_with_findings(vec![
+            finding(
+                "SKILL020",
+                Severity::Low,
+                FindingCategory::Spec,
+                "Conflicting oversized title",
+                "Known rule later in descriptor order.",
+                "c/SKILL.md",
+                Some(1),
+            ),
+            finding(
+                "CUSTOM900",
+                Severity::Medium,
+                FindingCategory::Quality,
+                "Custom rule",
+                "Unknown rule sorts first.",
+                "a/SKILL.md",
+                Some(1),
+            ),
+            finding(
+                "SKILL001",
+                Severity::High,
+                FindingCategory::Security,
+                "Conflicting missing-name title",
+                "Known rule sorts between custom and SKILL020.",
+                "b/SKILL.md",
+                Some(1),
+            ),
+        ]);
+
+        let value = render_sarif_value(&report);
+
+        assert_eq!(
+            sarif_rule_ids(&value),
+            vec!["CUSTOM900", "SKILL001", "SKILL020"]
+        );
+        assert_eq!(
+            sarif_result_rule_indexes(&value),
+            vec![("CUSTOM900", 0), ("SKILL001", 1), ("SKILL020", 2),]
         );
     }
 

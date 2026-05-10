@@ -36,6 +36,7 @@ name = "agent-audit-report"
 version = "0.1.0"
 dependencies = [
  "agent-audit-core",
+ "agent-audit-rules",
  "serde_json",
 ]
 

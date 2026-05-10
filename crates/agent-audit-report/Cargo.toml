@@ -6,4 +6,5 @@ license.workspace = true
 
 [dependencies]
 agent-audit-core = { path = "../agent-audit-core" }
+agent-audit-rules = { path = "../agent-audit-rules" }
 serde_json.workspace = true
