@@ -17,8 +17,8 @@ pub use discovery::discover_skill_manifests;
 pub use error::{AuditError, AuditResult};
 pub use fail::report_matches_fail_on;
 pub use model::{
-    FindingCategory, FindingLocation, MarkdownCodeBlock, ScanReport, Severity, SkillArtifactKind,
-    SkillFile, SkillFileKind, SkillFinding, SkillGraph, SkillManifest, SkillPackage,
-    SkillReference, SuppressedFinding, SuppressionMatch,
+    CompatibilityMatrix, FindingCategory, FindingLocation, MarkdownCodeBlock, ScanReport, Severity,
+    SkillArtifactKind, SkillCompatibilityRow, SkillFile, SkillFileKind, SkillFinding, SkillGraph,
+    SkillManifest, SkillPackage, SkillReference, SuppressedFinding, SuppressionMatch,
 };
 pub use scan::{scan_path, ScanOptions};

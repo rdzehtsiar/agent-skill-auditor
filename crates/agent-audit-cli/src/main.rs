@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use agent_audit_core::{
     parse_audit_config, parse_severity, report_matches_fail_on, scan_path, AuditConfig, AuditError,
-    ScanOptions, ScanReport, Severity,
+    CompatibilityMatrix, ScanOptions, ScanReport, Severity,
 };
 use agent_audit_report::{
     render_report, ReportFormat, UnsupportedReportFormat, SUPPORTED_REPORT_FORMATS_HELP,
@@ -730,6 +730,7 @@ ignore:
                     reason: "Accepted privileged setup fixture.".to_owned(),
                 },
             }],
+            compatibility: CompatibilityMatrix::default(),
         };
         let mut output = Vec::new();
 

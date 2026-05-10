@@ -14,8 +14,8 @@ pub fn report_matches_fail_on(report: &ScanReport, fail_on: &[Severity]) -> bool
 mod tests {
     use super::*;
     use crate::model::{
-        FindingCategory, FindingLocation, ScanSummary, SkillFinding, SuppressedFinding,
-        SuppressionMatch,
+        CompatibilityMatrix, FindingCategory, FindingLocation, ScanSummary, SkillFinding,
+        SuppressedFinding, SuppressionMatch,
     };
 
     #[test]
@@ -65,6 +65,7 @@ mod tests {
             },
             findings,
             suppressed_findings,
+            compatibility: CompatibilityMatrix::default(),
         }
     }
 

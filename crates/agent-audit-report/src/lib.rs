@@ -1688,6 +1688,7 @@ mod tests {
             },
             findings: Vec::new(),
             suppressed_findings: Vec::new(),
+            compatibility: agent_audit_core::CompatibilityMatrix::default(),
         }
     }
 
@@ -1711,6 +1712,7 @@ mod tests {
             },
             findings,
             suppressed_findings: Vec::new(),
+            compatibility: agent_audit_core::CompatibilityMatrix::default(),
         }
     }
 

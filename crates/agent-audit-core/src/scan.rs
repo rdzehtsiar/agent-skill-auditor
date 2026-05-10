@@ -7,8 +7,9 @@ use crate::config::{AuditConfig, ConfigIgnoreEntry};
 use crate::discovery::discover_skill_manifests;
 use crate::error::{AuditError, AuditResult};
 use crate::model::{
-    ScanReport, ScanSummary, SkillArtifactKind, SkillFile, SkillFileKind, SkillFinding, SkillGraph,
-    SkillManifest, SkillPackage, SkillReference, SuppressedFinding, SuppressionMatch,
+    CompatibilityMatrix, ScanReport, ScanSummary, SkillArtifactKind, SkillFile, SkillFileKind,
+    SkillFinding, SkillGraph, SkillManifest, SkillPackage, SkillReference, SuppressedFinding,
+    SuppressionMatch,
 };
 use crate::parse::parse_skill_manifest;
 use agent_audit_rules::{
@@ -178,6 +179,7 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         packages,
         findings,
         suppressed_findings,
+        compatibility: CompatibilityMatrix::default(),
     })
 }
 
