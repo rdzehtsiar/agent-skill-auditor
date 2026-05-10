@@ -2,13 +2,145 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use agent_audit_core::{FindingCategory, ScanReport, Severity, SkillFinding};
+use agent_audit_core::{FindingCategory, ScanReport, Severity, SkillFinding, SkillPackage};
 use serde_json::{json, Value};
 
-pub const SUPPORTED_REPORT_FORMATS: &[&str] = &["summary", "json", "sarif"];
+pub const SUPPORTED_REPORT_FORMATS: &[&str] = &["summary", "json", "sarif", "html"];
+
+pub fn render_html(report: &ScanReport) -> String {
+    let mut html = String::from(
+        r#"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Agent Skill Auditor Report</title>
+<style>
+body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.5;margin:2rem;color:#1f2933;background:#ffffff}
+h1,h2{line-height:1.2}
+table{border-collapse:collapse;width:100%;margin:1rem 0 2rem}
+th,td{border:1px solid #d9e2ec;padding:.5rem;text-align:left;vertical-align:top}
+th{background:#f0f4f8}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:.75rem;margin:1rem 0 2rem}
+.summary div{border:1px solid #d9e2ec;padding:.75rem}
+.count{display:block;font-size:1.5rem;font-weight:700}
+</style>
+</head>
+<body>
+<h1>Agent Skill Auditor Report</h1>
+"#,
+    );
+
+    html.push_str("<section aria-labelledby=\"summary\"><h2 id=\"summary\">Summary</h2><div class=\"summary\">");
+    html.push_str(&summary_count("Packages", report.summary.package_count));
+    html.push_str(&summary_count("Findings", report.summary.finding_count));
+    html.push_str(&summary_count(
+        "Invalid manifests",
+        report.summary.invalid_manifest_count,
+    ));
+    html.push_str(&summary_count(
+        "Broken references",
+        report.summary.broken_reference_count,
+    ));
+    html.push_str("</div></section>\n");
+
+    html.push_str(
+        "<section aria-labelledby=\"packages\"><h2 id=\"packages\">Packages</h2><table><thead><tr><th>Name</th><th>Description</th><th>Manifest</th><th>Root</th></tr></thead><tbody>",
+    );
+    let packages = sorted_packages(&report.packages);
+    if packages.is_empty() {
+        html.push_str("<tr><td colspan=\"4\">No packages discovered.</td></tr>");
+    }
+    for package in packages {
+        html.push_str("<tr><td>");
+        html.push_str(&escape_html(package.manifest.name.as_deref().unwrap_or("")));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(
+            package.manifest.description.as_deref().unwrap_or(""),
+        ));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&package.manifest_path));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&package.root));
+        html.push_str("</td></tr>");
+    }
+    html.push_str("</tbody></table></section>\n");
+
+    html.push_str(
+        "<section aria-labelledby=\"findings\"><h2 id=\"findings\">Findings</h2><table><thead><tr><th>Rule</th><th>Severity</th><th>Category</th><th>Location</th><th>Title</th><th>Message</th><th>Why it matters</th><th>How to fix</th><th>Suppression</th></tr></thead><tbody>",
+    );
+    let findings = sorted_findings(&report.findings);
+    if findings.is_empty() {
+        html.push_str("<tr><td colspan=\"9\">No findings.</td></tr>");
+    }
+    for finding in findings {
+        html.push_str("<tr><td>");
+        html.push_str(&escape_html(&finding.rule_id));
+        html.push_str("</td><td>");
+        html.push_str(severity_name(finding.severity));
+        html.push_str("</td><td>");
+        html.push_str(category_name(finding.category));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&location_display(
+            &finding.location.path,
+            finding.location.line,
+        )));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&finding.title));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&finding.message));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&finding.rationale));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&finding.remediation));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&finding.suppression));
+        html.push_str("</td></tr>");
+    }
+    html.push_str("</tbody></table></section>\n</body>\n</html>\n");
+
+    html
+}
 
 pub fn render_sarif(report: &ScanReport) -> serde_json::Result<String> {
     serde_json::to_string_pretty(&sarif_value(report))
+}
+
+fn summary_count(label: &str, count: usize) -> String {
+    format!("<div><span class=\"count\">{count}</span>{label}</div>")
+}
+
+fn sorted_packages(packages: &[SkillPackage]) -> Vec<&SkillPackage> {
+    let mut sorted = packages.iter().collect::<Vec<_>>();
+    sorted.sort_by(|left, right| {
+        left.manifest_path
+            .cmp(&right.manifest_path)
+            .then(left.root.cmp(&right.root))
+    });
+    sorted
+}
+
+fn location_display(path: &str, line: Option<usize>) -> String {
+    match line {
+        Some(line) => format!("{path}:{line}"),
+        None => path.to_owned(),
+    }
+}
+
+fn escape_html(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+
+    for character in value.chars() {
+        match character {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            '\'' => escaped.push_str("&#39;"),
+            _ => escaped.push(character),
+        }
+    }
+
+    escaped
 }
 
 fn sarif_value(report: &ScanReport) -> Value {
@@ -186,12 +318,180 @@ fn category_name(category: FindingCategory) -> &'static str {
 mod tests {
     use super::*;
     use agent_audit_core::model::ScanSummary;
-    use agent_audit_core::{FindingLocation, SkillFinding};
+    use agent_audit_core::{
+        FindingLocation, SkillFinding, SkillGraph, SkillManifest, SkillPackage, SkillReference,
+    };
+    use std::collections::BTreeMap;
     use std::path::Path;
 
     #[test]
     fn supported_report_formats_match_phase_one_outputs() {
-        assert_eq!(SUPPORTED_REPORT_FORMATS, &["summary", "json", "sarif"]);
+        assert_eq!(
+            SUPPORTED_REPORT_FORMATS,
+            &["summary", "json", "sarif", "html"]
+        );
+    }
+
+    #[test]
+    fn html_output_has_summary_packages_and_findings() {
+        let report = report_with_packages_and_findings(
+            vec![package(
+                "skills/review",
+                "skills/review/SKILL.md",
+                Some("review-skill"),
+                Some("Reviews agent skills."),
+            )],
+            vec![finding(
+                "SKILL010",
+                Severity::Low,
+                FindingCategory::Spec,
+                "Broken relative reference",
+                "The referenced file could not be found.",
+                "skills/review/SKILL.md",
+                Some(12),
+            )],
+        );
+
+        let html = render_html(&report);
+
+        assert!(html.contains("<h2 id=\"summary\">Summary</h2>"));
+        assert!(html.contains("<h2 id=\"packages\">Packages</h2>"));
+        assert!(html.contains("<h2 id=\"findings\">Findings</h2>"));
+        assert!(html.contains("<span class=\"count\">1</span>Packages"));
+        assert!(html.contains("<span class=\"count\">1</span>Findings"));
+        assert!(html.contains("<span class=\"count\">0</span>Invalid manifests"));
+        assert!(html.contains("<span class=\"count\">1</span>Broken references"));
+        assert!(html.contains("review-skill"));
+        assert!(html.contains("Reviews agent skills."));
+        assert!(html.contains("skills/review/SKILL.md:12"));
+        assert!(html.contains("SKILL010"));
+        assert!(html.contains("Broken relative reference"));
+        assert!(html.contains("The referenced file could not be found."));
+    }
+
+    #[test]
+    fn html_output_escapes_report_derived_strings_as_plain_text() {
+        let report = report_with_packages_and_findings(
+            vec![package(
+                "skills/<root>",
+                "skills/<skill>/SKILL.md",
+                Some("<b>name</b>"),
+                Some("\"description\" & 'notes'"),
+            )],
+            vec![finding(
+                "SEC<script>",
+                Severity::High,
+                FindingCategory::Security,
+                "<img src=x>",
+                "</td><script>alert(1)</script>",
+                "skills/<skill>/SKILL.md",
+                None,
+            )],
+        );
+
+        let html = render_html(&report);
+
+        assert!(html.contains("&lt;b&gt;name&lt;/b&gt;"));
+        assert!(html.contains("&quot;description&quot; &amp; &#39;notes&#39;"));
+        assert!(html.contains("skills/&lt;skill&gt;/SKILL.md"));
+        assert!(html.contains("SEC&lt;script&gt;"));
+        assert!(html.contains("&lt;img src=x&gt;"));
+        assert!(html.contains("&lt;/td&gt;&lt;script&gt;alert(1)&lt;/script&gt;"));
+        assert!(!html.contains("<b>name</b>"));
+        assert!(!html.contains("</td><script>alert(1)</script>"));
+    }
+
+    #[test]
+    fn html_output_renders_empty_state_rows_for_no_packages_and_no_findings() {
+        let report = report_with_packages_and_findings(Vec::new(), Vec::new());
+
+        let html = render_html(&report);
+
+        assert!(html.contains("<tr><td colspan=\"4\">No packages discovered.</td></tr>"));
+        assert!(html.contains("<tr><td colspan=\"9\">No findings.</td></tr>"));
+    }
+
+    #[test]
+    fn html_output_orders_packages_and_findings_deterministically() {
+        let report = report_with_packages_and_findings(
+            vec![
+                package("zeta", "zeta/SKILL.md", Some("zeta"), Some("Zeta.")),
+                package("alpha-b", "alpha/SKILL.md", Some("alpha-b"), Some("B.")),
+                package("alpha-a", "alpha/SKILL.md", Some("alpha-a"), Some("A.")),
+            ],
+            vec![
+                finding(
+                    "SKILL020",
+                    Severity::Medium,
+                    FindingCategory::Spec,
+                    "Oversized skill manifest",
+                    "Later path.",
+                    "zeta/SKILL.md",
+                    Some(1),
+                ),
+                finding(
+                    "SKILL030",
+                    Severity::Low,
+                    FindingCategory::Spec,
+                    "Duplicate skill name",
+                    "Second message.",
+                    "alpha/SKILL.md",
+                    Some(2),
+                ),
+                finding(
+                    "SKILL010",
+                    Severity::Low,
+                    FindingCategory::Spec,
+                    "Broken relative reference",
+                    "No line sorts before line.",
+                    "alpha/SKILL.md",
+                    None,
+                ),
+            ],
+        );
+
+        let html = render_html(&report);
+
+        assert_in_order(&html, &["alpha-a", "alpha-b", "zeta"]);
+        assert_in_order(
+            &html,
+            &[
+                "No line sorts before line.",
+                "Second message.",
+                "Later path.",
+            ],
+        );
+    }
+
+    #[test]
+    fn html_output_is_deterministic_and_offline() {
+        let report = report_with_packages_and_findings(
+            vec![package(
+                "skills/review",
+                "skills/review/SKILL.md",
+                Some("review-skill"),
+                Some("Reviews agent skills."),
+            )],
+            vec![finding(
+                "SKILL001",
+                Severity::Low,
+                FindingCategory::Spec,
+                "Missing skill name",
+                "The skill manifest does not declare a name.",
+                "skills/review/SKILL.md",
+                Some(1),
+            )],
+        );
+
+        let first = render_html(&report);
+        let second = render_html(&report);
+
+        assert_eq!(first, second);
+        assert!(!first.contains("http://"));
+        assert!(!first.contains("https://"));
+        assert!(!first.contains("<script"));
+        assert!(!first.contains("timestamp"));
+        assert!(!first.contains("generated_at"));
     }
 
     #[test]
@@ -589,15 +889,56 @@ mod tests {
     }
 
     fn report_with_findings(findings: Vec<SkillFinding>) -> ScanReport {
+        report_with_packages_and_findings(Vec::new(), findings)
+    }
+
+    fn report_with_packages_and_findings(
+        packages: Vec<SkillPackage>,
+        findings: Vec<SkillFinding>,
+    ) -> ScanReport {
+        let package_count = packages.len();
+
         ScanReport {
-            packages: Vec::new(),
+            packages,
             summary: ScanSummary {
-                package_count: 0,
+                package_count,
                 finding_count: findings.len(),
                 invalid_manifest_count: 0,
-                broken_reference_count: 0,
+                broken_reference_count: findings
+                    .iter()
+                    .filter(|finding| finding.rule_id == "SKILL010")
+                    .count(),
             },
             findings,
+        }
+    }
+
+    fn package(
+        root: &str,
+        manifest_path: &str,
+        name: Option<&str>,
+        description: Option<&str>,
+    ) -> SkillPackage {
+        SkillPackage {
+            root: root.to_owned(),
+            manifest_path: manifest_path.to_owned(),
+            manifest: SkillManifest {
+                name: name.map(str::to_owned),
+                description: description.map(str::to_owned),
+                frontmatter: BTreeMap::new(),
+                body: String::new(),
+                headings: Vec::new(),
+                links: Vec::<SkillReference>::new(),
+                inline_code: Vec::new(),
+                code_blocks: Vec::new(),
+                declared_tools: Vec::new(),
+                declared_permissions: Vec::new(),
+            },
+            graph: SkillGraph {
+                references: Vec::new(),
+                artifacts: Vec::new(),
+                files: Vec::new(),
+            },
         }
     }
 
@@ -734,5 +1075,16 @@ mod tests {
             .and_then(|value| value.strip_suffix('"'))
             .unwrap_or(&escaped)
             .to_owned()
+    }
+
+    fn assert_in_order(haystack: &str, needles: &[&str]) {
+        let mut previous = 0;
+
+        for needle in needles {
+            let offset = haystack[previous..]
+                .find(needle)
+                .unwrap_or_else(|| panic!("missing {needle:?} after byte {previous}"));
+            previous += offset + needle.len();
+        }
     }
 }

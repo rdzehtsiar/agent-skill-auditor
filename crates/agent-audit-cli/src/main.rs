@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use agent_audit_core::{scan_path, ScanOptions};
-use agent_audit_report::render_sarif;
+use agent_audit_report::{render_html, render_sarif};
 use anyhow::Result;
 use clap::{Parser, ValueEnum};
 
@@ -33,6 +33,7 @@ enum OutputFormat {
     Summary,
     Json,
     Sarif,
+    Html,
 }
 
 fn main() -> Result<()> {
@@ -72,6 +73,9 @@ fn run_scan(command: ScanCommand) -> Result<()> {
         }
         OutputFormat::Sarif => {
             println!("{}", render_sarif(&report)?);
+        }
+        OutputFormat::Html => {
+            println!("{}", render_html(&report));
         }
     }
 
@@ -131,6 +135,24 @@ mod tests {
             Command::Scan(command) => {
                 assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
                 assert!(matches!(command.format, OutputFormat::Sarif));
+            }
+        }
+    }
+
+    #[test]
+    fn parses_html_scan_format() {
+        let cli = Cli::parse_from([
+            "agent-audit",
+            "scan",
+            "fixtures/spec/basic",
+            "--format",
+            "html",
+        ]);
+
+        match cli.command {
+            Command::Scan(command) => {
+                assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
+                assert!(matches!(command.format, OutputFormat::Html));
             }
         }
     }
@@ -196,6 +218,28 @@ description: SARIF output fixture.
         let result = run_scan(ScanCommand {
             path: workspace.root.clone(),
             format: OutputFormat::Sarif,
+        });
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn runs_scan_with_html_output() {
+        let workspace = CliTestWorkspace::new("html-output");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: html-output
+description: HTML output fixture.
+---
+
+# HTML Output
+"#,
+        );
+
+        let result = run_scan(ScanCommand {
+            path: workspace.root.clone(),
+            format: OutputFormat::Html,
         });
 
         assert!(result.is_ok());
