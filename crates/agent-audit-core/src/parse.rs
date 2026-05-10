@@ -14,88 +14,11 @@ pub fn parse_skill_manifest(path: &Path, content: &str) -> AuditResult<SkillMani
     let split = split_frontmatter(path, content)?;
     let frontmatter = split.frontmatter;
     let body = split.body;
-    let line_index = LineIndex::new(body, split.body_start_line);
-    let mut headings = Vec::new();
-    let mut links = Vec::new();
-    let mut inline_code = Vec::new();
-    let mut code_blocks = Vec::new();
-    let mut current_heading: Option<(HeadingLevel, String)> = None;
-    let mut first_h1_heading = None;
-    let mut current_code_block: Option<MarkdownCodeBlock> = None;
-    let mut first_paragraph = String::new();
-    let mut in_first_paragraph = false;
-    let mut captured_first_paragraph = false;
+    let parsed_markdown = parse_markdown_body(body, split.body_start_line);
 
-    for (event, range) in Parser::new(body).into_offset_iter() {
-        match event {
-            Event::Start(Tag::Heading { level, .. }) => {
-                current_heading = Some((level, String::new()));
-            }
-            Event::End(TagEnd::Heading(level)) => {
-                if let Some((start_level, heading)) = current_heading.take() {
-                    let heading = heading.trim();
-                    if !heading.is_empty() {
-                        if start_level == HeadingLevel::H1
-                            && level == HeadingLevel::H1
-                            && first_h1_heading.is_none()
-                        {
-                            first_h1_heading = Some(heading.to_owned());
-                        }
-                        headings.push(heading.to_owned());
-                    }
-                }
-            }
-            Event::Start(Tag::Paragraph) if !captured_first_paragraph => {
-                in_first_paragraph = true;
-            }
-            Event::End(TagEnd::Paragraph) if in_first_paragraph => {
-                in_first_paragraph = false;
-                captured_first_paragraph = !first_paragraph.trim().is_empty();
-            }
-            Event::Start(Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. }) => {
-                links.push(SkillReference {
-                    target: dest_url.to_string(),
-                    line: Some(line_index.line_for_offset(range.start)),
-                    exists: None,
-                });
-            }
-            Event::Start(Tag::CodeBlock(kind)) => {
-                let language = match kind {
-                    CodeBlockKind::Fenced(language) if !language.is_empty() => {
-                        Some(language.to_string())
-                    }
-                    _ => None,
-                };
-                current_code_block = Some(MarkdownCodeBlock {
-                    language,
-                    content: String::new(),
-                    line: Some(line_index.line_for_offset(range.start)),
-                });
-            }
-            Event::End(TagEnd::CodeBlock) => {
-                if let Some(block) = current_code_block.take() {
-                    code_blocks.push(block);
-                }
-            }
-            Event::Text(text) => {
-                if let Some((_, heading)) = current_heading.as_mut() {
-                    heading.push_str(&text);
-                }
-                if let Some(block) = current_code_block.as_mut() {
-                    block.content.push_str(&text);
-                }
-                if in_first_paragraph {
-                    first_paragraph.push_str(&text);
-                }
-            }
-            Event::Code(code) => inline_code.push(code.to_string()),
-            _ => {}
-        }
-    }
-
-    let name = frontmatter_string(&frontmatter, "name").or(first_h1_heading);
+    let name = frontmatter_string(&frontmatter, "name").or(parsed_markdown.first_h1_heading);
     let description = frontmatter_string(&frontmatter, "description").or_else(|| {
-        let paragraph = first_paragraph.trim();
+        let paragraph = parsed_markdown.first_paragraph.trim();
         (!paragraph.is_empty()).then(|| paragraph.to_owned())
     });
 
@@ -104,13 +27,159 @@ pub fn parse_skill_manifest(path: &Path, content: &str) -> AuditResult<SkillMani
         description,
         frontmatter: frontmatter.clone(),
         body: body.to_owned(),
-        headings,
-        links,
-        inline_code,
-        code_blocks,
+        headings: parsed_markdown.headings,
+        links: parsed_markdown.links,
+        inline_code: parsed_markdown.inline_code,
+        code_blocks: parsed_markdown.code_blocks,
         declared_tools: frontmatter_string_list(&frontmatter, "tools"),
         declared_permissions: frontmatter_string_list(&frontmatter, "permissions"),
     })
+}
+
+struct ParsedMarkdown {
+    headings: Vec<String>,
+    links: Vec<SkillReference>,
+    inline_code: Vec<String>,
+    code_blocks: Vec<MarkdownCodeBlock>,
+    first_h1_heading: Option<String>,
+    first_paragraph: String,
+}
+
+struct MarkdownParseState {
+    line_index: LineIndex,
+    parsed: ParsedMarkdown,
+    current_heading: Option<(HeadingLevel, String)>,
+    current_code_block: Option<MarkdownCodeBlock>,
+    in_first_paragraph: bool,
+    captured_first_paragraph: bool,
+}
+
+impl MarkdownParseState {
+    fn new(body: &str, body_start_line: usize) -> Self {
+        Self {
+            line_index: LineIndex::new(body, body_start_line),
+            parsed: ParsedMarkdown {
+                headings: Vec::new(),
+                links: Vec::new(),
+                inline_code: Vec::new(),
+                code_blocks: Vec::new(),
+                first_h1_heading: None,
+                first_paragraph: String::new(),
+            },
+            current_heading: None,
+            current_code_block: None,
+            in_first_paragraph: false,
+            captured_first_paragraph: false,
+        }
+    }
+
+    fn into_parsed(self) -> ParsedMarkdown {
+        self.parsed
+    }
+
+    fn start_heading(&mut self, level: HeadingLevel) {
+        self.current_heading = Some((level, String::new()));
+    }
+
+    fn end_heading(&mut self, end_level: HeadingLevel) {
+        let Some((start_level, heading)) = self.current_heading.take() else {
+            return;
+        };
+
+        let heading = heading.trim();
+        if heading.is_empty() {
+            return;
+        }
+
+        if start_level == HeadingLevel::H1
+            && end_level == HeadingLevel::H1
+            && self.parsed.first_h1_heading.is_none()
+        {
+            self.parsed.first_h1_heading = Some(heading.to_owned());
+        }
+        self.parsed.headings.push(heading.to_owned());
+    }
+
+    fn start_paragraph(&mut self) {
+        if !self.captured_first_paragraph {
+            self.in_first_paragraph = true;
+        }
+    }
+
+    fn end_paragraph(&mut self) {
+        if self.in_first_paragraph {
+            self.in_first_paragraph = false;
+            self.captured_first_paragraph = !self.parsed.first_paragraph.trim().is_empty();
+        }
+    }
+
+    fn add_reference(&mut self, target: impl Into<String>, offset: usize) {
+        self.parsed.links.push(SkillReference {
+            target: target.into(),
+            line: Some(self.line_index.line_for_offset(offset)),
+            exists: None,
+        });
+    }
+
+    fn start_code_block(&mut self, kind: CodeBlockKind<'_>, offset: usize) {
+        self.current_code_block = Some(MarkdownCodeBlock {
+            language: code_block_language(kind),
+            content: String::new(),
+            line: Some(self.line_index.line_for_offset(offset)),
+        });
+    }
+
+    fn end_code_block(&mut self) {
+        if let Some(block) = self.current_code_block.take() {
+            self.parsed.code_blocks.push(block);
+        }
+    }
+
+    fn add_text(&mut self, text: &str) {
+        if let Some((_, heading)) = self.current_heading.as_mut() {
+            heading.push_str(text);
+        }
+        if let Some(block) = self.current_code_block.as_mut() {
+            block.content.push_str(text);
+        }
+        if self.in_first_paragraph {
+            self.parsed.first_paragraph.push_str(text);
+        }
+    }
+
+    fn add_inline_code(&mut self, code: impl Into<String>) {
+        self.parsed.inline_code.push(code.into());
+    }
+}
+
+fn parse_markdown_body(body: &str, body_start_line: usize) -> ParsedMarkdown {
+    let mut state = MarkdownParseState::new(body, body_start_line);
+
+    for (event, range) in Parser::new(body).into_offset_iter() {
+        match event {
+            Event::Start(Tag::Heading { level, .. }) => state.start_heading(level),
+            Event::End(TagEnd::Heading(level)) => state.end_heading(level),
+            Event::Start(Tag::Paragraph) => state.start_paragraph(),
+            Event::End(TagEnd::Paragraph) => state.end_paragraph(),
+            Event::Start(Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. }) => {
+                state.add_reference(dest_url.to_string(), range.start);
+            }
+            Event::Start(Tag::CodeBlock(kind)) => state.start_code_block(kind, range.start),
+            Event::End(TagEnd::CodeBlock) => state.end_code_block(),
+            Event::Text(text) => state.add_text(&text),
+            Event::Code(code) => state.add_inline_code(code.to_string()),
+            _ => {}
+        }
+    }
+
+    state.into_parsed()
+}
+
+fn code_block_language(kind: CodeBlockKind<'_>) -> Option<String> {
+    match kind {
+        CodeBlockKind::Fenced(language) if !language.is_empty() => Some(language.to_string()),
+        _ => None,
+    }
 }
 
 struct FrontmatterSplit<'a> {
