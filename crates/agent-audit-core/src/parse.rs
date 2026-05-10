@@ -447,6 +447,16 @@ name: [unterminated
     }
 
     #[test]
+    fn maps_heading_levels_to_numeric_ranks() {
+        assert_eq!(heading_rank(HeadingLevel::H1), 1);
+        assert_eq!(heading_rank(HeadingLevel::H2), 2);
+        assert_eq!(heading_rank(HeadingLevel::H3), 3);
+        assert_eq!(heading_rank(HeadingLevel::H4), 4);
+        assert_eq!(heading_rank(HeadingLevel::H5), 5);
+        assert_eq!(heading_rank(HeadingLevel::H6), 6);
+    }
+
+    #[test]
     fn parsing_same_manifest_twice_produces_same_output() {
         let content = r#"---
 name: deterministic-parser

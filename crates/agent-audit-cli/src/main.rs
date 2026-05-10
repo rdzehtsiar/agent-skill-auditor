@@ -76,6 +76,11 @@ fn run_scan(command: ScanCommand) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::path::Path;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static NEXT_WORKSPACE_ID: AtomicUsize = AtomicUsize::new(0);
 
     #[test]
     fn parses_default_scan_command() {
@@ -103,6 +108,110 @@ mod tests {
             Command::Scan(command) => {
                 assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
                 assert!(matches!(command.format, OutputFormat::Json));
+            }
+        }
+    }
+
+    #[test]
+    fn runs_scan_with_summary_output() {
+        let workspace = CliTestWorkspace::new("summary-output");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: summary-output
+description: Summary output fixture.
+---
+
+# Summary Output
+"#,
+        );
+
+        let result = run_scan(ScanCommand {
+            path: workspace.root.clone(),
+            format: OutputFormat::Summary,
+        });
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn runs_scan_with_json_output() {
+        let workspace = CliTestWorkspace::new("json-output");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: json-output
+description: JSON output fixture.
+---
+
+# JSON Output
+"#,
+        );
+
+        let result = run_scan(ScanCommand {
+            path: workspace.root.clone(),
+            format: OutputFormat::Json,
+        });
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn run_scan_returns_manifest_parse_errors() {
+        let workspace = CliTestWorkspace::new("parse-error");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: [unterminated
+---
+
+# Malformed
+"#,
+        );
+
+        let result = run_scan(ScanCommand {
+            path: workspace.root.clone(),
+            format: OutputFormat::Summary,
+        });
+
+        assert!(result.is_err());
+    }
+
+    struct CliTestWorkspace {
+        root: PathBuf,
+    }
+
+    impl CliTestWorkspace {
+        fn new(name: &str) -> Self {
+            let id = NEXT_WORKSPACE_ID.fetch_add(1, Ordering::Relaxed);
+            let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("..")
+                .join("target")
+                .join("agent-audit-cli-tests")
+                .join(format!("{name}-{}-{id}", std::process::id()));
+
+            if root.exists() {
+                fs::remove_dir_all(&root).expect("remove stale test workspace");
+            }
+            fs::create_dir_all(&root).expect("create test workspace");
+
+            Self { root }
+        }
+
+        fn write_file(&self, relative_path: &str, content: &str) {
+            let path = self.root.join(relative_path);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).expect("create test file parent directory");
+            }
+            fs::write(path, content).expect("write test file");
+        }
+    }
+
+    impl Drop for CliTestWorkspace {
+        fn drop(&mut self) {
+            if self.root.exists() {
+                fs::remove_dir_all(&self.root).expect("remove test workspace");
             }
         }
     }

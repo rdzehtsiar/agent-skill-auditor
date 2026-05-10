@@ -239,6 +239,174 @@ and [heading](#valid-skill).
     }
 
     #[test]
+    fn scan_ignores_non_relative_file_references() {
+        let workspace = TestWorkspace::new("scan-non-relative-references");
+        let absolute_reference = workspace.root().join("outside.md");
+        workspace.write_file(
+            "SKILL.md",
+            &format!(
+                r#"---
+name: non-relative-references
+description: Non-relative reference fixture.
+---
+
+# Non Relative References
+
+Use [http](http://example.test), [https](https://example.test),
+[mail](mailto:security@example.test), [anchor](#non-relative-references),
+and [absolute]({}).
+"#,
+                absolute_reference.to_string_lossy().replace('\\', "/")
+            ),
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert!(report.packages[0].graph.references.is_empty());
+        assert!(report.findings.is_empty());
+    }
+
+    #[test]
+    fn display_path_returns_original_path_when_not_under_root() {
+        let root = Path::new("root");
+        let outside = Path::new("outside").join("SKILL.md");
+
+        assert_eq!(display_path(root, &outside), "outside/SKILL.md");
+    }
+
+    #[test]
+    fn reports_skill001_missing_name_with_complete_finding_metadata() {
+        let workspace = TestWorkspace::new("scan-skill001");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+description: Missing name fixture.
+---
+
+This manifest has a description but no frontmatter name or heading fallback.
+"#,
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_eq!(report.findings.len(), 1);
+        assert_finding(
+            &report.findings[0],
+            ExpectedFinding {
+                rule_id: "SKILL001",
+                title: "Missing skill name",
+                message: "The skill manifest does not declare a name.",
+                path: "SKILL.md",
+                rationale:
+                    "Skills without stable names are hard to inventory and compare across hosts.",
+                remediation:
+                    "Add a non-empty `name` field to frontmatter or a clear top-level heading.",
+            },
+        );
+    }
+
+    #[test]
+    fn reports_skill002_missing_description_with_complete_finding_metadata() {
+        let workspace = TestWorkspace::new("scan-skill002");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: missing-description
+---
+
+# Missing Description
+"#,
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_eq!(report.findings.len(), 1);
+        assert_finding(
+            &report.findings[0],
+            ExpectedFinding {
+                rule_id: "SKILL002",
+                title: "Missing skill description",
+                message: "The skill manifest does not declare a description.",
+                path: "SKILL.md",
+                rationale:
+                    "Reviewers and host profiles need a concise behavior statement for the skill.",
+                remediation:
+                    "Add a non-empty `description` field to frontmatter or an opening paragraph.",
+            },
+        );
+    }
+
+    #[test]
+    fn reports_skill010_broken_relative_reference_with_complete_finding_metadata() {
+        let workspace = TestWorkspace::new("scan-skill010");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: broken-reference
+description: Broken reference fixture.
+---
+
+# Broken Reference
+
+Read [missing guidance](references/missing.md).
+"#,
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_eq!(report.findings.len(), 1);
+        assert_finding(
+            &report.findings[0],
+            ExpectedFinding {
+                rule_id: "SKILL010",
+                title: "Broken relative reference",
+                message: "The manifest references `references/missing.md`, but the file was not found.",
+                path: "SKILL.md",
+                rationale: "Broken references can make a skill behave differently than documented or fail at runtime.",
+                remediation: "Create the referenced file, update the link, or remove the stale reference.",
+            },
+        );
+    }
+
+    #[test]
+    fn reports_skill020_oversized_manifest_with_complete_finding_metadata() {
+        let workspace = TestWorkspace::new("scan-skill020");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: oversized
+description: Oversized fixture.
+---
+
+# Oversized
+
+This manifest is valid but deliberately longer than the low test threshold.
+"#,
+        );
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                max_manifest_bytes: 80,
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(report.findings.len(), 1);
+        assert_finding(
+            &report.findings[0],
+            ExpectedFinding {
+                rule_id: "SKILL020",
+                title: "Oversized skill manifest",
+                message: "The SKILL.md file exceeds the recommended manifest size.",
+                path: "SKILL.md",
+                rationale: "Very large manifests are harder to review and may be rejected or truncated by hosts.",
+                remediation: "Move long reference material into `references/` and link to it from SKILL.md.",
+            },
+        );
+    }
+
+    #[test]
     fn scan_reports_missing_name_missing_description_broken_reference_and_size() {
         let workspace = TestWorkspace::new("scan-structural-findings");
         workspace.write_file(
@@ -345,9 +513,28 @@ This second extra line makes the intended `SKILL020` case unambiguous.
             report
                 .findings
                 .iter()
-                .map(|finding| finding.location.path.as_str())
+                .map(finding_sort_tuple)
                 .collect::<Vec<_>>(),
-            vec!["alpha/SKILL.md", "middle/SKILL.md", "zeta/SKILL.md"]
+            vec![
+                (
+                    "alpha/SKILL.md",
+                    None,
+                    "SKILL002",
+                    "The skill manifest does not declare a description."
+                ),
+                (
+                    "middle/SKILL.md",
+                    None,
+                    "SKILL002",
+                    "The skill manifest does not declare a description."
+                ),
+                (
+                    "zeta/SKILL.md",
+                    None,
+                    "SKILL002",
+                    "The skill manifest does not declare a description."
+                ),
+            ]
         );
     }
 
@@ -392,5 +579,42 @@ description: JSON stability fixture.
         assert!(json.contains("\"finding_count\": 0"));
         assert!(!json.contains(&workspace.root().to_string_lossy().to_string()));
         assert!(!json.contains("timestamp"));
+    }
+
+    struct ExpectedFinding {
+        rule_id: &'static str,
+        title: &'static str,
+        message: &'static str,
+        path: &'static str,
+        rationale: &'static str,
+        remediation: &'static str,
+    }
+
+    fn assert_finding(finding: &SkillFinding, expected: ExpectedFinding) {
+        assert_eq!(finding.rule_id, expected.rule_id);
+        assert_eq!(finding.severity, Severity::Low);
+        assert_eq!(finding.category, FindingCategory::Spec);
+        assert_eq!(finding.title, expected.title);
+        assert_eq!(finding.message, expected.message);
+        assert_eq!(finding.location.path, expected.path);
+        assert_eq!(finding.location.line, None);
+        assert_eq!(finding.rationale, expected.rationale);
+        assert_eq!(finding.remediation, expected.remediation);
+        assert_eq!(
+            finding.suppression,
+            format!(
+                "Suppress `{}` only with a documented reason in the project audit config.",
+                expected.rule_id
+            )
+        );
+    }
+
+    fn finding_sort_tuple(finding: &SkillFinding) -> (&str, Option<usize>, &str, &str) {
+        (
+            finding.location.path.as_str(),
+            finding.location.line,
+            finding.rule_id.as_str(),
+            finding.message.as_str(),
+        )
     }
 }
