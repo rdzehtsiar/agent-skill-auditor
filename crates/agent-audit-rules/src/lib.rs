@@ -83,6 +83,28 @@ pub struct RuleMetadata {
     pub examples: &'static [RuleExample],
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct RuleRegistry {
+    rules: &'static [RuleMetadata],
+}
+
+impl RuleRegistry {
+    const fn new(rules: &'static [RuleMetadata]) -> Self {
+        Self { rules }
+    }
+
+    pub const fn rules(&self) -> &'static [RuleMetadata] {
+        self.rules
+    }
+
+    pub fn metadata(&self, rule_id: &str) -> Option<&'static RuleMetadata> {
+        self.rules
+            .binary_search_by(|metadata| metadata.id.as_str().cmp(rule_id))
+            .ok()
+            .map(|index| &self.rules[index])
+    }
+}
+
 pub const STRUCTURAL_RULE_IDS: &[&str] = &[
     "SKILL001", "SKILL002", "SKILL010", "SKILL020", "SKILL030", "SKILL040", "SKILL041",
 ];
@@ -240,11 +262,10 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
     },
 ];
 
+pub const RULE_REGISTRY: RuleRegistry = RuleRegistry::new(RULE_METADATA);
+
 pub fn rule_metadata(rule_id: &str) -> Option<&'static RuleMetadata> {
-    RULE_METADATA
-        .binary_search_by(|metadata| metadata.id.as_str().cmp(rule_id))
-        .ok()
-        .map(|index| &RULE_METADATA[index])
+    RULE_REGISTRY.metadata(rule_id)
 }
 
 #[cfg(test)]
@@ -261,7 +282,8 @@ mod tests {
 
     #[test]
     fn metadata_covers_current_structural_rule_ids_in_deterministic_order() {
-        let metadata_ids = RULE_METADATA
+        let metadata_ids = RULE_REGISTRY
+            .rules()
             .iter()
             .map(|metadata| metadata.id.as_str())
             .collect::<Vec<_>>();
@@ -271,8 +293,52 @@ mod tests {
     }
 
     #[test]
+    fn registry_rules_are_unique_sorted_and_match_current_implemented_set() {
+        let registry_ids = RULE_REGISTRY
+            .rules()
+            .iter()
+            .map(|metadata| metadata.id.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            registry_ids,
+            vec![
+                RuleId::Skill001.as_str(),
+                RuleId::Skill002.as_str(),
+                RuleId::Skill010.as_str(),
+                RuleId::Skill020.as_str(),
+                RuleId::Skill030.as_str(),
+                RuleId::Skill040.as_str(),
+                RuleId::Skill041.as_str(),
+            ]
+        );
+        assert_eq!(registry_ids, STRUCTURAL_RULE_IDS);
+        assert!(
+            registry_ids.windows(2).all(|ids| ids[0] < ids[1]),
+            "registry ids must remain sorted for deterministic output and binary lookup"
+        );
+        assert!(
+            registry_ids.windows(2).all(|ids| ids[0] != ids[1]),
+            "registry ids must be unique"
+        );
+    }
+
+    #[test]
+    fn registry_repeated_calls_are_stable() {
+        let first_rules = RULE_REGISTRY.rules();
+        let second_rules = RULE_REGISTRY.rules();
+
+        assert_eq!(first_rules, second_rules);
+        assert_eq!(first_rules.as_ptr(), second_rules.as_ptr());
+        assert_eq!(
+            RULE_REGISTRY.metadata("SKILL030"),
+            RULE_REGISTRY.metadata("SKILL030")
+        );
+    }
+
+    #[test]
     fn metadata_required_fields_are_present() {
-        for metadata in RULE_METADATA {
+        for metadata in RULE_REGISTRY.rules() {
             assert!(!metadata.id.as_str().is_empty(), "missing id");
             assert!(
                 !metadata.title.is_empty(),
@@ -360,6 +426,13 @@ mod tests {
             rule_metadata("SKILL030").map(|metadata| metadata.title),
             Some("Duplicate skill name")
         );
+        assert_eq!(
+            RULE_REGISTRY
+                .metadata("SKILL030")
+                .map(|metadata| metadata.title),
+            Some("Duplicate skill name")
+        );
         assert!(rule_metadata("SEC001").is_none());
+        assert!(RULE_REGISTRY.metadata("SEC001").is_none());
     }
 }
