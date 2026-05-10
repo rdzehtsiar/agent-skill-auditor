@@ -172,7 +172,117 @@ mod tests {
     use std::path::Path;
 
     #[test]
-    fn parses_frontmatter_markdown_and_declared_capabilities() {
+    fn extracts_name_and_description_from_frontmatter() {
+        let content = r#"---
+name: frontmatter-name
+description: Frontmatter description.
+---
+
+# Heading Fallback Not Used
+
+Paragraph fallback not used.
+"#;
+
+        let manifest = parse(content);
+
+        assert_eq!(manifest.name.as_deref(), Some("frontmatter-name"));
+        assert_eq!(
+            manifest.description.as_deref(),
+            Some("Frontmatter description.")
+        );
+        assert_eq!(
+            manifest.frontmatter.keys().cloned().collect::<Vec<_>>(),
+            vec!["description", "name"]
+        );
+        assert_eq!(
+            manifest.body,
+            "\n# Heading Fallback Not Used\n\nParagraph fallback not used.\n"
+        );
+    }
+
+    #[test]
+    fn falls_back_to_heading_and_first_paragraph_without_frontmatter() {
+        let content = r#"# Fallback Name
+
+Fallback description paragraph.
+
+Second paragraph.
+"#;
+
+        let manifest = parse(content);
+
+        assert_eq!(manifest.name.as_deref(), Some("Fallback Name"));
+        assert_eq!(
+            manifest.description.as_deref(),
+            Some("Fallback description paragraph.")
+        );
+        assert!(manifest.frontmatter.is_empty());
+    }
+
+    #[test]
+    fn extracts_headings_from_multiple_heading_levels_in_document_order() {
+        let content = r#"# Primary
+
+## Secondary
+
+### Tertiary
+
+###### Deep
+"#;
+
+        let manifest = parse(content);
+
+        assert_eq!(
+            manifest.headings,
+            vec!["Primary", "Secondary", "Tertiary", "Deep"]
+        );
+        assert_eq!(manifest.name.as_deref(), Some("Primary"));
+    }
+
+    #[test]
+    fn extracts_markdown_links_without_filtering_targets() {
+        let content = r#"---
+name: link-fixture
+description: Link fixture.
+---
+
+# Links
+
+Use [relative](references/guide.md), [absolute](https://example.test/guide),
+[mail](mailto:security@example.test), and [anchor](#links).
+"#;
+
+        let manifest = parse(content);
+
+        assert_eq!(
+            link_targets(&manifest),
+            vec![
+                "references/guide.md",
+                "https://example.test/guide",
+                "mailto:security@example.test",
+                "#links",
+            ]
+        );
+        assert!(manifest
+            .links
+            .iter()
+            .all(|reference| reference.line.is_none() && reference.exists.is_none()));
+    }
+
+    #[test]
+    fn extracts_inline_code_in_document_order() {
+        let content = r#"# Inline Code
+
+Run `first`, inspect `second`, then record `third`.
+"#;
+
+        let manifest = parse(content);
+
+        assert_eq!(manifest.inline_code, vec!["first", "second", "third"]);
+    }
+
+    #[test]
+    fn extracts_fenced_code_blocks_with_language_and_content() {
         let content = r#"---
 name: parser-fixture
 description: Parser fixture description.
@@ -192,8 +302,7 @@ echo parser
 ```
 "#;
 
-        let manifest =
-            parse_skill_manifest(Path::new("SKILL.md"), content).expect("parse manifest");
+        let manifest = parse(content);
 
         assert_eq!(manifest.name.as_deref(), Some("parser-fixture"));
         assert_eq!(
@@ -218,23 +327,89 @@ echo parser
     }
 
     #[test]
-    fn falls_back_to_heading_and_first_paragraph_without_frontmatter() {
-        let content = r#"# Fallback Name
+    fn extracts_unlabeled_and_indented_code_blocks_without_language() {
+        let content = "# Code Blocks\n\n```\nunlabeled\n```\n\n    indented\n";
 
-Fallback description paragraph.
+        let manifest = parse(content);
 
-Second paragraph.
+        assert_eq!(
+            manifest
+                .code_blocks
+                .iter()
+                .map(|block| (
+                    block.language.as_deref(),
+                    block.content.as_str(),
+                    block.line
+                ))
+                .collect::<Vec<_>>(),
+            vec![(None, "unlabeled\n", None), (None, "indented\n", None),]
+        );
+    }
+
+    #[test]
+    fn extracts_declared_tools_and_permissions_from_sequences() {
+        let content = r#"---
+name: sequence-capabilities
+description: Sequence capabilities.
+tools:
+  - shell
+  - git
+  - ""
+permissions:
+  - read-files
+  - write-files
+---
+
+# Sequence Capabilities
 "#;
 
-        let manifest =
-            parse_skill_manifest(Path::new("SKILL.md"), content).expect("parse manifest");
+        let manifest = parse(content);
 
-        assert_eq!(manifest.name.as_deref(), Some("Fallback Name"));
+        assert_eq!(manifest.declared_tools, vec!["shell", "git"]);
         assert_eq!(
-            manifest.description.as_deref(),
-            Some("Fallback description paragraph.")
+            manifest.declared_permissions,
+            vec!["read-files", "write-files"]
         );
-        assert!(manifest.frontmatter.is_empty());
+    }
+
+    #[test]
+    fn extracts_declared_tools_and_permissions_from_scalar_strings() {
+        let content = r#"---
+name: scalar-capabilities
+description: Scalar capabilities.
+tools: shell
+permissions: read-files
+---
+
+# Scalar Capabilities
+"#;
+
+        let manifest = parse(content);
+
+        assert_eq!(manifest.declared_tools, vec!["shell"]);
+        assert_eq!(manifest.declared_permissions, vec!["read-files"]);
+    }
+
+    #[test]
+    fn ignores_non_string_and_empty_declared_capability_values() {
+        let content = r#"---
+name: ignored-capabilities
+description: Ignored capabilities.
+tools:
+  - shell
+  - 42
+  - " "
+permissions:
+  nested: value
+---
+
+# Ignored Capabilities
+"#;
+
+        let manifest = parse(content);
+
+        assert_eq!(manifest.declared_tools, vec!["shell"]);
+        assert!(manifest.declared_permissions.is_empty());
     }
 
     #[test]
@@ -245,8 +420,7 @@ name: ignored-without-closing-delimiter
 # Body Heading
 "#;
 
-        let manifest =
-            parse_skill_manifest(Path::new("SKILL.md"), content).expect("parse manifest");
+        let manifest = parse(content);
 
         assert!(manifest.frontmatter.is_empty());
         assert_eq!(manifest.name.as_deref(), Some("Body Heading"));
@@ -270,5 +444,69 @@ name: [unterminated
 
         assert!(matches!(error, AuditError::Frontmatter { .. }));
         assert!(error.to_string().contains("failed to parse frontmatter"));
+    }
+
+    #[test]
+    fn parsing_same_manifest_twice_produces_same_output() {
+        let content = r#"---
+name: deterministic-parser
+description: Deterministic parser fixture.
+permissions:
+  - read-files
+tools:
+  - shell
+---
+
+# Deterministic Parser
+
+Read [guide](references/guide.md) and run `agent-audit`.
+
+```bash
+agent-audit scan .
+```
+"#;
+
+        let first = parse(content);
+        let second = parse(content);
+
+        assert_eq!(first.name, second.name);
+        assert_eq!(first.description, second.description);
+        assert_eq!(
+            first.frontmatter.keys().collect::<Vec<_>>(),
+            second.frontmatter.keys().collect::<Vec<_>>()
+        );
+        assert_eq!(first.body, second.body);
+        assert_eq!(first.headings, second.headings);
+        assert_eq!(link_targets(&first), link_targets(&second));
+        assert_eq!(first.inline_code, second.inline_code);
+        assert_eq!(code_block_summaries(&first), code_block_summaries(&second));
+        assert_eq!(first.declared_tools, second.declared_tools);
+        assert_eq!(first.declared_permissions, second.declared_permissions);
+    }
+
+    fn parse(content: &str) -> SkillManifest {
+        parse_skill_manifest(Path::new("SKILL.md"), content).expect("parse manifest")
+    }
+
+    fn link_targets(manifest: &SkillManifest) -> Vec<&str> {
+        manifest
+            .links
+            .iter()
+            .map(|reference| reference.target.as_str())
+            .collect()
+    }
+
+    fn code_block_summaries(manifest: &SkillManifest) -> Vec<(Option<&str>, &str, Option<usize>)> {
+        manifest
+            .code_blocks
+            .iter()
+            .map(|block| {
+                (
+                    block.language.as_deref(),
+                    block.content.as_str(),
+                    block.line,
+                )
+            })
+            .collect()
     }
 }
