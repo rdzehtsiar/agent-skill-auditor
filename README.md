@@ -12,7 +12,7 @@ It is not a generic Markdown or YAML linter. It is intended for maintainers, sec
 
 Agent Skill Auditor currently provides a local CLI scanner for skill packages.
 
-The implemented CLI can discover `SKILL.md` manifests, parse frontmatter and Markdown content, extract normalized package metadata, evaluate initial structural rules, load explicit audit config, apply documented suppressions, and render summary, JSON, SARIF, and HTML reports. It runs offline and does not execute skill scripts.
+The implemented CLI can discover `SKILL.md` manifests, parse frontmatter and Markdown content, extract normalized package metadata, evaluate metadata-backed deterministic rules, load explicit audit config, apply documented suppressions, and render summary, JSON, SARIF, and HTML reports. It runs offline and does not execute skill scripts.
 
 Static script security analysis, host compatibility matrices, policy packs, and broader ecosystem reporting are planned work.
 
@@ -107,7 +107,7 @@ cargo run -q -p agent-audit-cli -- scan fixtures/spec/basic --format html > repo
 
 ## Current Checks
 
-The Phase 1 scanner currently supports:
+The current scanner supports:
 
 - Recursive `SKILL.md` discovery.
 - Frontmatter and Markdown parsing.
@@ -115,7 +115,8 @@ The Phase 1 scanner currently supports:
 - Markdown heading, link, inline code, and fenced code block extraction.
 - Relative file reference extraction.
 - Skill artifact inventory for `scripts/`, `references/`, and `assets/`.
-- Deterministic structural findings for:
+- A metadata-backed deterministic rule engine for initial structural, spec, and compatibility checks.
+- Deterministic findings for:
   - `SKILL001`: missing required name.
   - `SKILL002`: missing required description.
   - `SKILL010`: broken relative reference.
@@ -124,7 +125,16 @@ The Phase 1 scanner currently supports:
   - `SKILL040`: unknown frontmatter field.
   - `SKILL041`: malformed frontmatter.
 
+Rule metadata defines each rule's ID, status, severity, category, explanation, remediation, and safe suppression guidance. Rule status is explicit: `active` rules may emit findings and may be suppressed, while `reserved` rules document planned rule IDs and are not emitted or accepted in suppression config. See [Rule Documentation](./docs/rules/README.md) for the generated rule registry.
+
 `SKILL050` is reserved for future host-specific metadata validation in Phase 3 host profiles. In the current scanner, host-specific or otherwise unknown frontmatter is still reported as `SKILL040`, and `SKILL050` is not emitted or accepted in suppression config.
+
+Configuration is documented in [Config](./docs/config.md). Important current behavior:
+
+- Config loading is explicit with `--config PATH`; `.agent-audit.yaml` is the preferred filename, but it is not auto-discovered.
+- `fail_on` uses exact severity matching, not threshold matching. For example, `fail_on: [medium]` fails on unsuppressed `medium` findings only, not `high` or `critical`.
+- `profiles` values are validated, but host compatibility behavior is not enabled yet.
+- Suppressions require active rule IDs and exact normalized paths.
 
 ## Security Model
 
@@ -187,7 +197,7 @@ Future compatibility findings should explain whether a package is likely to pass
 | Host compatibility profiles | Planned. |
 | Static script security analyzers | Planned. |
 | Rule documentation generation | Implemented from rule metadata. |
-| Policy and suppression configuration | Implemented for explicit config loading, fail thresholds, and path-scoped suppressions. |
+| Policy and suppression configuration | Implemented for explicit config loading, exact fail-on severity matching, and path-scoped suppressions. |
 
 ## License
 
