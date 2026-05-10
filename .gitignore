@@ -1,4 +1,5 @@
 target/
+lcov.info
 *.tmp
 *.log
 .env
