@@ -10,6 +10,9 @@ use crate::model::{
 };
 use crate::parse::parse_skill_manifest;
 
+/// Portable frontmatter fields accepted by the initial structural scanner.
+const ACCEPTED_FRONTMATTER_FIELDS: &[&str] = &["name", "description", "tools", "permissions"];
+
 #[derive(Debug, Clone)]
 pub struct ScanOptions {
     pub max_manifest_bytes: u64,
@@ -75,6 +78,13 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
                 "Very large manifests are harder to review and may be rejected or truncated by hosts.",
                 "Move long reference material into `references/` and link to it from SKILL.md.",
             ));
+        }
+        for field in manifest
+            .frontmatter
+            .keys()
+            .filter(|field| !ACCEPTED_FRONTMATTER_FIELDS.contains(&field.as_str()))
+        {
+            findings.push(unknown_frontmatter_field_finding(field, &manifest_display));
         }
         for reference in graph
             .references
@@ -290,6 +300,25 @@ fn structural_finding(
         suppression: format!(
             "Suppress `{rule_id}` only with a documented reason in the project audit config."
         ),
+    }
+}
+
+fn unknown_frontmatter_field_finding(field: &str, path: &str) -> SkillFinding {
+    SkillFinding {
+        rule_id: "SKILL040".to_owned(),
+        severity: Severity::Low,
+        category: FindingCategory::Compatibility,
+        title: "Unknown frontmatter field".to_owned(),
+        message: format!("The manifest declares unsupported frontmatter field `{field}`."),
+        location: FindingLocation {
+            path: path.to_owned(),
+            line: None,
+        },
+        rationale: "Unknown fields may be ignored, rejected, or interpreted differently by hosts, reducing portability and reviewability.".to_owned(),
+        remediation: "Remove the field, move the information into the Markdown body, or wait for documented host profile support.".to_owned(),
+        suppression:
+            "Suppress `SKILL040` only with a documented reason in the project audit config."
+                .to_owned(),
     }
 }
 
@@ -518,6 +547,115 @@ This manifest is valid but deliberately longer than the low test threshold.
                 remediation: "Move long reference material into `references/` and link to it from SKILL.md.",
             },
         );
+    }
+
+    #[test]
+    fn reports_skill040_unknown_frontmatter_field_with_complete_finding_metadata() {
+        let workspace = TestWorkspace::new("scan-skill040");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: unknown-frontmatter
+description: Unknown frontmatter fixture.
+experimental_host_hint: codex-only
+---
+
+# Unknown Frontmatter
+"#,
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_eq!(report.findings.len(), 1);
+        assert_eq!(report.summary.invalid_manifest_count, 0);
+        assert_eq!(report.summary.broken_reference_count, 0);
+
+        let finding = &report.findings[0];
+        assert_eq!(finding.rule_id, "SKILL040");
+        assert_eq!(finding.severity, Severity::Low);
+        assert_eq!(finding.category, FindingCategory::Compatibility);
+        assert_eq!(finding.title, "Unknown frontmatter field");
+        assert_eq!(
+            finding.message,
+            "The manifest declares unsupported frontmatter field `experimental_host_hint`."
+        );
+        assert_eq!(finding.location.path, "SKILL.md");
+        assert_eq!(finding.location.line, None);
+        assert_eq!(
+            finding.rationale,
+            "Unknown fields may be ignored, rejected, or interpreted differently by hosts, reducing portability and reviewability."
+        );
+        assert_eq!(
+            finding.remediation,
+            "Remove the field, move the information into the Markdown body, or wait for documented host profile support."
+        );
+        assert_eq!(
+            finding.suppression,
+            "Suppress `SKILL040` only with a documented reason in the project audit config."
+        );
+    }
+
+    #[test]
+    fn accepted_frontmatter_fields_do_not_report_skill040() {
+        let workspace = TestWorkspace::new("scan-skill040-accepted-fields");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: accepted-frontmatter
+description: Accepted frontmatter fixture.
+tools:
+  - shell
+permissions:
+  - filesystem-read
+---
+
+# Accepted Frontmatter
+"#,
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert!(report.findings.is_empty());
+        assert_eq!(report.summary.finding_count, 0);
+    }
+
+    #[test]
+    fn unknown_frontmatter_fields_are_reported_in_stable_order() {
+        let workspace = TestWorkspace::new("scan-skill040-stable-order");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: stable-unknown-frontmatter
+description: Stable unknown frontmatter fixture.
+zeta_hint: last
+alpha_hint: first
+middle_hint: middle
+---
+
+# Stable Unknown Frontmatter
+"#,
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_eq!(
+            report
+                .findings
+                .iter()
+                .map(|finding| finding.message.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "The manifest declares unsupported frontmatter field `alpha_hint`.",
+                "The manifest declares unsupported frontmatter field `middle_hint`.",
+                "The manifest declares unsupported frontmatter field `zeta_hint`.",
+            ]
+        );
+        assert!(report
+            .findings
+            .iter()
+            .all(|finding| finding.rule_id == "SKILL040"));
+        assert_eq!(report.summary.invalid_manifest_count, 0);
+        assert_eq!(report.summary.broken_reference_count, 0);
     }
 
     #[test]
