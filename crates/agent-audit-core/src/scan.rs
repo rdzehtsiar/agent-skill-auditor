@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::discovery::discover_skill_manifests;
@@ -108,6 +109,8 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
             graph,
         });
     }
+
+    findings.extend(duplicate_skill_name_findings(&packages));
 
     findings.sort_by(|left, right| {
         left.location
@@ -301,6 +304,60 @@ fn structural_finding(
             "Suppress `{rule_id}` only with a documented reason in the project audit config."
         ),
     }
+}
+
+fn duplicate_skill_name_findings(packages: &[SkillPackage]) -> Vec<SkillFinding> {
+    let mut manifest_paths_by_name = BTreeMap::<&str, Vec<&str>>::new();
+
+    for package in packages {
+        if let Some(name) = package.manifest.name.as_deref() {
+            manifest_paths_by_name
+                .entry(name)
+                .or_default()
+                .push(package.manifest_path.as_str());
+        }
+    }
+
+    let mut findings = Vec::new();
+    for (name, manifest_paths) in manifest_paths_by_name
+        .iter_mut()
+        .filter(|(_, manifest_paths)| manifest_paths.len() > 1)
+    {
+        manifest_paths.sort_unstable();
+
+        for manifest_path in manifest_paths.iter().copied() {
+            let other_paths = manifest_paths
+                .iter()
+                .copied()
+                .filter(|other_path| *other_path != manifest_path)
+                .map(|other_path| format!("`{other_path}`"))
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            findings.push(SkillFinding {
+                rule_id: "SKILL030".to_owned(),
+                severity: Severity::Low,
+                category: FindingCategory::Compatibility,
+                title: "Duplicate skill name".to_owned(),
+                message: format!(
+                    "The skill name `{name}` is also declared by other manifest path(s): {other_paths}."
+                ),
+                location: FindingLocation {
+                    path: manifest_path.to_owned(),
+                    line: None,
+                },
+                rationale: "Duplicate names make inventory, policy, host routing, and review ambiguous."
+                    .to_owned(),
+                remediation:
+                    "Rename packages so every scanned skill has a unique stable name.".to_owned(),
+                suppression:
+                    "Suppress `SKILL030` only with a documented reason in the project audit config."
+                        .to_owned(),
+            });
+        }
+    }
+
+    findings
 }
 
 fn unknown_frontmatter_field_finding(field: &str, path: &str) -> SkillFinding {
@@ -547,6 +604,180 @@ This manifest is valid but deliberately longer than the low test threshold.
                 remediation: "Move long reference material into `references/` and link to it from SKILL.md.",
             },
         );
+    }
+
+    #[test]
+    fn reports_skill030_duplicate_names_with_complete_finding_metadata() {
+        let workspace = TestWorkspace::new("scan-skill030");
+        workspace.write_file(
+            "alpha/SKILL.md",
+            r#"---
+name: shared-name
+description: Alpha duplicate fixture.
+---
+
+# Alpha
+"#,
+        );
+        workspace.write_file(
+            "beta/SKILL.md",
+            r#"---
+name: shared-name
+description: Beta duplicate fixture.
+---
+
+# Beta
+"#,
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_eq!(report.findings.len(), 2);
+        assert_eq!(report.summary.package_count, 2);
+        assert_eq!(report.summary.finding_count, 2);
+        assert_eq!(report.summary.invalid_manifest_count, 0);
+        assert_eq!(report.summary.broken_reference_count, 0);
+        assert_duplicate_name_finding(
+            &report.findings[0],
+            "shared-name",
+            "alpha/SKILL.md",
+            &["beta/SKILL.md"],
+        );
+        assert_duplicate_name_finding(
+            &report.findings[1],
+            "shared-name",
+            "beta/SKILL.md",
+            &["alpha/SKILL.md"],
+        );
+    }
+
+    #[test]
+    fn duplicate_name_findings_are_deterministic_by_package_path() {
+        let workspace = TestWorkspace::new("scan-skill030-order");
+        workspace.write_file(
+            "zeta/SKILL.md",
+            r#"---
+name: shared-name
+description: Zeta duplicate fixture.
+---
+
+# Zeta
+"#,
+        );
+        workspace.write_file(
+            "alpha/SKILL.md",
+            r#"---
+name: shared-name
+description: Alpha duplicate fixture.
+---
+
+# Alpha
+"#,
+        );
+        workspace.write_file(
+            "middle/SKILL.md",
+            r#"---
+name: shared-name
+description: Middle duplicate fixture.
+---
+
+# Middle
+"#,
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_eq!(
+            report
+                .findings
+                .iter()
+                .map(|finding| finding.location.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["alpha/SKILL.md", "middle/SKILL.md", "zeta/SKILL.md"]
+        );
+        assert_duplicate_name_finding(
+            &report.findings[0],
+            "shared-name",
+            "alpha/SKILL.md",
+            &["middle/SKILL.md", "zeta/SKILL.md"],
+        );
+        assert_duplicate_name_finding(
+            &report.findings[1],
+            "shared-name",
+            "middle/SKILL.md",
+            &["alpha/SKILL.md", "zeta/SKILL.md"],
+        );
+        assert_duplicate_name_finding(
+            &report.findings[2],
+            "shared-name",
+            "zeta/SKILL.md",
+            &["alpha/SKILL.md", "middle/SKILL.md"],
+        );
+    }
+
+    #[test]
+    fn missing_name_packages_do_not_participate_in_duplicate_name_detection() {
+        let workspace = TestWorkspace::new("scan-skill030-missing-name");
+        workspace.write_file(
+            "alpha/SKILL.md",
+            r#"---
+description: Missing name alpha fixture.
+---
+
+No heading fallback.
+"#,
+        );
+        workspace.write_file(
+            "beta/SKILL.md",
+            r#"---
+description: Missing name beta fixture.
+---
+
+No heading fallback.
+"#,
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_eq!(report.summary.package_count, 2);
+        assert_eq!(report.summary.finding_count, 2);
+        assert_eq!(report.summary.invalid_manifest_count, 2);
+        assert_eq!(report.summary.broken_reference_count, 0);
+        assert!(report
+            .findings
+            .iter()
+            .all(|finding| finding.rule_id == "SKILL001"));
+    }
+
+    #[test]
+    fn duplicate_name_detection_is_case_sensitive() {
+        let workspace = TestWorkspace::new("scan-skill030-case-sensitive");
+        workspace.write_file(
+            "upper/SKILL.md",
+            r#"---
+name: Example
+description: Uppercase fixture.
+---
+
+# Upper
+"#,
+        );
+        workspace.write_file(
+            "lower/SKILL.md",
+            r#"---
+name: example
+description: Lowercase fixture.
+---
+
+# Lower
+"#,
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_eq!(report.summary.package_count, 2);
+        assert_eq!(report.summary.finding_count, 0);
+        assert!(report.findings.is_empty());
     }
 
     #[test]
@@ -988,6 +1219,39 @@ description: Package root artifact fixture.
     }
 
     #[test]
+    fn scan_phase1_duplicate_names_fixture_reports_skill030() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/spec/phase1/duplicate-names");
+
+        let report = scan_path(&fixture, &ScanOptions::default()).expect("scan path");
+
+        assert_eq!(report.summary.package_count, 2);
+        assert_eq!(report.summary.finding_count, 2);
+        assert_eq!(report.summary.invalid_manifest_count, 0);
+        assert_eq!(report.summary.broken_reference_count, 0);
+        assert_eq!(
+            report
+                .findings
+                .iter()
+                .map(|finding| finding.rule_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["SKILL030", "SKILL030"]
+        );
+        assert_duplicate_name_finding(
+            &report.findings[0],
+            "phase1-duplicate-name",
+            "alpha/SKILL.md",
+            &["beta/SKILL.md"],
+        );
+        assert_duplicate_name_finding(
+            &report.findings[1],
+            "phase1-duplicate-name",
+            "beta/SKILL.md",
+            &["alpha/SKILL.md"],
+        );
+    }
+
+    #[test]
     fn scan_ignores_top_level_artifact_file() {
         let workspace = TestWorkspace::new("scan-artifact-file");
         workspace.write_file(
@@ -1397,6 +1661,44 @@ Read [guidance](references/guidance.md).
         path: &'static str,
         rationale: &'static str,
         remediation: &'static str,
+    }
+
+    fn assert_duplicate_name_finding(
+        finding: &SkillFinding,
+        name: &str,
+        path: &str,
+        other_paths: &[&str],
+    ) {
+        let other_paths = other_paths
+            .iter()
+            .map(|other_path| format!("`{other_path}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        assert_eq!(finding.rule_id, "SKILL030");
+        assert_eq!(finding.severity, Severity::Low);
+        assert_eq!(finding.category, FindingCategory::Compatibility);
+        assert_eq!(finding.title, "Duplicate skill name");
+        assert_eq!(
+            finding.message,
+            format!(
+                "The skill name `{name}` is also declared by other manifest path(s): {other_paths}."
+            )
+        );
+        assert_eq!(finding.location.path, path);
+        assert_eq!(finding.location.line, None);
+        assert_eq!(
+            finding.rationale,
+            "Duplicate names make inventory, policy, host routing, and review ambiguous."
+        );
+        assert_eq!(
+            finding.remediation,
+            "Rename packages so every scanned skill has a unique stable name."
+        );
+        assert_eq!(
+            finding.suppression,
+            "Suppress `SKILL030` only with a documented reason in the project audit config."
+        );
     }
 
     fn assert_finding(finding: &SkillFinding, expected: ExpectedFinding) {
