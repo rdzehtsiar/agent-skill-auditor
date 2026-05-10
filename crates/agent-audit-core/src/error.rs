@@ -20,6 +20,18 @@ pub enum AuditError {
         #[source]
         source: std::io::Error,
     },
+    #[error("failed to read directory {path}: {source}")]
+    ReadDir {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("failed to read metadata for {path}: {source}")]
+    Metadata {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
     #[error("failed to parse frontmatter in {path}: {source}")]
     Frontmatter {
         path: PathBuf,

@@ -5,8 +5,8 @@ use std::path::Path;
 use crate::discovery::discover_skill_manifests;
 use crate::error::{AuditError, AuditResult};
 use crate::model::{
-    FindingCategory, FindingLocation, ScanReport, ScanSummary, Severity, SkillFinding, SkillGraph,
-    SkillPackage, SkillReference,
+    FindingCategory, FindingLocation, ScanReport, ScanSummary, Severity, SkillArtifactKind,
+    SkillFile, SkillFileKind, SkillFinding, SkillGraph, SkillPackage, SkillReference,
 };
 use crate::parse::parse_skill_manifest;
 
@@ -39,6 +39,7 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         let mut graph = SkillGraph {
             references: resolve_references(skill_root, &manifest.links),
             artifacts: discover_artifacts(skill_root),
+            files: inventory_artifact_files(skill_root)?,
         };
         graph
             .references
@@ -152,9 +153,111 @@ fn discover_artifacts(skill_root: &Path) -> Vec<String> {
     ["scripts", "references", "assets"]
         .iter()
         .map(|name| skill_root.join(name))
-        .filter(|path| path.exists())
+        .filter(|path| {
+            std::fs::symlink_metadata(path)
+                .map(|metadata| metadata.file_type().is_dir())
+                .unwrap_or(false)
+        })
         .map(|path| display_path(skill_root, &path))
         .collect()
+}
+
+fn inventory_artifact_files(skill_root: &Path) -> AuditResult<Vec<SkillFile>> {
+    let mut files = Vec::new();
+
+    for (name, artifact) in [
+        ("scripts", SkillArtifactKind::Scripts),
+        ("references", SkillArtifactKind::References),
+        ("assets", SkillArtifactKind::Assets),
+    ] {
+        let artifact_root = skill_root.join(name);
+        let metadata =
+            match std::fs::symlink_metadata(&artifact_root).map_err(|source| AuditError::Metadata {
+                path: artifact_root.clone(),
+                source,
+            }) {
+                Ok(metadata) => metadata,
+                Err(AuditError::Metadata { source, .. })
+                    if source.kind() == std::io::ErrorKind::NotFound =>
+                {
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
+
+        if metadata.is_dir() {
+            inventory_directory(skill_root, &artifact_root, artifact, &mut files)?;
+        }
+    }
+
+    files.sort_by(|left, right| {
+        left.path
+            .cmp(&right.path)
+            .then(left.artifact.cmp(&right.artifact))
+            .then(left.kind.cmp(&right.kind))
+    });
+    Ok(files)
+}
+
+fn inventory_directory(
+    skill_root: &Path,
+    directory: &Path,
+    artifact: SkillArtifactKind,
+    files: &mut Vec<SkillFile>,
+) -> AuditResult<()> {
+    let mut entries = std::fs::read_dir(directory)
+        .map_err(|source| AuditError::ReadDir {
+            path: directory.to_path_buf(),
+            source,
+        })?
+        .map(|entry| {
+            entry.map_err(|source| AuditError::ReadDir {
+                path: directory.to_path_buf(),
+                source,
+            })
+        })
+        .collect::<AuditResult<Vec<_>>>()?;
+
+    entries.sort_by(|left, right| left.path().cmp(&right.path()));
+
+    for entry in entries {
+        let path = entry.path();
+        let metadata = std::fs::symlink_metadata(&path).map_err(|source| AuditError::Metadata {
+            path: path.clone(),
+            source,
+        })?;
+        let kind = file_kind(&metadata);
+        files.push(SkillFile {
+            path: display_path(skill_root, &path),
+            artifact,
+            kind,
+            size_bytes: if kind == SkillFileKind::Directory {
+                0
+            } else {
+                metadata.len()
+            },
+            readonly: metadata.permissions().readonly(),
+        });
+
+        if kind == SkillFileKind::Directory {
+            inventory_directory(skill_root, &path, artifact, files)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn file_kind(metadata: &std::fs::Metadata) -> SkillFileKind {
+    let file_type = metadata.file_type();
+    if file_type.is_symlink() {
+        SkillFileKind::Symlink
+    } else if file_type.is_file() {
+        SkillFileKind::File
+    } else if file_type.is_dir() {
+        SkillFileKind::Directory
+    } else {
+        SkillFileKind::Other
+    }
 }
 
 fn display_path(root: &Path, path: &Path) -> String {
@@ -236,6 +339,17 @@ and [heading](#valid-skill).
             report.packages[0].graph.artifacts,
             vec!["scripts", "references", "assets"]
         );
+        assert_eq!(report.packages[0].graph.files.len(), 1);
+        assert_eq!(
+            report.packages[0].graph.files[0].path,
+            "references/guidance.md"
+        );
+        assert_eq!(
+            report.packages[0].graph.files[0].artifact,
+            SkillArtifactKind::References
+        );
+        assert_eq!(report.packages[0].graph.files[0].kind, SkillFileKind::File);
+        assert_eq!(report.packages[0].graph.files[0].size_bytes, 11);
     }
 
     #[test]
@@ -539,6 +653,96 @@ This second extra line makes the intended `SKILL020` case unambiguous.
     }
 
     #[test]
+    fn scan_inventories_artifact_files_recursively_without_top_level_dirs() {
+        let workspace = TestWorkspace::new("scan-artifact-files");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: artifact-files
+description: Artifact file fixture.
+---
+
+# Artifact Files
+"#,
+        );
+        workspace.write_file("scripts/build.ps1", "Write-Output build\n");
+        workspace.write_file("scripts/nested/run.sh", "echo run\n");
+        workspace.write_file("references/guide.md", "# Guide\n");
+        workspace.create_dir("assets/images");
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+        let files = &report.packages[0].graph.files;
+
+        assert_eq!(
+            files
+                .iter()
+                .map(|file| (
+                    file.path.as_str(),
+                    file.artifact,
+                    file.kind,
+                    file.size_bytes
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    "assets/images",
+                    SkillArtifactKind::Assets,
+                    SkillFileKind::Directory,
+                    0
+                ),
+                (
+                    "references/guide.md",
+                    SkillArtifactKind::References,
+                    SkillFileKind::File,
+                    8
+                ),
+                (
+                    "scripts/build.ps1",
+                    SkillArtifactKind::Scripts,
+                    SkillFileKind::File,
+                    19
+                ),
+                (
+                    "scripts/nested",
+                    SkillArtifactKind::Scripts,
+                    SkillFileKind::Directory,
+                    0
+                ),
+                (
+                    "scripts/nested/run.sh",
+                    SkillArtifactKind::Scripts,
+                    SkillFileKind::File,
+                    9
+                ),
+            ]
+        );
+        assert!(files
+            .iter()
+            .all(|file| !matches!(file.path.as_str(), "scripts" | "references" | "assets")));
+    }
+
+    #[test]
+    fn scan_ignores_top_level_artifact_file() {
+        let workspace = TestWorkspace::new("scan-artifact-file");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: artifact-file
+description: Artifact file fixture.
+---
+
+# Artifact File
+"#,
+        );
+        workspace.write_file("scripts", "not an artifact directory\n");
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert!(report.packages[0].graph.artifacts.is_empty());
+        assert!(report.packages[0].graph.files.is_empty());
+    }
+
+    #[test]
     fn scan_returns_frontmatter_errors_without_panicking() {
         let workspace = TestWorkspace::new("scan-malformed-frontmatter");
         workspace.write_file(
@@ -619,7 +823,8 @@ description: JSON stability fixture.
       },
       "graph": {
         "references": [],
-        "artifacts": []
+        "artifacts": [],
+        "files": []
       }
     }
   ],

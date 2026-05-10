@@ -45,6 +45,33 @@ pub struct SkillManifest {
 pub struct SkillGraph {
     pub references: Vec<SkillReference>,
     pub artifacts: Vec<String>,
+    pub files: Vec<SkillFile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillFile {
+    pub path: String,
+    pub artifact: SkillArtifactKind,
+    pub kind: SkillFileKind,
+    pub size_bytes: u64,
+    pub readonly: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SkillArtifactKind {
+    Scripts,
+    References,
+    Assets,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SkillFileKind {
+    File,
+    Directory,
+    Symlink,
+    Other,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

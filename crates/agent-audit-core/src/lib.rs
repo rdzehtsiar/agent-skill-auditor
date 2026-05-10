@@ -11,7 +11,8 @@ mod test_support;
 pub use discovery::discover_skill_manifests;
 pub use error::{AuditError, AuditResult};
 pub use model::{
-    FindingCategory, FindingLocation, MarkdownCodeBlock, ScanReport, Severity, SkillFinding,
-    SkillGraph, SkillManifest, SkillPackage, SkillReference,
+    FindingCategory, FindingLocation, MarkdownCodeBlock, ScanReport, Severity, SkillArtifactKind,
+    SkillFile, SkillFileKind, SkillFinding, SkillGraph, SkillManifest, SkillPackage,
+    SkillReference,
 };
 pub use scan::{scan_path, ScanOptions};
