@@ -1,11 +1,126 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::error::Error;
+use std::fmt;
+use std::str::FromStr;
 
 use agent_audit_core::{FindingCategory, ScanReport, Severity, SkillFinding, SkillPackage};
 use serde_json::{json, Value};
 
 pub const SUPPORTED_REPORT_FORMATS: &[&str] = &["summary", "json", "sarif", "html"];
+pub const SUPPORTED_REPORT_FORMATS_HELP: &str = "supported: summary, json, sarif, html";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReportFormat {
+    Summary,
+    Json,
+    Sarif,
+    Html,
+}
+
+impl ReportFormat {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Summary => "summary",
+            Self::Json => "json",
+            Self::Sarif => "sarif",
+            Self::Html => "html",
+        }
+    }
+}
+
+impl FromStr for ReportFormat {
+    type Err = UnsupportedReportFormat;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "summary" => Ok(Self::Summary),
+            "json" => Ok(Self::Json),
+            "sarif" => Ok(Self::Sarif),
+            "html" => Ok(Self::Html),
+            _ => Err(UnsupportedReportFormat {
+                value: value.to_owned(),
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnsupportedReportFormat {
+    value: String,
+}
+
+impl UnsupportedReportFormat {
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+}
+
+impl fmt::Display for UnsupportedReportFormat {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "unsupported report format '{}' ({})",
+            self.value, SUPPORTED_REPORT_FORMATS_HELP
+        )
+    }
+}
+
+impl Error for UnsupportedReportFormat {}
+
+pub fn render_report(report: &ScanReport, format: ReportFormat) -> serde_json::Result<String> {
+    let rendered = match format {
+        ReportFormat::Summary => render_summary(report),
+        ReportFormat::Json => render_json(report)?,
+        ReportFormat::Sarif => render_sarif(report)?,
+        ReportFormat::Html => render_html(report),
+    };
+
+    Ok(with_trailing_newline(rendered))
+}
+
+pub fn render_summary(report: &ScanReport) -> String {
+    let mut lines = vec![
+        "Agent Skill Auditor scan summary".to_owned(),
+        format!("Packages: {}", report.summary.package_count),
+        format!("Findings: {}", report.summary.finding_count),
+        format!(
+            "Invalid manifests: {}",
+            report.summary.invalid_manifest_count
+        ),
+        format!(
+            "Broken references: {}",
+            report.summary.broken_reference_count
+        ),
+    ];
+
+    let findings = sorted_findings(&report.findings);
+    if findings.is_empty() {
+        lines.push(String::new());
+        lines.push("No findings.".to_owned());
+    } else {
+        lines.push(String::new());
+        lines.push("Finding details:".to_owned());
+
+        for finding in findings {
+            lines.push(format!(
+                "{} [{}/{}] {}: {}",
+                finding.rule_id,
+                severity_name(finding.severity),
+                category_name(finding.category),
+                location_display(&finding.location.path, finding.location.line),
+                finding.message
+            ));
+        }
+    }
+
+    lines.join("\n")
+}
+
+pub fn render_json(report: &ScanReport) -> serde_json::Result<String> {
+    serde_json::to_string_pretty(report)
+}
 
 pub fn render_html(report: &ScanReport) -> String {
     let mut html = String::from(
@@ -103,6 +218,14 @@ th{background:#f0f4f8}
 
 pub fn render_sarif(report: &ScanReport) -> serde_json::Result<String> {
     serde_json::to_string_pretty(&sarif_value(report))
+}
+
+fn with_trailing_newline(mut rendered: String) -> String {
+    if !rendered.ends_with('\n') {
+        rendered.push('\n');
+    }
+
+    rendered
 }
 
 fn summary_count(label: &str, count: usize) -> String {
@@ -330,6 +453,181 @@ mod tests {
             SUPPORTED_REPORT_FORMATS,
             &["summary", "json", "sarif", "html"]
         );
+    }
+
+    #[test]
+    fn report_format_parses_supported_formats() {
+        assert_eq!("summary".parse::<ReportFormat>(), Ok(ReportFormat::Summary));
+        assert_eq!("json".parse::<ReportFormat>(), Ok(ReportFormat::Json));
+        assert_eq!("sarif".parse::<ReportFormat>(), Ok(ReportFormat::Sarif));
+        assert_eq!("html".parse::<ReportFormat>(), Ok(ReportFormat::Html));
+    }
+
+    #[test]
+    fn report_format_rejects_unsupported_formats_with_supported_list() {
+        let error = "xml"
+            .parse::<ReportFormat>()
+            .expect_err("unsupported format should fail");
+
+        assert_eq!(error.value(), "xml");
+        assert_eq!(
+            error.to_string(),
+            "unsupported report format 'xml' (supported: summary, json, sarif, html)"
+        );
+    }
+
+    #[test]
+    fn report_format_as_str_matches_supported_metadata() {
+        let formats = [
+            ReportFormat::Summary,
+            ReportFormat::Json,
+            ReportFormat::Sarif,
+            ReportFormat::Html,
+        ];
+
+        assert_eq!(
+            formats
+                .into_iter()
+                .map(ReportFormat::as_str)
+                .collect::<Vec<_>>(),
+            SUPPORTED_REPORT_FORMATS
+        );
+    }
+
+    #[test]
+    fn render_report_dispatches_supported_formats_with_trailing_newline() {
+        let report = report_with_packages_and_findings(
+            vec![package(
+                "skills/review",
+                "skills/review/SKILL.md",
+                Some("review-skill"),
+                Some("Reviews agent skills."),
+            )],
+            vec![finding(
+                "SKILL001",
+                Severity::Low,
+                FindingCategory::Spec,
+                "Missing skill name",
+                "The skill manifest does not declare a name.",
+                "skills/review/SKILL.md",
+                Some(1),
+            )],
+        );
+
+        let summary = render_report(&report, ReportFormat::Summary).expect("render summary");
+        let json = render_report(&report, ReportFormat::Json).expect("render JSON");
+        let sarif = render_report(&report, ReportFormat::Sarif).expect("render SARIF");
+        let html = render_report(&report, ReportFormat::Html).expect("render HTML");
+
+        assert!(summary.starts_with("Agent Skill Auditor scan summary\n"));
+        assert!(json.starts_with("{\n"));
+        assert!(sarif.contains("\"version\": \"2.1.0\""));
+        assert!(html.starts_with("<!doctype html>\n"));
+        assert!(summary.ends_with('\n'));
+        assert!(json.ends_with('\n'));
+        assert!(sarif.ends_with('\n'));
+        assert!(html.ends_with('\n'));
+        assert_eq!(html, render_html(&report));
+    }
+
+    #[test]
+    fn summary_output_includes_counts_and_no_finding_state() {
+        let report = report_with_summary(2, 0, 1, 0);
+
+        let summary = render_summary(&report);
+
+        assert_eq!(
+            summary,
+            "Agent Skill Auditor scan summary\nPackages: 2\nFindings: 0\nInvalid manifests: 1\nBroken references: 0\n\nNo findings."
+        );
+    }
+
+    #[test]
+    fn summary_output_orders_findings_and_uses_lowercase_metadata() {
+        let report = report_with_findings(vec![
+            finding(
+                "SKILL020",
+                Severity::Medium,
+                FindingCategory::Spec,
+                "Oversized skill manifest",
+                "Later path.",
+                "zeta/SKILL.md",
+                Some(1),
+            ),
+            finding(
+                "SEC005",
+                Severity::High,
+                FindingCategory::Security,
+                "Use of sudo",
+                "Line two.",
+                "alpha/SKILL.md",
+                Some(2),
+            ),
+            finding(
+                "SKILL010",
+                Severity::Low,
+                FindingCategory::Compatibility,
+                "Broken relative reference",
+                "No line sorts before line.",
+                "alpha/SKILL.md",
+                None,
+            ),
+            finding(
+                "SKILL001",
+                Severity::Info,
+                FindingCategory::Quality,
+                "Missing skill name",
+                "Line one.",
+                "alpha/SKILL.md",
+                Some(1),
+            ),
+        ]);
+
+        let summary = render_summary(&report);
+
+        assert!(summary.contains("Packages: 0"));
+        assert!(summary.contains("Findings: 4"));
+        assert!(summary.contains("Invalid manifests: 0"));
+        assert!(summary.contains("Broken references: 1"));
+        assert_in_order(
+            &summary,
+            &[
+                "SKILL010 [low/compatibility] alpha/SKILL.md: No line sorts before line.",
+                "SKILL001 [info/quality] alpha/SKILL.md:1: Line one.",
+                "SEC005 [high/security] alpha/SKILL.md:2: Line two.",
+                "SKILL020 [medium/spec] zeta/SKILL.md:1: Later path.",
+            ],
+        );
+    }
+
+    #[test]
+    fn json_output_uses_report_renderer() {
+        let report = report_with_packages_and_findings(
+            vec![package(
+                "skills/review",
+                "skills/review/SKILL.md",
+                Some("review-skill"),
+                Some("Reviews agent skills."),
+            )],
+            vec![finding(
+                "SKILL002",
+                Severity::Low,
+                FindingCategory::Spec,
+                "Missing skill description",
+                "The skill manifest does not declare a description.",
+                "skills/review/SKILL.md",
+                Some(2),
+            )],
+        );
+
+        let rendered = render_report(&report, ReportFormat::Json).expect("render JSON");
+        let value: Value = serde_json::from_str(&rendered).expect("parse JSON report");
+
+        assert_eq!(value["summary"]["package_count"], 1);
+        assert_eq!(value["summary"]["finding_count"], 1);
+        assert_eq!(value["packages"][0]["manifest"]["name"], "review-skill");
+        assert_eq!(value["findings"][0]["rule_id"], "SKILL002");
+        assert!(rendered.ends_with('\n'));
     }
 
     #[test]

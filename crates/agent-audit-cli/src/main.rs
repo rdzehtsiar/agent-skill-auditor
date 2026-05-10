@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::io::{self, Write};
 use std::path::PathBuf;
 
 use agent_audit_core::{scan_path, ScanOptions};
-use agent_audit_report::{render_html, render_sarif};
+use agent_audit_report::{
+    render_report, ReportFormat, UnsupportedReportFormat, SUPPORTED_REPORT_FORMATS_HELP,
+};
 use anyhow::Result;
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 
 #[derive(Debug, Parser)]
 #[command(name = "agent-audit")]
@@ -24,16 +27,14 @@ enum Command {
 struct ScanCommand {
     #[arg(default_value = ".")]
     path: PathBuf,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Summary)]
-    format: OutputFormat,
-}
-
-#[derive(Debug, Clone, Copy, ValueEnum)]
-enum OutputFormat {
-    Summary,
-    Json,
-    Sarif,
-    Html,
+    #[arg(
+        long,
+        value_parser = parse_report_format,
+        default_value = "summary",
+        value_name = "FORMAT",
+        help = SUPPORTED_REPORT_FORMATS_HELP
+    )]
+    format: ReportFormat,
 }
 
 fn main() -> Result<()> {
@@ -45,51 +46,49 @@ fn main() -> Result<()> {
 }
 
 fn run_scan(command: ScanCommand) -> Result<()> {
+    let stdout = io::stdout();
+    let mut writer = stdout.lock();
+
+    run_scan_with_writer(command, &mut writer)
+}
+
+fn run_scan_with_writer(command: ScanCommand, writer: &mut impl Write) -> Result<()> {
     let report = scan_path(&command.path, &ScanOptions::default())?;
+    let rendered = render_report(&report, command.format)?;
 
-    match command.format {
-        OutputFormat::Summary => {
-            println!("Agent Skill Auditor scan summary");
-            println!("Packages: {}", report.summary.package_count);
-            println!("Findings: {}", report.summary.finding_count);
-            println!(
-                "Invalid manifests: {}",
-                report.summary.invalid_manifest_count
-            );
-            println!(
-                "Broken references: {}",
-                report.summary.broken_reference_count
-            );
-
-            for finding in &report.findings {
-                println!(
-                    "{} {:?} {}: {}",
-                    finding.rule_id, finding.severity, finding.location.path, finding.message
-                );
-            }
-        }
-        OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&report)?);
-        }
-        OutputFormat::Sarif => {
-            println!("{}", render_sarif(&report)?);
-        }
-        OutputFormat::Html => {
-            println!("{}", render_html(&report));
-        }
-    }
+    writer.write_all(rendered.as_bytes())?;
 
     Ok(())
+}
+
+fn parse_report_format(value: &str) -> Result<ReportFormat, UnsupportedReportFormat> {
+    value.parse()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::CommandFactory;
     use std::fs;
     use std::path::Path;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     static NEXT_WORKSPACE_ID: AtomicUsize = AtomicUsize::new(0);
+
+    #[test]
+    fn scan_help_lists_supported_report_formats() {
+        let mut command = Cli::command();
+        let help = command
+            .find_subcommand_mut("scan")
+            .expect("scan subcommand should be registered")
+            .render_long_help()
+            .to_string();
+
+        assert!(help.contains("summary"));
+        assert!(help.contains("json"));
+        assert!(help.contains("sarif"));
+        assert!(help.contains("html"));
+    }
 
     #[test]
     fn parses_default_scan_command() {
@@ -98,7 +97,7 @@ mod tests {
         match cli.command {
             Command::Scan(command) => {
                 assert_eq!(command.path, PathBuf::from("."));
-                assert!(matches!(command.format, OutputFormat::Summary));
+                assert_eq!(command.format, ReportFormat::Summary);
             }
         }
     }
@@ -116,7 +115,7 @@ mod tests {
         match cli.command {
             Command::Scan(command) => {
                 assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
-                assert!(matches!(command.format, OutputFormat::Json));
+                assert_eq!(command.format, ReportFormat::Json);
             }
         }
     }
@@ -134,7 +133,7 @@ mod tests {
         match cli.command {
             Command::Scan(command) => {
                 assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
-                assert!(matches!(command.format, OutputFormat::Sarif));
+                assert_eq!(command.format, ReportFormat::Sarif);
             }
         }
     }
@@ -152,9 +151,26 @@ mod tests {
         match cli.command {
             Command::Scan(command) => {
                 assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
-                assert!(matches!(command.format, OutputFormat::Html));
+                assert_eq!(command.format, ReportFormat::Html);
             }
         }
+    }
+
+    #[test]
+    fn rejects_unsupported_scan_format_with_clear_message() {
+        let error = Cli::try_parse_from([
+            "agent-audit",
+            "scan",
+            "fixtures/spec/basic",
+            "--format",
+            "xml",
+        ])
+        .expect_err("unsupported format should fail");
+
+        let message = error.to_string();
+
+        assert!(message.contains("unsupported report format 'xml'"));
+        assert!(message.contains("supported: summary, json, sarif, html"));
     }
 
     #[test]
@@ -171,12 +187,22 @@ description: Summary output fixture.
 "#,
         );
 
-        let result = run_scan(ScanCommand {
-            path: workspace.root.clone(),
-            format: OutputFormat::Summary,
-        });
+        workspace.write_file("missing-reference.md", "# Present\n");
+        workspace.write_file(
+            "references/guide.md",
+            "# Guide\n\nSee [missing](../not-found.md).\n",
+        );
 
-        assert!(result.is_ok());
+        let output = run_scan_output(ScanCommand {
+            path: workspace.root.clone(),
+            format: ReportFormat::Summary,
+        })
+        .expect("run summary scan");
+
+        assert!(output.starts_with("Agent Skill Auditor scan summary\n"));
+        assert!(output.contains("Packages: 1\n"));
+        assert!(output.contains("Findings: "));
+        assert!(output.ends_with('\n'));
     }
 
     #[test]
@@ -193,12 +219,17 @@ description: JSON output fixture.
 "#,
         );
 
-        let result = run_scan(ScanCommand {
+        let output = run_scan_output(ScanCommand {
             path: workspace.root.clone(),
-            format: OutputFormat::Json,
-        });
+            format: ReportFormat::Json,
+        })
+        .expect("run JSON scan");
 
-        assert!(result.is_ok());
+        assert!(output.starts_with("{\n"));
+        assert!(output.contains("\"packages\""));
+        assert!(output.contains("\"summary\""));
+        assert!(output.contains("\"json-output\""));
+        assert!(output.ends_with('\n'));
     }
 
     #[test]
@@ -215,12 +246,16 @@ description: SARIF output fixture.
 "#,
         );
 
-        let result = run_scan(ScanCommand {
+        let output = run_scan_output(ScanCommand {
             path: workspace.root.clone(),
-            format: OutputFormat::Sarif,
-        });
+            format: ReportFormat::Sarif,
+        })
+        .expect("run SARIF scan");
 
-        assert!(result.is_ok());
+        assert!(output.starts_with("{\n"));
+        assert!(output.contains("\"version\": \"2.1.0\""));
+        assert!(output.contains("\"Agent Skill Auditor\""));
+        assert!(output.ends_with('\n'));
     }
 
     #[test]
@@ -237,12 +272,16 @@ description: HTML output fixture.
 "#,
         );
 
-        let result = run_scan(ScanCommand {
+        let output = run_scan_output(ScanCommand {
             path: workspace.root.clone(),
-            format: OutputFormat::Html,
-        });
+            format: ReportFormat::Html,
+        })
+        .expect("run HTML scan");
 
-        assert!(result.is_ok());
+        assert!(output.starts_with("<!doctype html>\n"));
+        assert!(output.contains("<h1>Agent Skill Auditor Report</h1>"));
+        assert!(output.contains("html-output"));
+        assert!(output.ends_with('\n'));
     }
 
     #[test]
@@ -258,12 +297,49 @@ name: [unterminated
 "#,
         );
 
-        let result = run_scan(ScanCommand {
-            path: workspace.root.clone(),
-            format: OutputFormat::Summary,
-        });
+        let result = run_scan_with_writer(
+            ScanCommand {
+                path: workspace.root.clone(),
+                format: ReportFormat::Summary,
+            },
+            &mut Vec::new(),
+        );
 
         assert!(result.is_err());
+    }
+
+    fn run_scan_output(command: ScanCommand) -> Result<String> {
+        let mut output = Vec::new();
+
+        run_scan_with_writer(command, &mut output)?;
+
+        Ok(String::from_utf8(output).expect("scan output should be UTF-8"))
+    }
+
+    #[test]
+    fn run_scan_with_writer_writes_summary_findings_from_report_renderer() {
+        let workspace = CliTestWorkspace::new("summary-finding-output");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+description: Missing name fixture.
+---
+
+This manifest intentionally starts with a paragraph so the scanner cannot derive a heading fallback name.
+"#,
+        );
+
+        let output = run_scan_output(ScanCommand {
+            path: workspace.root.clone(),
+            format: ReportFormat::Summary,
+        })
+        .expect("run summary scan");
+
+        assert!(output.contains("Finding details:\n"));
+        assert!(output.contains("[low/spec]"));
+        assert!(output.contains("SKILL.md:"));
+        assert!(output.contains("The skill manifest does not declare a name."));
+        assert!(output.ends_with('\n'));
     }
 
     struct CliTestWorkspace {

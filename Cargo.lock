@@ -10,7 +10,6 @@ dependencies = [
  "agent-audit-report",
  "anyhow",
  "clap",
- "serde_json",
 ]
 
 [[package]]
