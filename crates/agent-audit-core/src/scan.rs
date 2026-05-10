@@ -572,13 +572,351 @@ description: JSON stability fixture.
         );
 
         let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+        let (json, value) = report_json_value(&report);
+
+        assert_eq!(value["summary"]["package_count"], 1);
+        assert_eq!(value["summary"]["finding_count"], 0);
+        assert_eq!(value["summary"]["invalid_manifest_count"], 0);
+        assert_eq!(value["summary"]["broken_reference_count"], 0);
+        assert_eq!(value["packages"][0]["root"], "skill");
+        assert_eq!(value["packages"][0]["manifest_path"], "skill/SKILL.md");
+        assert_eq!(value["packages"][0]["manifest"]["name"], "json-stability");
+        assert_eq!(
+            value["packages"][0]["manifest"]["description"],
+            "JSON stability fixture."
+        );
+        assert!(!json_contains_workspace_root(&json, workspace.root()));
+        assert!(!json.contains("timestamp"));
+        assert!(!json.contains("generated_at"));
+    }
+
+    #[test]
+    fn json_output_matches_full_pretty_expected_report() {
+        let workspace = TestWorkspace::new("scan-json-full-expected-report");
+        workspace.write_file("SKILL.md", "# Stable Snapshot\n\nStable description.\n");
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
         let json = serde_json::to_string_pretty(&report).expect("serialize report");
 
-        assert!(json.contains("\"manifest_path\": \"skill/SKILL.md\""));
-        assert!(json.contains("\"package_count\": 1"));
-        assert!(json.contains("\"finding_count\": 0"));
-        assert!(!json.contains(&workspace.root().to_string_lossy().to_string()));
-        assert!(!json.contains("timestamp"));
+        let expected = r##"{
+  "packages": [
+    {
+      "root": "",
+      "manifest_path": "SKILL.md",
+      "manifest": {
+        "name": "Stable Snapshot",
+        "description": "Stable description.",
+        "frontmatter": {},
+        "body": "# Stable Snapshot\n\nStable description.\n",
+        "headings": [
+          "Stable Snapshot"
+        ],
+        "links": [],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": []
+      }
+    }
+  ],
+  "findings": [],
+  "summary": {
+    "package_count": 1,
+    "finding_count": 0,
+    "invalid_manifest_count": 0,
+    "broken_reference_count": 0
+  }
+}"##;
+        assert_eq!(json, expected);
+        assert!(!json_contains_workspace_root(&json, workspace.root()));
+    }
+
+    #[test]
+    fn json_output_orders_packages_deterministically() {
+        let workspace = TestWorkspace::new("scan-json-package-order");
+        workspace.write_file(
+            ".agents/skills/beta/SKILL.md",
+            r#"---
+name: beta
+description: Beta fixture.
+---
+
+# Beta
+"#,
+        );
+        workspace.write_file(
+            ".agents/skills/alpha/SKILL.md",
+            r#"---
+name: alpha
+description: Alpha fixture.
+---
+
+# Alpha
+"#,
+        );
+        workspace.write_file(
+            ".agents/skills/zeta/SKILL.md",
+            r#"---
+name: zeta
+description: Zeta fixture.
+---
+
+# Zeta
+"#,
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+        let (_json, value) = report_json_value(&report);
+
+        assert_eq!(value["summary"]["package_count"], 3);
+        assert_eq!(value["summary"]["finding_count"], 0);
+        assert_eq!(
+            json_string_array(&value["packages"], "manifest_path"),
+            vec![
+                ".agents/skills/alpha/SKILL.md",
+                ".agents/skills/beta/SKILL.md",
+                ".agents/skills/zeta/SKILL.md",
+            ]
+        );
+    }
+
+    #[test]
+    fn json_output_orders_findings_deterministically() {
+        let workspace = TestWorkspace::new("scan-json-finding-order");
+        workspace.write_file(
+            "zeta/SKILL.md",
+            r#"---
+name: zeta
+---
+
+# Zeta
+"#,
+        );
+        workspace.write_file(
+            "alpha/SKILL.md",
+            r#"---
+name: alpha
+---
+
+# Alpha
+"#,
+        );
+        workspace.write_file(
+            "middle/SKILL.md",
+            r#"---
+name: middle
+---
+
+# Middle
+"#,
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+        let (_json, value) = report_json_value(&report);
+
+        assert_eq!(value["summary"]["package_count"], 3);
+        assert_eq!(value["summary"]["finding_count"], 3);
+        assert_eq!(value["summary"]["invalid_manifest_count"], 3);
+        assert_eq!(value["summary"]["broken_reference_count"], 0);
+        assert_eq!(
+            value["findings"]
+                .as_array()
+                .expect("findings array")
+                .iter()
+                .map(|finding| (
+                    finding["location"]["path"].as_str().expect("path"),
+                    finding["rule_id"].as_str().expect("rule id"),
+                    finding["message"].as_str().expect("message"),
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    "alpha/SKILL.md",
+                    "SKILL002",
+                    "The skill manifest does not declare a description."
+                ),
+                (
+                    "middle/SKILL.md",
+                    "SKILL002",
+                    "The skill manifest does not declare a description."
+                ),
+                (
+                    "zeta/SKILL.md",
+                    "SKILL002",
+                    "The skill manifest does not declare a description."
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn json_output_preserves_finding_metadata_and_summary_counts() {
+        let workspace = TestWorkspace::new("scan-json-finding-metadata");
+        workspace.write_file(
+            "a-broken-reference/SKILL.md",
+            r#"---
+name: broken-reference
+description: Broken reference fixture.
+---
+
+# Broken Reference
+
+Read [missing](references/missing.md).
+"#,
+        );
+        workspace.write_file(
+            "b-missing-name/SKILL.md",
+            r#"---
+description: Missing name fixture.
+---
+
+This starts with a paragraph and has no heading fallback.
+"#,
+        );
+        workspace.write_file(
+            "c-missing-description/SKILL.md",
+            r#"---
+name: missing-description
+---
+
+# Missing Description
+"#,
+        );
+        workspace.write_file(
+            "d-oversized/SKILL.md",
+            r#"---
+name: oversized
+description: Oversized fixture.
+---
+
+# Oversized
+
+This content exceeds the deliberately tiny test threshold.
+This extra line keeps only this manifest above the test size limit.
+This second extra line makes the intended `SKILL020` case unambiguous.
+"#,
+        );
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                max_manifest_bytes: 180,
+            },
+        )
+        .expect("scan path");
+        let (_json, value) = report_json_value(&report);
+
+        assert_eq!(value["summary"]["package_count"], 4);
+        assert_eq!(value["summary"]["finding_count"], 4);
+        assert_eq!(value["summary"]["invalid_manifest_count"], 2);
+        assert_eq!(value["summary"]["broken_reference_count"], 1);
+        assert_eq!(
+            json_string_array(&value["findings"], "rule_id"),
+            vec!["SKILL010", "SKILL001", "SKILL002", "SKILL020"]
+        );
+
+        let findings = value["findings"].as_array().expect("findings array");
+        for finding in findings {
+            let object = finding.as_object().expect("finding object");
+            for key in [
+                "rule_id",
+                "severity",
+                "category",
+                "title",
+                "message",
+                "location",
+                "rationale",
+                "remediation",
+                "suppression",
+            ] {
+                assert!(object.contains_key(key), "missing finding key {key}");
+            }
+            assert_eq!(finding["severity"], "low");
+            assert_eq!(finding["category"], "spec");
+            assert!(finding["title"].as_str().expect("title").len() > 0);
+            assert!(finding["message"].as_str().expect("message").len() > 0);
+            assert!(finding["rationale"].as_str().expect("rationale").len() > 0);
+            assert!(finding["remediation"].as_str().expect("remediation").len() > 0);
+            assert!(finding["suppression"]
+                .as_str()
+                .expect("suppression")
+                .contains(finding["rule_id"].as_str().expect("rule id")));
+
+            let location = finding["location"].as_object().expect("location object");
+            assert!(location.contains_key("path"));
+            assert!(location.contains_key("line"));
+            assert!(finding["location"]["path"]
+                .as_str()
+                .expect("location path")
+                .ends_with("SKILL.md"));
+            assert!(finding["location"]["line"].is_null());
+        }
+    }
+
+    #[test]
+    fn json_output_uses_relative_reference_paths_without_local_paths() {
+        let workspace = TestWorkspace::new("scan-json-relative-references");
+        workspace.write_file(
+            "skill/SKILL.md",
+            r#"---
+name: relative-references
+description: Relative references fixture.
+---
+
+# Relative References
+
+Read [guidance](references/guidance.md).
+"#,
+        );
+        workspace.write_file("skill/references/guidance.md", "# Guidance\n");
+        workspace.create_dir("skill/scripts");
+        workspace.create_dir("skill/assets");
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+        let (json, value) = report_json_value(&report);
+
+        assert_eq!(value["summary"]["package_count"], 1);
+        assert_eq!(value["summary"]["finding_count"], 0);
+        assert_eq!(
+            value["packages"][0]["graph"]["references"][0]["target"],
+            "references/guidance.md"
+        );
+        assert_eq!(
+            value["packages"][0]["graph"]["references"][0]["exists"],
+            true
+        );
+        assert_eq!(
+            value["packages"][0]["graph"]["artifacts"]
+                .as_array()
+                .expect("artifacts array")
+                .iter()
+                .map(|artifact| artifact.as_str().expect("artifact"))
+                .collect::<Vec<_>>(),
+            vec!["scripts", "references", "assets"]
+        );
+        assert!(!json_contains_workspace_root(&json, workspace.root()));
+    }
+
+    #[test]
+    fn json_output_workspace_root_detector_matches_escaped_windows_paths() {
+        let root = Path::new(r"C:\ws\saas\agent_skill_auditor");
+
+        assert!(json_contains_workspace_root(
+            r"C:\ws\saas\agent_skill_auditor\skill\SKILL.md",
+            root
+        ));
+        assert!(json_contains_workspace_root(
+            "C:/ws/saas/agent_skill_auditor/skill/SKILL.md",
+            root
+        ));
+        assert!(json_contains_workspace_root(
+            r#"{"path":"C:\\ws\\saas\\agent_skill_auditor\\skill\\SKILL.md"}"#,
+            root
+        ));
     }
 
     struct ExpectedFinding {
@@ -616,5 +954,44 @@ description: JSON stability fixture.
             finding.rule_id.as_str(),
             finding.message.as_str(),
         )
+    }
+
+    fn report_json_value(report: &ScanReport) -> (String, serde_json::Value) {
+        let json = serde_json::to_string_pretty(report).expect("serialize report");
+        let value = serde_json::from_str(&json).expect("parse report JSON");
+        (json, value)
+    }
+
+    fn json_string_array(value: &serde_json::Value, key: &str) -> Vec<String> {
+        value
+            .as_array()
+            .expect("JSON array")
+            .iter()
+            .map(|item| item[key].as_str().expect("string field").to_owned())
+            .collect()
+    }
+
+    fn json_contains_workspace_root(json: &str, root: &Path) -> bool {
+        let raw_root = root.to_string_lossy().into_owned();
+        let normalized_root = raw_root.replace('\\', "/");
+
+        for candidate in [raw_root.as_str(), normalized_root.as_str()] {
+            if !candidate.is_empty()
+                && (json.contains(candidate) || json.contains(&json_escaped_fragment(candidate)))
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn json_escaped_fragment(value: &str) -> String {
+        let escaped = serde_json::to_string(value).expect("escape JSON string");
+        escaped
+            .strip_prefix('"')
+            .and_then(|value| value.strip_suffix('"'))
+            .unwrap_or(&escaped)
+            .to_owned()
     }
 }
