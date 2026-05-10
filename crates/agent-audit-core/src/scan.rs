@@ -6,17 +6,15 @@ use std::path::Path;
 use crate::discovery::discover_skill_manifests;
 use crate::error::{AuditError, AuditResult};
 use crate::model::{
-    FindingCategory, FindingLocation, ScanReport, ScanSummary, Severity, SkillArtifactKind,
-    SkillFile, SkillFileKind, SkillFinding, SkillGraph, SkillManifest, SkillPackage,
-    SkillReference,
+    ScanReport, ScanSummary, SkillArtifactKind, SkillFile, SkillFileKind, SkillGraph,
+    SkillManifest, SkillPackage, SkillReference,
 };
 use crate::parse::parse_skill_manifest;
-use agent_audit_rules::{
-    rule_metadata, RuleCategory as RegistryCategory, RuleMetadata, RuleSeverity as RegistrySeverity,
+use crate::structural_rules::{
+    evaluate_structural_rules, FrontmatterFieldFact, MalformedFrontmatterFact, ManifestFacts,
+    PackageFacts, ParsedManifestFacts, ReferenceFact,
 };
 
-/// Portable frontmatter fields accepted by the initial structural scanner.
-const ACCEPTED_FRONTMATTER_FIELDS: &[&str] = &["name", "description", "tools", "permissions"];
 const UTF8_BOM: &str = "\u{feff}";
 
 #[derive(Debug, Clone)]
@@ -35,7 +33,7 @@ impl Default for ScanOptions {
 pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> {
     let manifests = discover_skill_manifests(root)?;
     let mut packages = Vec::new();
-    let mut findings = Vec::new();
+    let mut package_facts = Vec::new();
 
     for manifest_path in manifests {
         let metadata =
@@ -47,7 +45,10 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         let manifest_display = display_path(root, &manifest_path);
 
         if metadata.len() > options.max_manifest_bytes {
-            findings.push(oversized_manifest_finding(&manifest_display));
+            package_facts.push(PackageFacts {
+                manifest_path: manifest_display.clone(),
+                manifest: ManifestFacts::UnreadOversized,
+            });
             packages.push(SkillPackage {
                 root: display_path(root, skill_root),
                 manifest_path: manifest_display,
@@ -65,11 +66,13 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         let manifest = match parse_skill_manifest(&manifest_path, &content) {
             Ok(manifest) => manifest,
             Err(AuditError::Frontmatter { source, .. }) => {
-                findings.push(malformed_frontmatter_finding(
-                    &manifest_display,
-                    source.location().map(|location| location.line() + 1),
-                    &source.to_string(),
-                ));
+                package_facts.push(PackageFacts {
+                    manifest_path: manifest_display.clone(),
+                    manifest: ManifestFacts::MalformedFrontmatter(MalformedFrontmatterFact {
+                        line: source.location().map(|location| location.line() + 1),
+                        parse_message: source.to_string(),
+                    }),
+                });
                 packages.push(SkillPackage {
                     root: display_path(root, skill_root),
                     manifest_path: manifest_display,
@@ -79,11 +82,13 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
                 continue;
             }
             Err(AuditError::FrontmatterDelimiter { line, message, .. }) => {
-                findings.push(malformed_frontmatter_finding(
-                    &manifest_display,
-                    Some(line),
-                    &message,
-                ));
+                package_facts.push(PackageFacts {
+                    manifest_path: manifest_display.clone(),
+                    manifest: ManifestFacts::MalformedFrontmatter(MalformedFrontmatterFact {
+                        line: Some(line),
+                        parse_message: message,
+                    }),
+                });
                 packages.push(SkillPackage {
                     root: display_path(root, skill_root),
                     manifest_path: manifest_display,
@@ -104,54 +109,31 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
             .references
             .sort_by(|left, right| left.target.cmp(&right.target));
 
-        if manifest.name.is_none() {
-            findings.push(structural_finding(
-                "SKILL001",
-                "The skill manifest does not declare a name.",
-                &manifest_display,
-                Some(1),
-            ));
-        }
-        if manifest.description.is_none() {
-            findings.push(structural_finding(
-                "SKILL002",
-                "The skill manifest does not declare a description.",
-                &manifest_display,
-                Some(1),
-            ));
-        }
-        if content.len() as u64 > options.max_manifest_bytes {
-            findings.push(oversized_manifest_finding(&manifest_display));
-        }
-        for field in manifest
-            .frontmatter
-            .keys()
-            .filter(|field| !ACCEPTED_FRONTMATTER_FIELDS.contains(&field.as_str()))
-        {
-            findings.push(unknown_frontmatter_field_finding(
-                field,
-                &manifest_display,
-                frontmatter_key_lines
-                    .get(field.as_str())
-                    .copied()
-                    .or(Some(1)),
-            ));
-        }
-        for reference in graph
-            .references
-            .iter()
-            .filter(|reference| reference.exists == Some(false))
-        {
-            findings.push(structural_finding(
-                "SKILL010",
-                &format!(
-                    "The manifest references `{}`, but the file was not found.",
-                    reference.target
-                ),
-                &manifest_display,
-                reference.line,
-            ));
-        }
+        package_facts.push(PackageFacts {
+            manifest_path: manifest_display.clone(),
+            manifest: ManifestFacts::Parsed(ParsedManifestFacts {
+                name: manifest.name.clone(),
+                description: manifest.description.clone(),
+                frontmatter_fields: manifest
+                    .frontmatter
+                    .keys()
+                    .map(|field| FrontmatterFieldFact {
+                        name: field.clone(),
+                        line: frontmatter_key_lines.get(field.as_str()).copied(),
+                    })
+                    .collect(),
+                references: graph
+                    .references
+                    .iter()
+                    .map(|reference| ReferenceFact {
+                        target: reference.target.clone(),
+                        line: reference.line,
+                        exists: reference.exists,
+                    })
+                    .collect(),
+                oversized: content.len() as u64 > options.max_manifest_bytes,
+            }),
+        });
 
         packages.push(SkillPackage {
             root: display_path(root, skill_root),
@@ -161,16 +143,7 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         });
     }
 
-    findings.extend(duplicate_skill_name_findings(&packages));
-
-    findings.sort_by(|left, right| {
-        left.location
-            .path
-            .cmp(&right.location.path)
-            .then(left.location.line.cmp(&right.location.line))
-            .then(left.rule_id.cmp(&right.rule_id))
-            .then(left.message.cmp(&right.message))
-    });
+    let findings = evaluate_structural_rules(&package_facts);
 
     let invalid_manifest_count = findings
         .iter()
@@ -514,140 +487,14 @@ fn empty_skill_graph() -> SkillGraph {
     }
 }
 
-fn oversized_manifest_finding(path: &str) -> SkillFinding {
-    structural_finding(
-        "SKILL020",
-        "The SKILL.md file exceeds the recommended manifest size.",
-        path,
-        Some(1),
-    )
-}
-
-fn malformed_frontmatter_finding(
-    path: &str,
-    line: Option<usize>,
-    parse_message: &str,
-) -> SkillFinding {
-    structural_finding(
-        "SKILL041",
-        &format!("The skill manifest frontmatter could not be parsed: {parse_message}."),
-        path,
-        line.or(Some(1)),
-    )
-}
-
-fn structural_finding(
-    rule_id: &str,
-    message: &str,
-    path: &str,
-    line: Option<usize>,
-) -> SkillFinding {
-    let metadata = scanner_rule_metadata(rule_id);
-    finding_from_metadata(metadata, message, path, line)
-}
-
-fn scanner_rule_metadata(rule_id: &str) -> &'static RuleMetadata {
-    rule_metadata(rule_id).expect("implemented scanner rule must have registry metadata")
-}
-
-fn finding_from_metadata(
-    metadata: &RuleMetadata,
-    message: &str,
-    path: &str,
-    line: Option<usize>,
-) -> SkillFinding {
-    SkillFinding {
-        rule_id: metadata.id.as_str().to_owned(),
-        severity: severity_from_metadata(metadata.severity),
-        category: category_from_metadata(metadata.category),
-        title: metadata.title.to_owned(),
-        message: message.to_owned(),
-        location: FindingLocation {
-            path: path.to_owned(),
-            line,
-        },
-        rationale: metadata.rationale.to_owned(),
-        remediation: metadata.remediation.to_owned(),
-        suppression: metadata.suppression_guidance.to_owned(),
-    }
-}
-
-fn severity_from_metadata(severity: RegistrySeverity) -> Severity {
-    match severity {
-        RegistrySeverity::Info => Severity::Info,
-        RegistrySeverity::Low => Severity::Low,
-        RegistrySeverity::Medium => Severity::Medium,
-        RegistrySeverity::High => Severity::High,
-        RegistrySeverity::Critical => Severity::Critical,
-    }
-}
-
-fn category_from_metadata(category: RegistryCategory) -> FindingCategory {
-    match category {
-        RegistryCategory::Spec => FindingCategory::Spec,
-        RegistryCategory::Compatibility => FindingCategory::Compatibility,
-        RegistryCategory::Security => FindingCategory::Security,
-        RegistryCategory::Quality => FindingCategory::Quality,
-        RegistryCategory::Portability => FindingCategory::Portability,
-        RegistryCategory::Reproducibility => FindingCategory::Reproducibility,
-    }
-}
-
-fn duplicate_skill_name_findings(packages: &[SkillPackage]) -> Vec<SkillFinding> {
-    let mut manifest_paths_by_name = BTreeMap::<&str, Vec<&str>>::new();
-
-    for package in packages {
-        if let Some(name) = package.manifest.name.as_deref() {
-            manifest_paths_by_name
-                .entry(name)
-                .or_default()
-                .push(package.manifest_path.as_str());
-        }
-    }
-
-    let mut findings = Vec::new();
-    for (name, manifest_paths) in manifest_paths_by_name
-        .iter_mut()
-        .filter(|(_, manifest_paths)| manifest_paths.len() > 1)
-    {
-        manifest_paths.sort_unstable();
-
-        for manifest_path in manifest_paths.iter().copied() {
-            let other_paths = manifest_paths
-                .iter()
-                .copied()
-                .filter(|other_path| *other_path != manifest_path)
-                .map(|other_path| format!("`{other_path}`"))
-                .collect::<Vec<_>>()
-                .join(", ");
-
-            findings.push(finding_from_metadata(
-                scanner_rule_metadata("SKILL030"),
-                &format!(
-                    "The skill name `{name}` is also declared by other manifest path(s): {other_paths}."
-                ),
-                manifest_path,
-                Some(1),
-            ));
-        }
-    }
-
-    findings
-}
-
-fn unknown_frontmatter_field_finding(field: &str, path: &str, line: Option<usize>) -> SkillFinding {
-    finding_from_metadata(
-        scanner_rule_metadata("SKILL040"),
-        &format!("The manifest declares unsupported frontmatter field `{field}`."),
-        path,
-        line,
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{FindingCategory, Severity, SkillFinding};
     use crate::test_support::TestWorkspace;
+    use agent_audit_rules::{
+        rule_metadata, RuleCategory as RegistryCategory, RuleSeverity as RegistrySeverity,
+    };
     use std::io::ErrorKind;
 
     #[test]

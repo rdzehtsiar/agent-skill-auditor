@@ -5,6 +5,7 @@ pub mod error;
 pub mod model;
 pub mod parse;
 pub mod scan;
+mod structural_rules;
 #[cfg(test)]
 mod test_support;
 
