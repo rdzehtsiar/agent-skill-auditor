@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::fs;
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use agent_audit_core::{scan_path, ScanOptions};
+use agent_audit_core::{parse_audit_config, scan_path, AuditError, ScanOptions};
 use agent_audit_report::{
     render_report, ReportFormat, UnsupportedReportFormat, SUPPORTED_REPORT_FORMATS_HELP,
 };
-use anyhow::Result;
+use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 
 #[derive(Debug, Parser)]
@@ -35,6 +36,12 @@ struct ScanCommand {
         help = SUPPORTED_REPORT_FORMATS_HELP
     )]
     format: ReportFormat,
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Read and validate an explicit config file before scanning"
+    )]
+    config: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {
@@ -53,12 +60,37 @@ fn run_scan(command: ScanCommand) -> Result<()> {
 }
 
 fn run_scan_with_writer(command: ScanCommand, writer: &mut impl Write) -> Result<()> {
+    if let Some(config_path) = &command.config {
+        load_explicit_config(config_path)?;
+    }
+
     let report = scan_path(&command.path, &ScanOptions::default())?;
     let rendered = render_report(&report, command.format)?;
 
     writer.write_all(rendered.as_bytes())?;
 
     Ok(())
+}
+
+fn load_explicit_config(config_path: &Path) -> Result<()> {
+    let content = fs::read_to_string(config_path)
+        .with_context(|| format!("failed to read config {}", config_path.display()))?;
+
+    parse_audit_config(&content).map_err(|error| config_error_with_path(config_path, error))?;
+
+    Ok(())
+}
+
+fn config_error_with_path(config_path: &Path, error: AuditError) -> anyhow::Error {
+    match error {
+        AuditError::ConfigParse { .. } => {
+            anyhow!("failed to parse config {}: {error}", config_path.display())
+        }
+        AuditError::ConfigValidation { .. } => {
+            anyhow!("invalid config {}: {error}", config_path.display())
+        }
+        _ => anyhow!("failed to load config {}: {error}", config_path.display()),
+    }
 }
 
 fn parse_report_format(value: &str) -> Result<ReportFormat, UnsupportedReportFormat> {
@@ -91,6 +123,19 @@ mod tests {
     }
 
     #[test]
+    fn scan_help_lists_explicit_config_option() {
+        let mut command = Cli::command();
+        let help = command
+            .find_subcommand_mut("scan")
+            .expect("scan subcommand should be registered")
+            .render_long_help()
+            .to_string();
+
+        assert!(help.contains("--config <PATH>"));
+        assert!(help.contains("Read and validate an explicit config file before scanning"));
+    }
+
+    #[test]
     fn parses_default_scan_command() {
         let cli = Cli::parse_from(["agent-audit", "scan"]);
 
@@ -98,6 +143,25 @@ mod tests {
             Command::Scan(command) => {
                 assert_eq!(command.path, PathBuf::from("."));
                 assert_eq!(command.format, ReportFormat::Summary);
+                assert_eq!(command.config, None);
+            }
+        }
+    }
+
+    #[test]
+    fn parses_explicit_scan_config() {
+        let cli = Cli::parse_from([
+            "agent-audit",
+            "scan",
+            "fixtures/spec/basic",
+            "--config",
+            "audit.yaml",
+        ]);
+
+        match cli.command {
+            Command::Scan(command) => {
+                assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
+                assert_eq!(command.config, Some(PathBuf::from("audit.yaml")));
             }
         }
     }
@@ -116,6 +180,7 @@ mod tests {
             Command::Scan(command) => {
                 assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
                 assert_eq!(command.format, ReportFormat::Json);
+                assert_eq!(command.config, None);
             }
         }
     }
@@ -134,6 +199,7 @@ mod tests {
             Command::Scan(command) => {
                 assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
                 assert_eq!(command.format, ReportFormat::Sarif);
+                assert_eq!(command.config, None);
             }
         }
     }
@@ -152,6 +218,7 @@ mod tests {
             Command::Scan(command) => {
                 assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
                 assert_eq!(command.format, ReportFormat::Html);
+                assert_eq!(command.config, None);
             }
         }
     }
@@ -196,6 +263,7 @@ description: Summary output fixture.
         let output = run_scan_output(ScanCommand {
             path: workspace.root.clone(),
             format: ReportFormat::Summary,
+            config: None,
         })
         .expect("run summary scan");
 
@@ -222,6 +290,7 @@ description: JSON output fixture.
         let output = run_scan_output(ScanCommand {
             path: workspace.root.clone(),
             format: ReportFormat::Json,
+            config: None,
         })
         .expect("run JSON scan");
 
@@ -249,6 +318,7 @@ description: SARIF output fixture.
         let output = run_scan_output(ScanCommand {
             path: workspace.root.clone(),
             format: ReportFormat::Sarif,
+            config: None,
         })
         .expect("run SARIF scan");
 
@@ -275,6 +345,7 @@ description: HTML output fixture.
         let output = run_scan_output(ScanCommand {
             path: workspace.root.clone(),
             format: ReportFormat::Html,
+            config: None,
         })
         .expect("run HTML scan");
 
@@ -300,6 +371,7 @@ name: [unterminated
         let output = run_scan_output(ScanCommand {
             path: workspace.root.clone(),
             format: ReportFormat::Summary,
+            config: None,
         })
         .expect("malformed frontmatter should render report");
 
@@ -335,6 +407,7 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
         let output = run_scan_output(ScanCommand {
             path: workspace.root.clone(),
             format: ReportFormat::Summary,
+            config: None,
         })
         .expect("run summary scan");
 
@@ -343,6 +416,153 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
         assert!(output.contains("SKILL.md:"));
         assert!(output.contains("The skill manifest does not declare a name."));
         assert!(output.ends_with('\n'));
+    }
+
+    #[test]
+    fn run_scan_validates_explicit_config_before_scanning() {
+        let workspace = CliTestWorkspace::new("valid-config");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: valid-config
+description: Valid explicit config fixture.
+---
+
+# Valid Config
+"#,
+        );
+        workspace.write_file(
+            "agent-audit.yaml",
+            r#"
+profiles:
+  - codex
+fail_on:
+  - high
+ignore:
+  - rule: SKILL010
+    path: SKILL.md
+    reason: Accepted fixture.
+"#,
+        );
+
+        let output = run_scan_output(ScanCommand {
+            path: workspace.root.clone(),
+            format: ReportFormat::Summary,
+            config: Some(workspace.root.join("agent-audit.yaml")),
+        })
+        .expect("valid config should load before scan");
+
+        assert!(output.contains("Packages: 1\n"));
+        assert!(output.ends_with('\n'));
+    }
+
+    #[test]
+    fn run_scan_reports_missing_explicit_config_path() {
+        let workspace = CliTestWorkspace::new("missing-config");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: missing-config
+description: Missing explicit config fixture.
+---
+
+# Missing Config
+"#,
+        );
+        let config_path = workspace.root.join("missing.yaml");
+
+        let error = run_scan_output(ScanCommand {
+            path: workspace.root.clone(),
+            format: ReportFormat::Summary,
+            config: Some(config_path.clone()),
+        })
+        .expect_err("missing config should fail before scan");
+        let message = error.to_string();
+
+        assert!(message.contains("failed to read config"));
+        assert!(message.contains(&config_path.display().to_string()));
+    }
+
+    #[test]
+    fn run_scan_reports_malformed_explicit_config_yaml() {
+        let workspace = CliTestWorkspace::new("malformed-config");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: malformed-config
+description: Malformed explicit config fixture.
+---
+
+# Malformed Config
+"#,
+        );
+        workspace.write_file("agent-audit.yaml", "profiles: [codex\n");
+        let config_path = workspace.root.join("agent-audit.yaml");
+
+        let error = run_scan_output(ScanCommand {
+            path: workspace.root.clone(),
+            format: ReportFormat::Summary,
+            config: Some(config_path.clone()),
+        })
+        .expect_err("malformed config should fail before scan");
+        let message = error.to_string();
+
+        assert!(message.contains("failed to parse config"));
+        assert!(message.contains(&config_path.display().to_string()));
+    }
+
+    #[test]
+    fn run_scan_reports_explicit_config_validation_error() {
+        let workspace = CliTestWorkspace::new("invalid-config");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: invalid-config
+description: Invalid explicit config fixture.
+---
+
+# Invalid Config
+"#,
+        );
+        workspace.write_file("agent-audit.yaml", "profiles:\n  - unknown-host\n");
+        let config_path = workspace.root.join("agent-audit.yaml");
+
+        let error = run_scan_output(ScanCommand {
+            path: workspace.root.clone(),
+            format: ReportFormat::Summary,
+            config: Some(config_path.clone()),
+        })
+        .expect_err("invalid config should fail before scan");
+        let message = error.to_string();
+
+        assert!(message.contains("invalid config"));
+        assert!(message.contains(&config_path.display().to_string()));
+        assert!(message.contains("unknown host profile `unknown-host`"));
+    }
+
+    #[test]
+    fn run_scan_does_not_auto_discover_project_config() {
+        let workspace = CliTestWorkspace::new("no-config-discovery");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: no-config-discovery
+description: No config discovery fixture.
+---
+
+# No Config Discovery
+"#,
+        );
+        workspace.write_file(".agent-audit.yaml", "profiles: [codex\n");
+
+        let output = run_scan_output(ScanCommand {
+            path: workspace.root.clone(),
+            format: ReportFormat::Summary,
+            config: None,
+        })
+        .expect("implicit config discovery should not run");
+
+        assert!(output.contains("Packages: 1\n"));
     }
 
     struct CliTestWorkspace {
