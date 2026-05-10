@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+
+# Keep golden scanner fixtures byte-stable across core.autocrlf settings.
+/fixtures/spec/**/*.md text eol=lf
+/fixtures/spec/**/*.json text eol=lf
+/fixtures/spec/**/*.txt text eol=lf
+/fixtures/spec/**/*.yml text eol=lf
+/fixtures/spec/**/*.yaml text eol=lf
+/fixtures/spec/**/*.sh text eol=lf
+/fixtures/spec/**/*.ps1 text eol=lf
+/reports/public-audit-001/**/*.md text eol=lf
+/reports/public-audit-001/**/*.json text eol=lf
+/reports/public-audit-001/**/*.txt text eol=lf
+/reports/public-audit-001/**/*.yml text eol=lf
+/reports/public-audit-001/**/*.yaml text eol=lf
+/reports/public-audit-001/**/*.html text eol=lf
+
+# Keep byte-identical expected report snapshots portable across platforms.
+*.json text eol=lf
+
+# Keep user-facing Markdown examples deterministic when they are referenced by tests or docs.
+/docs/**/*.md text eol=lf
+/examples/**/*.md text eol=lf
+/README.md text eol=lf

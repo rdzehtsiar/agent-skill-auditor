@@ -129,8 +129,41 @@ mod tests {
         }
     }
 
+    #[test]
+    fn representative_corpus_full_json_matches_phase2_expected_output() {
+        let corpus_root = representative_corpus_root();
+        let first_report =
+            scan_path(&corpus_root, &ScanOptions::default()).expect("scan representative corpus");
+        let second_report =
+            scan_path(&corpus_root, &ScanOptions::default()).expect("rescan representative corpus");
+
+        let first_json = render_json(&first_report).expect("render JSON");
+        let second_json = render_json(&second_report).expect("rerender JSON");
+        let expected_json = expected_representative_corpus_json();
+
+        assert_eq!(first_json.as_bytes(), second_json.as_bytes());
+        assert_eq!(first_json, expected_json);
+        assert!(!first_json.contains("timestamp"));
+        assert!(!first_json.contains("generated_at"));
+        assert!(!json_contains_path(&first_json, &workspace_root()));
+
+        let value: serde_json::Value =
+            serde_json::from_str(&first_json).expect("parse rendered JSON");
+        assert_eq!(value["summary"]["package_count"], 30);
+        assert_eq!(value["summary"]["finding_count"], 16);
+
+        let finding_keys = json_finding_order_keys(&value);
+        let mut sorted_finding_keys = finding_keys.clone();
+        sorted_finding_keys.sort();
+        assert_eq!(finding_keys, sorted_finding_keys);
+    }
+
     fn representative_corpus_root() -> PathBuf {
         workspace_root().join("fixtures/spec/phase1/representative-corpus")
+    }
+
+    fn expected_representative_corpus_json() -> &'static str {
+        include_str!("../../../fixtures/spec/phase2/expected/representative-corpus.json")
     }
 
     fn workspace_root() -> PathBuf {
@@ -182,13 +215,37 @@ mod tests {
             .collect()
     }
 
+    fn json_finding_order_keys(
+        value: &serde_json::Value,
+    ) -> Vec<(String, Option<u64>, String, String)> {
+        value["findings"]
+            .as_array()
+            .expect("findings array")
+            .iter()
+            .map(|finding| {
+                (
+                    finding["location"]["path"]
+                        .as_str()
+                        .expect("finding path")
+                        .to_owned(),
+                    finding["location"]["line"].as_u64(),
+                    finding["rule_id"].as_str().expect("rule id").to_owned(),
+                    finding["message"].as_str().expect("message").to_owned(),
+                )
+            })
+            .collect()
+    }
+
     fn json_contains_path(json: &str, path: &Path) -> bool {
         path.ancestors()
             .map(|candidate| candidate.to_string_lossy())
             .filter(|candidate| candidate.len() > 3)
             .any(|candidate| {
+                let normalized = candidate.replace('\\', "/");
                 json.contains(candidate.as_ref())
                     || json.contains(&json_escaped_fragment(candidate.as_ref()))
+                    || json.contains(&normalized)
+                    || json.contains(&json_escaped_fragment(&normalized))
             })
     }
 

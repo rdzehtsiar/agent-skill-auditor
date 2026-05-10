@@ -1,4 +1,4 @@
-﻿Agent Skill Auditor scan summary
+Agent Skill Auditor scan summary
 Packages: 30
 Findings: 16
 Invalid manifests: 5
