@@ -10,9 +10,9 @@ It is not a generic Markdown or YAML linter. It is intended for maintainers, sec
 
 ## Status
 
-Agent Skill Auditor currently provides a Phase 1 CLI scanner for local skill packages.
+Agent Skill Auditor currently provides a local CLI scanner for skill packages.
 
-The implemented CLI can discover `SKILL.md` manifests, parse frontmatter and Markdown content, extract normalized package metadata, evaluate initial structural rules, and render summary, JSON, SARIF, and HTML reports. It runs offline and does not execute skill scripts.
+The implemented CLI can discover `SKILL.md` manifests, parse frontmatter and Markdown content, extract normalized package metadata, evaluate initial structural rules, load explicit audit config, apply documented suppressions, and render summary, JSON, SARIF, and HTML reports. It runs offline and does not execute skill scripts.
 
 Static script security analysis, host compatibility matrices, policy packs, and broader ecosystem reporting are planned work.
 
@@ -34,12 +34,15 @@ cargo run -q -p agent-audit-cli -- scan fixtures/spec/basic
 ## CLI Usage
 
 ```text
-agent-audit scan [PATH] [--format FORMAT]
+agent-audit scan [PATH] [--format FORMAT] [--config PATH] [--fail-on SEVERITY]
 ```
 
 - `PATH` defaults to `.`.
 - `--format` defaults to `summary`.
 - Supported formats are `summary`, `json`, `sarif`, and `html`.
+- `--config PATH` explicitly reads and validates a YAML audit config before scanning.
+- `--fail-on SEVERITY` fails after rendering the report when any unsuppressed finding exactly matches that severity. Repeat it to match more than one severity.
+- Supported severities are `info`, `low`, `medium`, `high`, and `critical`.
 
 Examples:
 
@@ -49,7 +52,29 @@ agent-audit scan fixtures/spec/basic
 agent-audit scan fixtures/spec/basic --format json
 agent-audit scan fixtures/spec/basic --format sarif
 agent-audit scan fixtures/spec/basic --format html
+agent-audit scan fixtures/spec/basic --config .agent-audit.yaml
+agent-audit scan fixtures/spec/basic --fail-on medium --fail-on high
+agent-audit scan fixtures/spec/basic --config .agent-audit.yaml --fail-on high
 ```
+
+Config loading is explicit. The scanner does not auto-discover `.agent-audit.yaml` when `--config` is omitted.
+
+When both config `fail_on` and CLI `--fail-on` values are provided, the CLI values take precedence. For example, a config that fails on `low` can be narrowed for one run with `--fail-on high`.
+
+Path-scoped suppressions are configured with `ignore` entries. Suppressions match one exact rule ID and one normalized path relative to the scanned project; they do not use globs.
+
+```yaml
+fail_on:
+  - medium
+  - high
+
+ignore:
+  - rule: SKILL010
+    path: skills/internal-search/SKILL.md
+    reason: False positive: references/api.md is generated and packaged by the release process.
+```
+
+JSON output includes suppressed findings, while SARIF reports active findings only. Suppressed findings do not trigger `fail_on` in either format.
 
 ## Report Formats
 
@@ -97,6 +122,7 @@ The Phase 1 scanner currently supports:
   - `SKILL020`: oversized manifest.
   - `SKILL030`: duplicate skill name.
   - `SKILL040`: unknown frontmatter field.
+  - `SKILL041`: malformed frontmatter.
 
 ## Security Model
 
@@ -151,7 +177,7 @@ Future compatibility findings should explain whether a package is likely to pass
 | --- | --- |
 | CLI scanner and package discovery | Implemented for Phase 1. |
 | Normalized internal model | Implemented for Phase 1 package metadata. |
-| Deterministic structural rule engine | Implemented for initial `SKILL001` through `SKILL040` rules. |
+| Deterministic structural rule engine | Implemented for initial `SKILL001` through `SKILL041` rules. |
 | JSON output | Implemented. |
 | Terminal summary | Implemented. |
 | SARIF and HTML output | Implemented initial report formats. |
@@ -159,7 +185,7 @@ Future compatibility findings should explain whether a package is likely to pass
 | Host compatibility profiles | Planned. |
 | Static script security analyzers | Planned. |
 | Rule documentation generation | Planned. |
-| Policy and suppression configuration | Planned. |
+| Policy and suppression configuration | Implemented for explicit config loading, fail thresholds, and path-scoped suppressions. |
 
 ## License
 
