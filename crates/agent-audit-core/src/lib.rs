@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+pub mod config;
 pub mod discovery;
 pub mod error;
 pub mod model;
@@ -9,6 +10,7 @@ mod structural_rules;
 #[cfg(test)]
 mod test_support;
 
+pub use config::{parse_audit_config, AuditConfig, ConfigIgnoreEntry, CONFIG_FILENAME};
 pub use discovery::discover_skill_manifests;
 pub use error::{AuditError, AuditResult};
 pub use model::{

@@ -16,6 +16,7 @@ dependencies = [
 name = "agent-audit-core"
 version = "0.1.0"
 dependencies = [
+ "agent-audit-hosts",
  "agent-audit-rules",
  "ignore",
  "pulldown-cmark",

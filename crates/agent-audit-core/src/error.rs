@@ -44,4 +44,15 @@ pub enum AuditError {
         line: usize,
         message: String,
     },
+    #[error("failed to parse {filename}: {source}")]
+    ConfigParse {
+        filename: &'static str,
+        #[source]
+        source: serde_yaml::Error,
+    },
+    #[error("invalid {filename}: {message}")]
+    ConfigValidation {
+        filename: &'static str,
+        message: String,
+    },
 }
