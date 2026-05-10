@@ -228,6 +228,28 @@ mod tests {
     }
 
     #[test]
+    fn sarif_output_handles_zero_findings() {
+        let report = report_with_findings(Vec::new());
+
+        let value = render_sarif_value(&report);
+
+        assert_eq!(
+            value["runs"][0]["tool"]["driver"]["rules"]
+                .as_array()
+                .expect("rules array")
+                .len(),
+            0
+        );
+        assert_eq!(
+            value["runs"][0]["results"]
+                .as_array()
+                .expect("results array")
+                .len(),
+            0
+        );
+    }
+
+    #[test]
     fn sarif_output_preserves_finding_metadata_and_location() {
         let report = report_with_findings(vec![finding(
             "SEC005",
@@ -245,6 +267,12 @@ mod tests {
 
         assert_eq!(rule["id"], "SEC005");
         assert_eq!(rule["name"], "Use of sudo");
+        assert_eq!(rule["shortDescription"]["text"], "Use of sudo");
+        assert_eq!(rule["fullDescription"]["text"], "Use of sudo rationale.");
+        assert_eq!(
+            rule["help"]["text"],
+            "Use of sudo remediation.\n\nSuppress `SEC005` only with a documented reason."
+        );
         assert_eq!(rule["defaultConfiguration"]["level"], "error");
         assert_eq!(rule["properties"]["agentAuditSeverity"], "high");
         assert_eq!(rule["properties"]["category"], "security");
@@ -262,6 +290,155 @@ mod tests {
         );
         assert_eq!(result["properties"]["agentAuditSeverity"], "high");
         assert_eq!(result["properties"]["category"], "security");
+    }
+
+    #[test]
+    fn sarif_output_orders_results_by_path_line_rule_id_then_message() {
+        let report = report_with_findings(vec![
+            finding(
+                "SKILL020",
+                Severity::Medium,
+                FindingCategory::Spec,
+                "Oversized skill manifest",
+                "Later path.",
+                "zeta/SKILL.md",
+                Some(1),
+            ),
+            finding(
+                "SKILL030",
+                Severity::Low,
+                FindingCategory::Spec,
+                "Duplicate skill name",
+                "Second message.",
+                "alpha/SKILL.md",
+                Some(2),
+            ),
+            finding(
+                "SKILL010",
+                Severity::Low,
+                FindingCategory::Spec,
+                "Broken relative reference",
+                "No line sorts before line.",
+                "alpha/SKILL.md",
+                None,
+            ),
+            finding(
+                "SKILL040",
+                Severity::Low,
+                FindingCategory::Spec,
+                "Unknown frontmatter field",
+                "Line one sorts before line two.",
+                "alpha/SKILL.md",
+                Some(1),
+            ),
+            finding(
+                "SKILL020",
+                Severity::Low,
+                FindingCategory::Spec,
+                "Oversized skill manifest",
+                "First rule id at same path and line.",
+                "alpha/SKILL.md",
+                Some(2),
+            ),
+            finding(
+                "SKILL030",
+                Severity::Low,
+                FindingCategory::Spec,
+                "Duplicate skill name",
+                "First message.",
+                "alpha/SKILL.md",
+                Some(2),
+            ),
+        ]);
+
+        let value = render_sarif_value(&report);
+
+        assert_eq!(
+            sarif_result_tuples(&value),
+            vec![
+                (
+                    "alpha/SKILL.md",
+                    None,
+                    "SKILL010",
+                    "No line sorts before line."
+                ),
+                (
+                    "alpha/SKILL.md",
+                    Some(1),
+                    "SKILL040",
+                    "Line one sorts before line two."
+                ),
+                (
+                    "alpha/SKILL.md",
+                    Some(2),
+                    "SKILL020",
+                    "First rule id at same path and line."
+                ),
+                ("alpha/SKILL.md", Some(2), "SKILL030", "First message."),
+                ("alpha/SKILL.md", Some(2), "SKILL030", "Second message."),
+                ("zeta/SKILL.md", Some(1), "SKILL020", "Later path."),
+            ]
+        );
+    }
+
+    #[test]
+    fn sarif_output_uses_rule_indexes_matching_sorted_rule_metadata() {
+        let report = report_with_findings(vec![
+            finding(
+                "SKILL020",
+                Severity::Medium,
+                FindingCategory::Spec,
+                "Oversized skill manifest",
+                "Oversized manifest.",
+                "zeta/SKILL.md",
+                Some(5),
+            ),
+            finding(
+                "SKILL001",
+                Severity::Low,
+                FindingCategory::Spec,
+                "Missing skill name",
+                "The skill manifest does not declare a name.",
+                "alpha/SKILL.md",
+                Some(1),
+            ),
+            finding(
+                "SKILL020",
+                Severity::Medium,
+                FindingCategory::Spec,
+                "Oversized skill manifest",
+                "A second oversized manifest.",
+                "alpha/SKILL.md",
+                None,
+            ),
+        ]);
+
+        let value = render_sarif_value(&report);
+
+        assert_eq!(sarif_rule_ids(&value), vec!["SKILL001", "SKILL020"]);
+        assert_eq!(
+            sarif_result_rule_indexes(&value),
+            vec![("SKILL020", 1), ("SKILL001", 0), ("SKILL020", 1),]
+        );
+    }
+
+    #[test]
+    fn sarif_output_omits_region_when_location_has_no_line() {
+        let report = report_with_findings(vec![finding(
+            "SKILL010",
+            Severity::Low,
+            FindingCategory::Spec,
+            "Broken relative reference",
+            "The referenced file could not be found.",
+            "SKILL.md",
+            None,
+        )]);
+
+        let value = render_sarif_value(&report);
+        let physical_location = &value["runs"][0]["results"][0]["locations"][0]["physicalLocation"];
+
+        assert_eq!(physical_location["artifactLocation"]["uri"], "SKILL.md");
+        assert!(physical_location.get("region").is_none());
     }
 
     #[test]
@@ -494,6 +671,43 @@ mod tests {
                 result["properties"]["agentAuditSeverity"]
                     .as_str()
                     .expect("agent audit severity")
+            })
+            .collect()
+    }
+
+    fn sarif_result_tuples(value: &Value) -> Vec<(&str, Option<u64>, &str, &str)> {
+        value["runs"][0]["results"]
+            .as_array()
+            .expect("results array")
+            .iter()
+            .map(|result| {
+                let physical_location = &result["locations"][0]["physicalLocation"];
+                let line = physical_location
+                    .get("region")
+                    .and_then(|region| region["startLine"].as_u64());
+
+                (
+                    physical_location["artifactLocation"]["uri"]
+                        .as_str()
+                        .expect("result path"),
+                    line,
+                    result["ruleId"].as_str().expect("rule id"),
+                    result["message"]["text"].as_str().expect("message text"),
+                )
+            })
+            .collect()
+    }
+
+    fn sarif_result_rule_indexes(value: &Value) -> Vec<(&str, usize)> {
+        value["runs"][0]["results"]
+            .as_array()
+            .expect("results array")
+            .iter()
+            .map(|result| {
+                (
+                    result["ruleId"].as_str().expect("rule id"),
+                    result["ruleIndex"].as_u64().expect("rule index") as usize,
+                )
             })
             .collect()
     }
