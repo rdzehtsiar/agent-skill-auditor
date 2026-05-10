@@ -10,39 +10,115 @@ It is not a generic Markdown or YAML linter. It is intended for maintainers, sec
 
 ## Status
 
-This repository is currently at the planning/bootstrap stage.
+Agent Skill Auditor currently provides a Phase 1 CLI scanner for local skill packages.
 
-The scanner is not implemented yet.
+The implemented CLI can discover `SKILL.md` manifests, parse frontmatter and Markdown content, extract normalized package metadata, evaluate initial structural rules, and render summary, JSON, SARIF, and HTML reports. It runs offline and does not execute skill scripts.
 
-## What It Will Check
+Static script security analysis, host compatibility matrices, policy packs, and broader ecosystem reporting are planned work.
 
-Agent Skill Auditor is intended to inspect skill packages for:
+## Quick Start
 
-- Missing or broken referenced files.
-- Compatibility issues across agent skill hosts.
-- Suspicious script behavior such as remote shell execution, secret access, destructive commands, or undeclared network use.
-- Supply-chain risks such as unpinned dependencies, opaque binaries, external URLs, and missing provenance.
-- Prompt-injection-like instructions hidden in comments, code blocks, or supporting files.
+Build and test the workspace:
+
+```bash
+cargo build
+cargo test
+```
+
+Run a summary scan against the basic fixture:
+
+```bash
+cargo run -q -p agent-audit-cli -- scan fixtures/spec/basic
+```
+
+## CLI Usage
+
+```text
+agent-audit scan [PATH] [--format FORMAT]
+```
+
+- `PATH` defaults to `.`.
+- `--format` defaults to `summary`.
+- Supported formats are `summary`, `json`, `sarif`, and `html`.
+
+Examples:
+
+```bash
+agent-audit scan
+agent-audit scan fixtures/spec/basic
+agent-audit scan fixtures/spec/basic --format json
+agent-audit scan fixtures/spec/basic --format sarif
+agent-audit scan fixtures/spec/basic --format html
+```
+
+## Report Formats
+
+Summary output is intended for local review and CI logs:
+
+```bash
+cargo run -q -p agent-audit-cli -- scan fixtures/spec/basic
+```
+
+JSON output is intended for deterministic machine processing:
+
+```bash
+cargo run -q -p agent-audit-cli -- scan fixtures/spec/basic --format json
+cargo run -q -p agent-audit-cli -- scan fixtures/spec/basic --format json > report.json
+```
+
+SARIF output is intended for code scanning integrations that accept SARIF:
+
+```bash
+cargo run -q -p agent-audit-cli -- scan fixtures/spec/basic --format sarif
+cargo run -q -p agent-audit-cli -- scan fixtures/spec/basic --format sarif > report.sarif
+```
+
+HTML output is intended for self-contained human-readable reports:
+
+```bash
+cargo run -q -p agent-audit-cli -- scan fixtures/spec/basic --format html
+cargo run -q -p agent-audit-cli -- scan fixtures/spec/basic --format html > report.html
+```
+
+## Current Checks
+
+The Phase 1 scanner currently supports:
+
+- Recursive `SKILL.md` discovery.
+- Frontmatter and Markdown parsing.
+- Name, description, tools, and permissions extraction.
+- Markdown heading, link, inline code, and fenced code block extraction.
+- Relative file reference extraction.
+- Skill artifact inventory for `scripts/`, `references/`, and `assets/`.
+- Deterministic structural findings for:
+  - `SKILL001`: missing required name.
+  - `SKILL002`: missing required description.
+  - `SKILL010`: broken relative reference.
+  - `SKILL020`: oversized manifest.
+  - `SKILL030`: duplicate skill name.
+  - `SKILL040`: unknown frontmatter field.
 
 ## Security Model
 
 Agent Skill Auditor is designed to inspect untrusted or third-party skill packages before they are installed into an AI agent environment.
 
-The tool should be:
+The current CLI:
 
-- Fully offline by default.
-- Free of telemetry.
-- Usable without a hosted backend.
-- Usable without an AI API.
-- Safe by default: no execution of untrusted skill code.
-- Deterministic and explainable.
-- Suitable for CI and local review.
+- Runs fully offline by default.
+- Does not collect telemetry.
+- Does not require a hosted backend.
+- Does not require an AI API.
+- Does not execute untrusted skill code.
+- Produces deterministic, explainable structural findings.
+- Is suitable for local review and CI smoke checks.
 
 Static analysis cannot prove that a skill is safe. Some risky behavior may be intentional, and some unsafe behavior may be missed. Findings should be treated as review evidence, not as a complete security guarantee.
 
+Offline static script security analysis is planned but not yet implemented.
+
 ## Supported Skill Content
 
-Initial support is expected to focus on common agent skill package content:
+The scanner currently focuses on local skill package content:
 
 - `SKILL.md`
 - Skill directories.
@@ -50,11 +126,15 @@ Initial support is expected to focus on common agent skill package content:
 - `references/`
 - `assets/`
 
+It parses manifest content and inventories known artifact directories, but it does not execute scripts or validate behavior fixtures.
+
 Future support may expand to other agent-related metadata and behavior fixtures.
 
 ## Host Compatibility
 
-The tool is intended to help compare whether a skill package is likely to work across major agent skill environments, including:
+Host compatibility profiles are planned but not yet implemented.
+
+The current scanner extracts portable metadata and structural signals that future compatibility checks can use. Planned profiles include:
 
 - Agent Skills Spec.
 - Claude Code.
@@ -63,22 +143,23 @@ The tool is intended to help compare whether a skill package is likely to work a
 - VS Code Copilot.
 - Generic local agent setups.
 
-Compatibility findings should explain whether a package is likely to pass, warn, or fail for a given host, and why.
+Future compatibility findings should explain whether a package is likely to pass, warn, or fail for a given host, and why.
 
 ## Roadmap
 
-| Milestone | Focus |
+| Area | Status |
 | --- | --- |
-| `v0.1.0` | Discover skill packages and report structural issues. |
-| `v0.2.0` | Add deterministic, documented findings. |
-| `v0.3.0` | Report cross-host compatibility. |
-| `v0.4.0` | Add offline static security checks. |
-| `v0.5.0` | Report provenance, dependencies, permissions, and offline readiness. |
-| `v0.6.0` | Generate self-contained HTML audit reports. |
-| `v0.7.0` | Support CI workflows and SARIF output. |
-| `v0.8.0` | Publish a reproducible public ecosystem audit. |
-| `v0.9.0` | Add offline behavior fixtures for skill packages. |
-| `v1.0.0` | Stabilize CLI behavior, schemas, docs, releases, and benchmarks. |
+| CLI scanner and package discovery | Implemented for Phase 1. |
+| Normalized internal model | Implemented for Phase 1 package metadata. |
+| Deterministic structural rule engine | Implemented for initial `SKILL001` through `SKILL040` rules. |
+| JSON output | Implemented. |
+| Terminal summary | Implemented. |
+| SARIF and HTML output | Implemented initial report formats. |
+| Fixture and snapshot-style tests | Implemented for current scanner and report behavior. |
+| Host compatibility profiles | Planned. |
+| Static script security analyzers | Planned. |
+| Rule documentation generation | Planned. |
+| Policy and suppression configuration | Planned. |
 
 ## License
 
