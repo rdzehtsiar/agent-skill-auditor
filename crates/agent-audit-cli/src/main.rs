@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 
 use agent_audit_core::{scan_path, ScanOptions};
+use agent_audit_report::render_sarif;
 use anyhow::Result;
 use clap::{Parser, ValueEnum};
 
@@ -31,6 +32,7 @@ struct ScanCommand {
 enum OutputFormat {
     Summary,
     Json,
+    Sarif,
 }
 
 fn main() -> Result<()> {
@@ -67,6 +69,9 @@ fn run_scan(command: ScanCommand) -> Result<()> {
         }
         OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(&report)?);
+        }
+        OutputFormat::Sarif => {
+            println!("{}", render_sarif(&report)?);
         }
     }
 
@@ -113,6 +118,24 @@ mod tests {
     }
 
     #[test]
+    fn parses_sarif_scan_format() {
+        let cli = Cli::parse_from([
+            "agent-audit",
+            "scan",
+            "fixtures/spec/basic",
+            "--format",
+            "sarif",
+        ]);
+
+        match cli.command {
+            Command::Scan(command) => {
+                assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
+                assert!(matches!(command.format, OutputFormat::Sarif));
+            }
+        }
+    }
+
+    #[test]
     fn runs_scan_with_summary_output() {
         let workspace = CliTestWorkspace::new("summary-output");
         workspace.write_file(
@@ -151,6 +174,28 @@ description: JSON output fixture.
         let result = run_scan(ScanCommand {
             path: workspace.root.clone(),
             format: OutputFormat::Json,
+        });
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn runs_scan_with_sarif_output() {
+        let workspace = CliTestWorkspace::new("sarif-output");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: sarif-output
+description: SARIF output fixture.
+---
+
+# SARIF Output
+"#,
+        );
+
+        let result = run_scan(ScanCommand {
+            path: workspace.root.clone(),
+            format: OutputFormat::Sarif,
         });
 
         assert!(result.is_ok());
