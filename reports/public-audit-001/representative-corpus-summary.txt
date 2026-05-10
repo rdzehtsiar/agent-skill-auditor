@@ -1,0 +1,23 @@
+﻿Agent Skill Auditor scan summary
+Packages: 30
+Findings: 16
+Invalid manifests: 5
+Broken references: 4
+
+Finding details:
+SKILL010 [low/spec] .agents/skills/broken-reference/SKILL.md:8: The manifest references `references/playbook.md`, but the file was not found.
+SKILL002 [low/spec] .agents/skills/missing-description/SKILL.md:1: The skill manifest does not declare a description.
+SKILL030 [low/compatibility] .claude/skills/duplicate-a/SKILL.md:1: The skill name `corpus-host-duplicate` is also declared by other manifest path(s): `.claude/skills/duplicate-b/SKILL.md`.
+SKILL030 [low/compatibility] .claude/skills/duplicate-b/SKILL.md:1: The skill name `corpus-host-duplicate` is also declared by other manifest path(s): `.claude/skills/duplicate-a/SKILL.md`.
+SKILL040 [low/compatibility] .claude/skills/unknown-frontmatter/SKILL.md:4: The manifest declares unsupported frontmatter field `host`.
+SKILL010 [low/spec] .github/skills/broken-reference/SKILL.md:8: The manifest references `references/release.md`, but the file was not found.
+SKILL001 [low/spec] .github/skills/missing-name/SKILL.md:1: The skill manifest does not declare a name.
+SKILL010 [low/spec] generic/broken-reference/SKILL.md:8: The manifest references `references/missing-guide.md`, but the file was not found.
+SKILL030 [low/compatibility] generic/duplicate-a/SKILL.md:1: The skill name `corpus-duplicate` is also declared by other manifest path(s): `generic/duplicate-b/SKILL.md`.
+SKILL030 [low/compatibility] generic/duplicate-b/SKILL.md:1: The skill name `corpus-duplicate` is also declared by other manifest path(s): `generic/duplicate-a/SKILL.md`.
+SKILL002 [low/spec] generic/missing-description/SKILL.md:1: The skill manifest does not declare a description.
+SKILL001 [low/spec] generic/missing-name/SKILL.md:1: The skill manifest does not declare a name.
+SKILL040 [low/compatibility] generic/unknown-field/SKILL.md:4: The manifest declares unsupported frontmatter field `x-owner`.
+SKILL001 [low/spec] nested/team/portability/missing-name/SKILL.md:1: The skill manifest does not declare a name.
+SKILL040 [low/compatibility] nested/team/security/checks/SKILL.md:4: The manifest declares unsupported frontmatter field `owner`.
+SKILL010 [low/spec] nested/team/security/checks/SKILL.md:9: The manifest references `references/checklist.md`, but the file was not found.

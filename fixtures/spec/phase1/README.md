@@ -23,3 +23,6 @@ Fixture cases:
 - `malformed-frontmatter`: manifest with invalid YAML frontmatter.
 - `artifact-inventory`: valid manifest with deterministic nested files under
   `scripts/`, `references/`, and `assets/`.
+- `representative-corpus`: synthetic offline corpus with 30 small skill
+  packages covering valid manifests, structural findings, host path
+  conventions, duplicate names, and artifact directories.

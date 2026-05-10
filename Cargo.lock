@@ -55,6 +55,8 @@ name = "agent-audit-test"
 version = "0.1.0"
 dependencies = [
  "agent-audit-core",
+ "agent-audit-report",
+ "serde_json",
 ]
 
 [[package]]

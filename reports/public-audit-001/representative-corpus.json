@@ -1,0 +1,1226 @@
+﻿{
+  "packages": [
+    {
+      "root": ".agents/skills/artifacts",
+      "manifest_path": ".agents/skills/artifacts/SKILL.md",
+      "manifest": {
+        "name": "corpus-agent-artifacts",
+        "description": "Agent path representative artifact package.",
+        "frontmatter": {
+          "description": "Agent path representative artifact package.",
+          "name": "corpus-agent-artifacts"
+        },
+        "body": "\n# Corpus Agent Artifacts\n\nArtifacts are inventoried without execution.\n",
+        "headings": [
+          "Corpus Agent Artifacts"
+        ],
+        "links": [],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [
+          "scripts",
+          "references",
+          "assets"
+        ],
+        "files": [
+          {
+            "path": "assets/sample.txt",
+            "artifact": "assets",
+            "kind": "file",
+            "size_bytes": 13,
+            "readonly": false
+          },
+          {
+            "path": "references/readme.md",
+            "artifact": "references",
+            "kind": "file",
+            "size_bytes": 42,
+            "readonly": false
+          },
+          {
+            "path": "scripts/audit.txt",
+            "artifact": "scripts",
+            "kind": "file",
+            "size_bytes": 27,
+            "readonly": false
+          }
+        ]
+      }
+    },
+    {
+      "root": ".agents/skills/broken-reference",
+      "manifest_path": ".agents/skills/broken-reference/SKILL.md",
+      "manifest": {
+        "name": "corpus-agent-broken-reference",
+        "description": "Agent path representative broken reference.",
+        "frontmatter": {
+          "description": "Agent path representative broken reference.",
+          "name": "corpus-agent-broken-reference"
+        },
+        "body": "\n# Corpus Agent Broken Reference\n\nSee [missing playbook](references/playbook.md).\n",
+        "headings": [
+          "Corpus Agent Broken Reference"
+        ],
+        "links": [
+          {
+            "target": "references/playbook.md",
+            "line": 8,
+            "exists": null
+          }
+        ],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [
+          {
+            "target": "references/playbook.md",
+            "line": 8,
+            "exists": false
+          }
+        ],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": ".agents/skills/missing-description",
+      "manifest_path": ".agents/skills/missing-description/SKILL.md",
+      "manifest": {
+        "name": "corpus-agent-missing-description",
+        "description": null,
+        "frontmatter": {
+          "name": "corpus-agent-missing-description"
+        },
+        "body": "\n# Corpus Agent Missing Description\n\n- No paragraph fallback is present.\n",
+        "headings": [
+          "Corpus Agent Missing Description"
+        ],
+        "links": [],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": ".agents/skills/triage",
+      "manifest_path": ".agents/skills/triage/SKILL.md",
+      "manifest": {
+        "name": "corpus-agent-triage",
+        "description": "Agent path representative skill.",
+        "frontmatter": {
+          "description": "Agent path representative skill.",
+          "name": "corpus-agent-triage"
+        },
+        "body": "\n# Corpus Agent Triage\n\nThis package covers `.agents/skills`.\n",
+        "headings": [
+          "Corpus Agent Triage"
+        ],
+        "links": [],
+        "inline_code": [
+          ".agents/skills"
+        ],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": ".claude/skills/duplicate-a",
+      "manifest_path": ".claude/skills/duplicate-a/SKILL.md",
+      "manifest": {
+        "name": "corpus-host-duplicate",
+        "description": "First host duplicate package.",
+        "frontmatter": {
+          "description": "First host duplicate package.",
+          "name": "corpus-host-duplicate"
+        },
+        "body": "\n# Corpus Host Duplicate A\n\nDuplicate host path package.\n",
+        "headings": [
+          "Corpus Host Duplicate A"
+        ],
+        "links": [],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": ".claude/skills/duplicate-b",
+      "manifest_path": ".claude/skills/duplicate-b/SKILL.md",
+      "manifest": {
+        "name": "corpus-host-duplicate",
+        "description": "Second host duplicate package.",
+        "frontmatter": {
+          "description": "Second host duplicate package.",
+          "name": "corpus-host-duplicate"
+        },
+        "body": "\n# Corpus Host Duplicate B\n\nDuplicate host path package.\n",
+        "headings": [
+          "Corpus Host Duplicate B"
+        ],
+        "links": [],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": ".claude/skills/planning",
+      "manifest_path": ".claude/skills/planning/SKILL.md",
+      "manifest": {
+        "name": "corpus-claude-planning",
+        "description": "Claude path representative skill.",
+        "frontmatter": {
+          "description": "Claude path representative skill.",
+          "name": "corpus-claude-planning"
+        },
+        "body": "\n# Corpus Claude Planning\n\nThis package covers `.claude/skills`.\n",
+        "headings": [
+          "Corpus Claude Planning"
+        ],
+        "links": [],
+        "inline_code": [
+          ".claude/skills"
+        ],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": ".claude/skills/unknown-frontmatter",
+      "manifest_path": ".claude/skills/unknown-frontmatter/SKILL.md",
+      "manifest": {
+        "name": "corpus-claude-unknown",
+        "description": "Claude path representative unknown metadata.",
+        "frontmatter": {
+          "description": "Claude path representative unknown metadata.",
+          "host": "claude",
+          "name": "corpus-claude-unknown"
+        },
+        "body": "\n# Corpus Claude Unknown\n\nThe `host` field is intentionally unsupported in phase 1.\n",
+        "headings": [
+          "Corpus Claude Unknown"
+        ],
+        "links": [],
+        "inline_code": [
+          "host"
+        ],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": ".github/skills/assets",
+      "manifest_path": ".github/skills/assets/SKILL.md",
+      "manifest": {
+        "name": "corpus-github-assets",
+        "description": "GitHub path representative assets package.",
+        "frontmatter": {
+          "description": "GitHub path representative assets package.",
+          "name": "corpus-github-assets"
+        },
+        "body": "\n# Corpus GitHub Assets\n\nAssets are inventory-only fixture files.\n",
+        "headings": [
+          "Corpus GitHub Assets"
+        ],
+        "links": [],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [
+          "assets"
+        ],
+        "files": [
+          {
+            "path": "assets/logo.txt",
+            "artifact": "assets",
+            "kind": "file",
+            "size_bytes": 18,
+            "readonly": false
+          }
+        ]
+      }
+    },
+    {
+      "root": ".github/skills/broken-reference",
+      "manifest_path": ".github/skills/broken-reference/SKILL.md",
+      "manifest": {
+        "name": "corpus-github-broken-reference",
+        "description": "GitHub path representative broken reference.",
+        "frontmatter": {
+          "description": "GitHub path representative broken reference.",
+          "name": "corpus-github-broken-reference"
+        },
+        "body": "\n# Corpus GitHub Broken Reference\n\nRead [missing release guidance](references/release.md).\n",
+        "headings": [
+          "Corpus GitHub Broken Reference"
+        ],
+        "links": [
+          {
+            "target": "references/release.md",
+            "line": 8,
+            "exists": null
+          }
+        ],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [
+          {
+            "target": "references/release.md",
+            "line": 8,
+            "exists": false
+          }
+        ],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": ".github/skills/missing-name",
+      "manifest_path": ".github/skills/missing-name/SKILL.md",
+      "manifest": {
+        "name": null,
+        "description": "GitHub path representative skill with no name.",
+        "frontmatter": {
+          "description": "GitHub path representative skill with no name."
+        },
+        "body": "\nThis package intentionally omits a heading fallback.\n",
+        "headings": [],
+        "links": [],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": ".github/skills/release-notes",
+      "manifest_path": ".github/skills/release-notes/SKILL.md",
+      "manifest": {
+        "name": "corpus-github-release-notes",
+        "description": "GitHub path representative skill.",
+        "frontmatter": {
+          "description": "GitHub path representative skill.",
+          "name": "corpus-github-release-notes"
+        },
+        "body": "\n# Corpus GitHub Release Notes\n\nThis package covers `.github/skills`.\n",
+        "headings": [
+          "Corpus GitHub Release Notes"
+        ],
+        "links": [],
+        "inline_code": [
+          ".github/skills"
+        ],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": "deep/products/alpha/.agents/skills/nested-agent",
+      "manifest_path": "deep/products/alpha/.agents/skills/nested-agent/SKILL.md",
+      "manifest": {
+        "name": "corpus-deep-nested-agent",
+        "description": "Deeply nested host-convention representative skill.",
+        "frontmatter": {
+          "description": "Deeply nested host-convention representative skill.",
+          "name": "corpus-deep-nested-agent"
+        },
+        "body": "\n# Corpus Deep Nested Agent\n\nRecursive discovery should find nested host paths.\n",
+        "headings": [
+          "Corpus Deep Nested Agent"
+        ],
+        "links": [],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": "deep/products/beta",
+      "manifest_path": "deep/products/beta/SKILL.md",
+      "manifest": {
+        "name": "corpus-deep-product-beta",
+        "description": "Deep generic representative skill.",
+        "frontmatter": {
+          "description": "Deep generic representative skill.",
+          "name": "corpus-deep-product-beta"
+        },
+        "body": "\n# Corpus Deep Product Beta\n\nRecursive discovery should find generic nested manifests.\n",
+        "headings": [
+          "Corpus Deep Product Beta"
+        ],
+        "links": [],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": "generic/artifact-complete",
+      "manifest_path": "generic/artifact-complete/SKILL.md",
+      "manifest": {
+        "name": "corpus-artifact-complete",
+        "description": "Representative skill with all phase 1 artifact directories.",
+        "frontmatter": {
+          "description": "Representative skill with all phase 1 artifact directories.",
+          "name": "corpus-artifact-complete"
+        },
+        "body": "\n# Corpus Artifact Complete\n\nUse [the guide](references/guide.md) and keep script fixtures inert.\n",
+        "headings": [
+          "Corpus Artifact Complete"
+        ],
+        "links": [
+          {
+            "target": "references/guide.md",
+            "line": 8,
+            "exists": null
+          }
+        ],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [
+          {
+            "target": "references/guide.md",
+            "line": 8,
+            "exists": true
+          }
+        ],
+        "artifacts": [
+          "scripts",
+          "references",
+          "assets"
+        ],
+        "files": [
+          {
+            "path": "assets/icon.txt",
+            "artifact": "assets",
+            "kind": "file",
+            "size_bytes": 18,
+            "readonly": false
+          },
+          {
+            "path": "references/guide.md",
+            "artifact": "references",
+            "kind": "file",
+            "size_bytes": 42,
+            "readonly": false
+          },
+          {
+            "path": "scripts/check.sh",
+            "artifact": "scripts",
+            "kind": "file",
+            "size_bytes": 103,
+            "readonly": false
+          }
+        ]
+      }
+    },
+    {
+      "root": "generic/assets-only",
+      "manifest_path": "generic/assets-only/SKILL.md",
+      "manifest": {
+        "name": "corpus-assets-only",
+        "description": "Representative skill with only asset artifacts.",
+        "frontmatter": {
+          "description": "Representative skill with only asset artifacts.",
+          "name": "corpus-assets-only"
+        },
+        "body": "\n# Corpus Assets Only\n\nAsset inventory should remain deterministic.\n",
+        "headings": [
+          "Corpus Assets Only"
+        ],
+        "links": [],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [
+          "assets"
+        ],
+        "files": [
+          {
+            "path": "assets/banner.txt",
+            "artifact": "assets",
+            "kind": "file",
+            "size_bytes": 20,
+            "readonly": false
+          }
+        ]
+      }
+    },
+    {
+      "root": "generic/broken-reference",
+      "manifest_path": "generic/broken-reference/SKILL.md",
+      "manifest": {
+        "name": "corpus-broken-reference",
+        "description": "Representative skill with a stale local link.",
+        "frontmatter": {
+          "description": "Representative skill with a stale local link.",
+          "name": "corpus-broken-reference"
+        },
+        "body": "\n# Corpus Broken Reference\n\nRead the [missing guide](references/missing-guide.md).\n",
+        "headings": [
+          "Corpus Broken Reference"
+        ],
+        "links": [
+          {
+            "target": "references/missing-guide.md",
+            "line": 8,
+            "exists": null
+          }
+        ],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [
+          {
+            "target": "references/missing-guide.md",
+            "line": 8,
+            "exists": false
+          }
+        ],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": "generic/duplicate-a",
+      "manifest_path": "generic/duplicate-a/SKILL.md",
+      "manifest": {
+        "name": "corpus-duplicate",
+        "description": "First representative duplicate name package.",
+        "frontmatter": {
+          "description": "First representative duplicate name package.",
+          "name": "corpus-duplicate"
+        },
+        "body": "\n# Corpus Duplicate A\n\nThis package shares its declared name with another package.\n",
+        "headings": [
+          "Corpus Duplicate A"
+        ],
+        "links": [],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": "generic/duplicate-b",
+      "manifest_path": "generic/duplicate-b/SKILL.md",
+      "manifest": {
+        "name": "corpus-duplicate",
+        "description": "Second representative duplicate name package.",
+        "frontmatter": {
+          "description": "Second representative duplicate name package.",
+          "name": "corpus-duplicate"
+        },
+        "body": "\n# Corpus Duplicate B\n\nThis package shares its declared name with another package.\n",
+        "headings": [
+          "Corpus Duplicate B"
+        ],
+        "links": [],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": "generic/missing-description",
+      "manifest_path": "generic/missing-description/SKILL.md",
+      "manifest": {
+        "name": "corpus-missing-description",
+        "description": null,
+        "frontmatter": {
+          "name": "corpus-missing-description"
+        },
+        "body": "\n# Corpus Missing Description\n\n- This list is not a description fallback.\n",
+        "headings": [
+          "Corpus Missing Description"
+        ],
+        "links": [],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": "generic/missing-name",
+      "manifest_path": "generic/missing-name/SKILL.md",
+      "manifest": {
+        "name": null,
+        "description": "Representative skill with no declared name.",
+        "frontmatter": {
+          "description": "Representative skill with no declared name."
+        },
+        "body": "\nThis package intentionally has no heading fallback so `SKILL001` is reported.\n",
+        "headings": [],
+        "links": [],
+        "inline_code": [
+          "SKILL001"
+        ],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": "generic/references-only",
+      "manifest_path": "generic/references-only/SKILL.md",
+      "manifest": {
+        "name": "corpus-references-only",
+        "description": "Representative skill with only reference artifacts.",
+        "frontmatter": {
+          "description": "Representative skill with only reference artifacts.",
+          "name": "corpus-references-only"
+        },
+        "body": "\n# Corpus References Only\n\nRead [notes](references/notes.md).\n",
+        "headings": [
+          "Corpus References Only"
+        ],
+        "links": [
+          {
+            "target": "references/notes.md",
+            "line": 8,
+            "exists": null
+          }
+        ],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [
+          {
+            "target": "references/notes.md",
+            "line": 8,
+            "exists": true
+          }
+        ],
+        "artifacts": [
+          "references"
+        ],
+        "files": [
+          {
+            "path": "references/notes.md",
+            "artifact": "references",
+            "kind": "file",
+            "size_bytes": 33,
+            "readonly": false
+          }
+        ]
+      }
+    },
+    {
+      "root": "generic/scripts-only",
+      "manifest_path": "generic/scripts-only/SKILL.md",
+      "manifest": {
+        "name": "corpus-scripts-only",
+        "description": "Representative skill with only script artifacts.",
+        "frontmatter": {
+          "description": "Representative skill with only script artifacts.",
+          "name": "corpus-scripts-only"
+        },
+        "body": "\n# Corpus Scripts Only\n\nScript artifacts are inventory targets only.\n",
+        "headings": [
+          "Corpus Scripts Only"
+        ],
+        "links": [],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [
+          "scripts"
+        ],
+        "files": [
+          {
+            "path": "scripts/task.ps1",
+            "artifact": "scripts",
+            "kind": "file",
+            "size_bytes": 103,
+            "readonly": false
+          }
+        ]
+      }
+    },
+    {
+      "root": "generic/unknown-field",
+      "manifest_path": "generic/unknown-field/SKILL.md",
+      "manifest": {
+        "name": "corpus-unknown-field",
+        "description": "Representative skill with host-specific metadata.",
+        "frontmatter": {
+          "description": "Representative skill with host-specific metadata.",
+          "name": "corpus-unknown-field",
+          "x-owner": "platform-security"
+        },
+        "body": "\n# Corpus Unknown Field\n\nThe `x-owner` field is outside the phase 1 accepted field set.\n",
+        "headings": [
+          "Corpus Unknown Field"
+        ],
+        "links": [],
+        "inline_code": [
+          "x-owner"
+        ],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": "generic/valid-basic",
+      "manifest_path": "generic/valid-basic/SKILL.md",
+      "manifest": {
+        "name": "corpus-valid-basic",
+        "description": "Valid baseline representative skill.",
+        "frontmatter": {
+          "description": "Valid baseline representative skill.",
+          "name": "corpus-valid-basic"
+        },
+        "body": "\n# Corpus Valid Basic\n\nReview the local [baseline guidance](references/baseline.md) before auditing.\n",
+        "headings": [
+          "Corpus Valid Basic"
+        ],
+        "links": [
+          {
+            "target": "references/baseline.md",
+            "line": 8,
+            "exists": null
+          }
+        ],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [
+          {
+            "target": "references/baseline.md",
+            "line": 8,
+            "exists": true
+          }
+        ],
+        "artifacts": [
+          "references"
+        ],
+        "files": [
+          {
+            "path": "references/baseline.md",
+            "artifact": "references",
+            "kind": "file",
+            "size_bytes": 50,
+            "readonly": false
+          }
+        ]
+      }
+    },
+    {
+      "root": "generic/valid-tools",
+      "manifest_path": "generic/valid-tools/SKILL.md",
+      "manifest": {
+        "name": "corpus-valid-tools",
+        "description": "Valid skill declaring tools and permissions.",
+        "frontmatter": {
+          "description": "Valid skill declaring tools and permissions.",
+          "name": "corpus-valid-tools",
+          "permissions": [
+            "read-files"
+          ],
+          "tools": [
+            "shell"
+          ]
+        },
+        "body": "\n# Corpus Valid Tools\n\nUse `agent-audit scan` examples as inert documentation only.\n",
+        "headings": [
+          "Corpus Valid Tools"
+        ],
+        "links": [],
+        "inline_code": [
+          "agent-audit scan"
+        ],
+        "code_blocks": [],
+        "declared_tools": [
+          "shell"
+        ],
+        "declared_permissions": [
+          "read-files"
+        ]
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": "nested/team/platform/review",
+      "manifest_path": "nested/team/platform/review/SKILL.md",
+      "manifest": {
+        "name": "corpus-platform-review",
+        "description": "Nested generic representative skill.",
+        "frontmatter": {
+          "description": "Nested generic representative skill.",
+          "name": "corpus-platform-review"
+        },
+        "body": "\n# Corpus Platform Review\n\nNested generic discovery should find this manifest.\n",
+        "headings": [
+          "Corpus Platform Review"
+        ],
+        "links": [],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": "nested/team/portability/missing-name",
+      "manifest_path": "nested/team/portability/missing-name/SKILL.md",
+      "manifest": {
+        "name": null,
+        "description": "Nested representative skill with no name.",
+        "frontmatter": {
+          "description": "Nested representative skill with no name."
+        },
+        "body": "\nThis package intentionally omits a heading fallback.\n",
+        "headings": [],
+        "links": [],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": "nested/team/quality/docs",
+      "manifest_path": "nested/team/quality/docs/SKILL.md",
+      "manifest": {
+        "name": "corpus-quality-docs",
+        "description": "Nested valid skill with Markdown code examples.",
+        "frontmatter": {
+          "description": "Nested valid skill with Markdown code examples.",
+          "name": "corpus-quality-docs"
+        },
+        "body": "\n# Corpus Quality Docs\n\nUse inline `fixtures` examples.\n\n```text\nThis fenced block is documentation, not script execution.\n```\n",
+        "headings": [
+          "Corpus Quality Docs"
+        ],
+        "links": [],
+        "inline_code": [
+          "fixtures"
+        ],
+        "code_blocks": [
+          {
+            "language": "text",
+            "content": "This fenced block is documentation, not script execution.\n",
+            "line": 10
+          }
+        ],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": "nested/team/security/checks",
+      "manifest_path": "nested/team/security/checks/SKILL.md",
+      "manifest": {
+        "name": "corpus-security-checks",
+        "description": "Nested skill with multiple structural findings.",
+        "frontmatter": {
+          "description": "Nested skill with multiple structural findings.",
+          "name": "corpus-security-checks",
+          "owner": "security-team"
+        },
+        "body": "\n# Corpus Security Checks\n\nRead [the missing checklist](references/checklist.md).\n",
+        "headings": [
+          "Corpus Security Checks"
+        ],
+        "links": [
+          {
+            "target": "references/checklist.md",
+            "line": 9,
+            "exists": null
+          }
+        ],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [
+          {
+            "target": "references/checklist.md",
+            "line": 9,
+            "exists": false
+          }
+        ],
+        "artifacts": [],
+        "files": []
+      }
+    }
+  ],
+  "findings": [
+    {
+      "rule_id": "SKILL010",
+      "severity": "low",
+      "category": "spec",
+      "title": "Broken relative reference",
+      "message": "The manifest references `references/playbook.md`, but the file was not found.",
+      "location": {
+        "path": ".agents/skills/broken-reference/SKILL.md",
+        "line": 8
+      },
+      "rationale": "Broken references can make a skill behave differently than documented or fail at runtime.",
+      "remediation": "Create the referenced file, update the link, or remove the stale reference.",
+      "suppression": "Suppress `SKILL010` only with a documented reason in the project audit config."
+    },
+    {
+      "rule_id": "SKILL002",
+      "severity": "low",
+      "category": "spec",
+      "title": "Missing skill description",
+      "message": "The skill manifest does not declare a description.",
+      "location": {
+        "path": ".agents/skills/missing-description/SKILL.md",
+        "line": 1
+      },
+      "rationale": "Reviewers and host profiles need a concise behavior statement for the skill.",
+      "remediation": "Add a non-empty `description` field to frontmatter or an opening paragraph.",
+      "suppression": "Suppress `SKILL002` only with a documented reason in the project audit config."
+    },
+    {
+      "rule_id": "SKILL030",
+      "severity": "low",
+      "category": "compatibility",
+      "title": "Duplicate skill name",
+      "message": "The skill name `corpus-host-duplicate` is also declared by other manifest path(s): `.claude/skills/duplicate-b/SKILL.md`.",
+      "location": {
+        "path": ".claude/skills/duplicate-a/SKILL.md",
+        "line": 1
+      },
+      "rationale": "Duplicate names make inventory, policy, host routing, and review ambiguous.",
+      "remediation": "Rename packages so every scanned skill has a unique stable name.",
+      "suppression": "Suppress `SKILL030` only with a documented reason in the project audit config."
+    },
+    {
+      "rule_id": "SKILL030",
+      "severity": "low",
+      "category": "compatibility",
+      "title": "Duplicate skill name",
+      "message": "The skill name `corpus-host-duplicate` is also declared by other manifest path(s): `.claude/skills/duplicate-a/SKILL.md`.",
+      "location": {
+        "path": ".claude/skills/duplicate-b/SKILL.md",
+        "line": 1
+      },
+      "rationale": "Duplicate names make inventory, policy, host routing, and review ambiguous.",
+      "remediation": "Rename packages so every scanned skill has a unique stable name.",
+      "suppression": "Suppress `SKILL030` only with a documented reason in the project audit config."
+    },
+    {
+      "rule_id": "SKILL040",
+      "severity": "low",
+      "category": "compatibility",
+      "title": "Unknown frontmatter field",
+      "message": "The manifest declares unsupported frontmatter field `host`.",
+      "location": {
+        "path": ".claude/skills/unknown-frontmatter/SKILL.md",
+        "line": 4
+      },
+      "rationale": "Unknown fields may be ignored, rejected, or interpreted differently by hosts, reducing portability and reviewability.",
+      "remediation": "Remove the field, move the information into the Markdown body, or wait for documented host profile support.",
+      "suppression": "Suppress `SKILL040` only with a documented reason in the project audit config."
+    },
+    {
+      "rule_id": "SKILL010",
+      "severity": "low",
+      "category": "spec",
+      "title": "Broken relative reference",
+      "message": "The manifest references `references/release.md`, but the file was not found.",
+      "location": {
+        "path": ".github/skills/broken-reference/SKILL.md",
+        "line": 8
+      },
+      "rationale": "Broken references can make a skill behave differently than documented or fail at runtime.",
+      "remediation": "Create the referenced file, update the link, or remove the stale reference.",
+      "suppression": "Suppress `SKILL010` only with a documented reason in the project audit config."
+    },
+    {
+      "rule_id": "SKILL001",
+      "severity": "low",
+      "category": "spec",
+      "title": "Missing skill name",
+      "message": "The skill manifest does not declare a name.",
+      "location": {
+        "path": ".github/skills/missing-name/SKILL.md",
+        "line": 1
+      },
+      "rationale": "Skills without stable names are hard to inventory and compare across hosts.",
+      "remediation": "Add a non-empty `name` field to frontmatter or a clear top-level heading.",
+      "suppression": "Suppress `SKILL001` only with a documented reason in the project audit config."
+    },
+    {
+      "rule_id": "SKILL010",
+      "severity": "low",
+      "category": "spec",
+      "title": "Broken relative reference",
+      "message": "The manifest references `references/missing-guide.md`, but the file was not found.",
+      "location": {
+        "path": "generic/broken-reference/SKILL.md",
+        "line": 8
+      },
+      "rationale": "Broken references can make a skill behave differently than documented or fail at runtime.",
+      "remediation": "Create the referenced file, update the link, or remove the stale reference.",
+      "suppression": "Suppress `SKILL010` only with a documented reason in the project audit config."
+    },
+    {
+      "rule_id": "SKILL030",
+      "severity": "low",
+      "category": "compatibility",
+      "title": "Duplicate skill name",
+      "message": "The skill name `corpus-duplicate` is also declared by other manifest path(s): `generic/duplicate-b/SKILL.md`.",
+      "location": {
+        "path": "generic/duplicate-a/SKILL.md",
+        "line": 1
+      },
+      "rationale": "Duplicate names make inventory, policy, host routing, and review ambiguous.",
+      "remediation": "Rename packages so every scanned skill has a unique stable name.",
+      "suppression": "Suppress `SKILL030` only with a documented reason in the project audit config."
+    },
+    {
+      "rule_id": "SKILL030",
+      "severity": "low",
+      "category": "compatibility",
+      "title": "Duplicate skill name",
+      "message": "The skill name `corpus-duplicate` is also declared by other manifest path(s): `generic/duplicate-a/SKILL.md`.",
+      "location": {
+        "path": "generic/duplicate-b/SKILL.md",
+        "line": 1
+      },
+      "rationale": "Duplicate names make inventory, policy, host routing, and review ambiguous.",
+      "remediation": "Rename packages so every scanned skill has a unique stable name.",
+      "suppression": "Suppress `SKILL030` only with a documented reason in the project audit config."
+    },
+    {
+      "rule_id": "SKILL002",
+      "severity": "low",
+      "category": "spec",
+      "title": "Missing skill description",
+      "message": "The skill manifest does not declare a description.",
+      "location": {
+        "path": "generic/missing-description/SKILL.md",
+        "line": 1
+      },
+      "rationale": "Reviewers and host profiles need a concise behavior statement for the skill.",
+      "remediation": "Add a non-empty `description` field to frontmatter or an opening paragraph.",
+      "suppression": "Suppress `SKILL002` only with a documented reason in the project audit config."
+    },
+    {
+      "rule_id": "SKILL001",
+      "severity": "low",
+      "category": "spec",
+      "title": "Missing skill name",
+      "message": "The skill manifest does not declare a name.",
+      "location": {
+        "path": "generic/missing-name/SKILL.md",
+        "line": 1
+      },
+      "rationale": "Skills without stable names are hard to inventory and compare across hosts.",
+      "remediation": "Add a non-empty `name` field to frontmatter or a clear top-level heading.",
+      "suppression": "Suppress `SKILL001` only with a documented reason in the project audit config."
+    },
+    {
+      "rule_id": "SKILL040",
+      "severity": "low",
+      "category": "compatibility",
+      "title": "Unknown frontmatter field",
+      "message": "The manifest declares unsupported frontmatter field `x-owner`.",
+      "location": {
+        "path": "generic/unknown-field/SKILL.md",
+        "line": 4
+      },
+      "rationale": "Unknown fields may be ignored, rejected, or interpreted differently by hosts, reducing portability and reviewability.",
+      "remediation": "Remove the field, move the information into the Markdown body, or wait for documented host profile support.",
+      "suppression": "Suppress `SKILL040` only with a documented reason in the project audit config."
+    },
+    {
+      "rule_id": "SKILL001",
+      "severity": "low",
+      "category": "spec",
+      "title": "Missing skill name",
+      "message": "The skill manifest does not declare a name.",
+      "location": {
+        "path": "nested/team/portability/missing-name/SKILL.md",
+        "line": 1
+      },
+      "rationale": "Skills without stable names are hard to inventory and compare across hosts.",
+      "remediation": "Add a non-empty `name` field to frontmatter or a clear top-level heading.",
+      "suppression": "Suppress `SKILL001` only with a documented reason in the project audit config."
+    },
+    {
+      "rule_id": "SKILL040",
+      "severity": "low",
+      "category": "compatibility",
+      "title": "Unknown frontmatter field",
+      "message": "The manifest declares unsupported frontmatter field `owner`.",
+      "location": {
+        "path": "nested/team/security/checks/SKILL.md",
+        "line": 4
+      },
+      "rationale": "Unknown fields may be ignored, rejected, or interpreted differently by hosts, reducing portability and reviewability.",
+      "remediation": "Remove the field, move the information into the Markdown body, or wait for documented host profile support.",
+      "suppression": "Suppress `SKILL040` only with a documented reason in the project audit config."
+    },
+    {
+      "rule_id": "SKILL010",
+      "severity": "low",
+      "category": "spec",
+      "title": "Broken relative reference",
+      "message": "The manifest references `references/checklist.md`, but the file was not found.",
+      "location": {
+        "path": "nested/team/security/checks/SKILL.md",
+        "line": 9
+      },
+      "rationale": "Broken references can make a skill behave differently than documented or fail at runtime.",
+      "remediation": "Create the referenced file, update the link, or remove the stale reference.",
+      "suppression": "Suppress `SKILL010` only with a documented reason in the project audit config."
+    }
+  ],
+  "summary": {
+    "package_count": 30,
+    "finding_count": 16,
+    "invalid_manifest_count": 5,
+    "broken_reference_count": 4
+  }
+}
