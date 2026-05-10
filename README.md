@@ -2,6 +2,7 @@
 
 [![Tests](https://github.com/rdzehtsiar/agent-skill-auditor/actions/workflows/tests.yml/badge.svg)](https://github.com/rdzehtsiar/agent-skill-auditor/actions/workflows/tests.yml)
 [![codecov](https://codecov.io/gh/rdzehtsiar/agent-skill-auditor/graph/badge.svg)](https://codecov.io/gh/rdzehtsiar/agent-skill-auditor)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=rdzehtsiar_agent-skill-auditor&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=rdzehtsiar_agent-skill-auditor)
 
 Offline security and compatibility auditor for AI agent skills.
 
