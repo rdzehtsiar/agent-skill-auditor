@@ -4,7 +4,10 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use agent_audit_core::{parse_audit_config, scan_path, AuditConfig, AuditError, ScanOptions};
+use agent_audit_core::{
+    parse_audit_config, parse_severity, report_matches_fail_on, scan_path, AuditConfig, AuditError,
+    ScanOptions, Severity,
+};
 use agent_audit_report::{
     render_report, ReportFormat, UnsupportedReportFormat, SUPPORTED_REPORT_FORMATS_HELP,
 };
@@ -42,6 +45,13 @@ struct ScanCommand {
         help = "Read and validate an explicit config file before scanning"
     )]
     config: Option<PathBuf>,
+    #[arg(
+        long,
+        value_parser = parse_fail_on_severity,
+        value_name = "SEVERITY",
+        help = "Fail when an unsuppressed finding exactly matches severity; repeat for multiple severities"
+    )]
+    fail_on: Vec<Severity>,
 }
 
 fn main() -> Result<()> {
@@ -65,6 +75,7 @@ fn run_scan_with_writer(command: ScanCommand, writer: &mut impl Write) -> Result
         .as_deref()
         .map(load_explicit_config)
         .transpose()?;
+    let fail_on = effective_fail_on(&command.fail_on, config.as_ref()).to_vec();
 
     let report = scan_path(
         &command.path,
@@ -76,8 +87,26 @@ fn run_scan_with_writer(command: ScanCommand, writer: &mut impl Write) -> Result
     let rendered = render_report(&report, command.format)?;
 
     writer.write_all(rendered.as_bytes())?;
+    writer.flush()?;
+
+    if report_matches_fail_on(&report, &fail_on) {
+        return Err(anyhow!(
+            "scan failed because fail_on matched an unsuppressed finding severity"
+        ));
+    }
 
     Ok(())
+}
+
+fn effective_fail_on<'a>(
+    cli_fail_on: &'a [Severity],
+    config: Option<&'a AuditConfig>,
+) -> &'a [Severity] {
+    if !cli_fail_on.is_empty() {
+        return cli_fail_on;
+    }
+
+    config.map_or(&[], |config| config.fail_on.as_slice())
 }
 
 fn load_explicit_config(config_path: &Path) -> Result<AuditConfig> {
@@ -101,6 +130,12 @@ fn config_error_with_path(config_path: &Path, error: AuditError) -> anyhow::Erro
 
 fn parse_report_format(value: &str) -> Result<ReportFormat, UnsupportedReportFormat> {
     value.parse()
+}
+
+fn parse_fail_on_severity(value: &str) -> Result<Severity, String> {
+    parse_severity(value).ok_or_else(|| {
+        format!("unknown severity `{value}`; expected one of: info, low, medium, high, critical")
+    })
 }
 
 #[cfg(test)]
@@ -150,6 +185,7 @@ mod tests {
                 assert_eq!(command.path, PathBuf::from("."));
                 assert_eq!(command.format, ReportFormat::Summary);
                 assert_eq!(command.config, None);
+                assert_eq!(command.fail_on, Vec::<Severity>::new());
             }
         }
     }
@@ -168,8 +204,45 @@ mod tests {
             Command::Scan(command) => {
                 assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
                 assert_eq!(command.config, Some(PathBuf::from("audit.yaml")));
+                assert_eq!(command.fail_on, Vec::<Severity>::new());
             }
         }
+    }
+
+    #[test]
+    fn parses_repeatable_scan_fail_on() {
+        let cli = Cli::parse_from([
+            "agent-audit",
+            "scan",
+            "fixtures/spec/basic",
+            "--fail-on",
+            "low",
+            "--fail-on",
+            "high",
+        ]);
+
+        match cli.command {
+            Command::Scan(command) => {
+                assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
+                assert_eq!(command.fail_on, vec![Severity::Low, Severity::High]);
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_scan_fail_on_severity() {
+        let error = Cli::try_parse_from([
+            "agent-audit",
+            "scan",
+            "fixtures/spec/basic",
+            "--fail-on",
+            "warning",
+        ])
+        .expect_err("invalid fail-on severity should fail");
+        let message = error.to_string();
+
+        assert!(message.contains("unknown severity `warning`"));
+        assert!(message.contains("info, low, medium, high, critical"));
     }
 
     #[test]
@@ -187,6 +260,7 @@ mod tests {
                 assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
                 assert_eq!(command.format, ReportFormat::Json);
                 assert_eq!(command.config, None);
+                assert_eq!(command.fail_on, Vec::<Severity>::new());
             }
         }
     }
@@ -206,6 +280,7 @@ mod tests {
                 assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
                 assert_eq!(command.format, ReportFormat::Sarif);
                 assert_eq!(command.config, None);
+                assert_eq!(command.fail_on, Vec::<Severity>::new());
             }
         }
     }
@@ -225,6 +300,7 @@ mod tests {
                 assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
                 assert_eq!(command.format, ReportFormat::Html);
                 assert_eq!(command.config, None);
+                assert_eq!(command.fail_on, Vec::<Severity>::new());
             }
         }
     }
@@ -270,6 +346,7 @@ description: Summary output fixture.
             path: workspace.root.clone(),
             format: ReportFormat::Summary,
             config: None,
+            fail_on: Vec::new(),
         })
         .expect("run summary scan");
 
@@ -297,6 +374,7 @@ description: JSON output fixture.
             path: workspace.root.clone(),
             format: ReportFormat::Json,
             config: None,
+            fail_on: Vec::new(),
         })
         .expect("run JSON scan");
 
@@ -325,6 +403,7 @@ description: SARIF output fixture.
             path: workspace.root.clone(),
             format: ReportFormat::Sarif,
             config: None,
+            fail_on: Vec::new(),
         })
         .expect("run SARIF scan");
 
@@ -352,6 +431,7 @@ description: HTML output fixture.
             path: workspace.root.clone(),
             format: ReportFormat::Html,
             config: None,
+            fail_on: Vec::new(),
         })
         .expect("run HTML scan");
 
@@ -378,6 +458,7 @@ name: [unterminated
             path: workspace.root.clone(),
             format: ReportFormat::Summary,
             config: None,
+            fail_on: Vec::new(),
         })
         .expect("malformed frontmatter should render report");
 
@@ -390,11 +471,22 @@ name: [unterminated
     }
 
     fn run_scan_output(command: ScanCommand) -> Result<String> {
+        let (output, result) = run_scan_attempt(command);
+
+        result?;
+
+        Ok(output)
+    }
+
+    fn run_scan_attempt(command: ScanCommand) -> (String, Result<()>) {
         let mut output = Vec::new();
 
-        run_scan_with_writer(command, &mut output)?;
+        let result = run_scan_with_writer(command, &mut output);
 
-        Ok(String::from_utf8(output).expect("scan output should be UTF-8"))
+        (
+            String::from_utf8(output).expect("scan output should be UTF-8"),
+            result,
+        )
     }
 
     #[test]
@@ -414,6 +506,7 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
             path: workspace.root.clone(),
             format: ReportFormat::Summary,
             config: None,
+            fail_on: Vec::new(),
         })
         .expect("run summary scan");
 
@@ -422,6 +515,144 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
         assert!(output.contains("SKILL.md:"));
         assert!(output.contains("The skill manifest does not declare a name."));
         assert!(output.ends_with('\n'));
+    }
+
+    #[test]
+    fn run_scan_default_does_not_fail_on_low_findings() {
+        let workspace = CliTestWorkspace::new("default-non-failing");
+        workspace.write_file("SKILL.md", missing_name_skill());
+
+        let output = run_scan_output(ScanCommand {
+            path: workspace.root.clone(),
+            format: ReportFormat::Summary,
+            config: None,
+            fail_on: Vec::new(),
+        })
+        .expect("default scan should render low findings without failing");
+
+        assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
+    }
+
+    #[test]
+    fn run_scan_config_fail_low_triggers_after_output() {
+        let workspace = CliTestWorkspace::new("config-fail-low");
+        workspace.write_file("SKILL.md", missing_name_skill());
+        workspace.write_file(
+            "agent-audit.yaml",
+            r#"
+fail_on:
+  - low
+"#,
+        );
+
+        let (output, result) = run_scan_attempt(ScanCommand {
+            path: workspace.root.clone(),
+            format: ReportFormat::Summary,
+            config: Some(workspace.root.join("agent-audit.yaml")),
+            fail_on: Vec::new(),
+        });
+        let error = result.expect_err("low fail_on should fail after rendering");
+
+        assert!(output.starts_with("Agent Skill Auditor scan summary\n"));
+        assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
+        assert!(error
+            .to_string()
+            .contains("fail_on matched an unsuppressed finding severity"));
+    }
+
+    #[test]
+    fn run_scan_config_high_does_not_fail_low_findings() {
+        let workspace = CliTestWorkspace::new("config-high-low-finding");
+        workspace.write_file("SKILL.md", missing_name_skill());
+        workspace.write_file(
+            "agent-audit.yaml",
+            r#"
+fail_on:
+  - high
+"#,
+        );
+
+        let output = run_scan_output(ScanCommand {
+            path: workspace.root.clone(),
+            format: ReportFormat::Summary,
+            config: Some(workspace.root.join("agent-audit.yaml")),
+            fail_on: Vec::new(),
+        })
+        .expect("high fail_on should not match low finding");
+
+        assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
+    }
+
+    #[test]
+    fn run_scan_suppressed_low_does_not_fail() {
+        let workspace = CliTestWorkspace::new("suppressed-low-fail-on");
+        workspace.write_file("SKILL.md", missing_name_skill());
+        workspace.write_file(
+            "agent-audit.yaml",
+            r#"
+fail_on:
+  - low
+ignore:
+  - rule: SKILL001
+    path: SKILL.md
+    reason: Accepted missing name fixture.
+"#,
+        );
+
+        let output = run_scan_output(ScanCommand {
+            path: workspace.root.clone(),
+            format: ReportFormat::Json,
+            config: Some(workspace.root.join("agent-audit.yaml")),
+            fail_on: Vec::new(),
+        })
+        .expect("suppressed low finding should not trigger fail_on");
+        let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
+
+        assert_eq!(value["summary"]["finding_count"], 0);
+        assert_eq!(value["summary"]["suppressed_finding_count"], 1);
+        assert_eq!(
+            value["suppressed_findings"][0]["finding"]["rule_id"],
+            "SKILL001"
+        );
+    }
+
+    #[test]
+    fn run_scan_cli_fail_low_works_without_config() {
+        let workspace = CliTestWorkspace::new("cli-fail-low");
+        workspace.write_file("SKILL.md", missing_name_skill());
+
+        let (output, result) = run_scan_attempt(ScanCommand {
+            path: workspace.root.clone(),
+            format: ReportFormat::Summary,
+            config: None,
+            fail_on: vec![Severity::Low],
+        });
+
+        result.expect_err("CLI fail_on low should fail without config");
+        assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
+    }
+
+    #[test]
+    fn run_scan_cli_high_overrides_config_low() {
+        let workspace = CliTestWorkspace::new("cli-overrides-config");
+        workspace.write_file("SKILL.md", missing_name_skill());
+        workspace.write_file(
+            "agent-audit.yaml",
+            r#"
+fail_on:
+  - low
+"#,
+        );
+
+        let output = run_scan_output(ScanCommand {
+            path: workspace.root.clone(),
+            format: ReportFormat::Summary,
+            config: Some(workspace.root.join("agent-audit.yaml")),
+            fail_on: vec![Severity::High],
+        })
+        .expect("CLI fail_on high should override config fail_on low");
+
+        assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
     }
 
     #[test]
@@ -455,6 +686,7 @@ ignore:
             path: workspace.root.clone(),
             format: ReportFormat::Summary,
             config: Some(workspace.root.join("agent-audit.yaml")),
+            fail_on: Vec::new(),
         })
         .expect("valid config should load before scan");
 
@@ -488,6 +720,7 @@ ignore:
             path: workspace.root.clone(),
             format: ReportFormat::Json,
             config: Some(workspace.root.join("agent-audit.yaml")),
+            fail_on: Vec::new(),
         })
         .expect("explicit config should suppress matching finding");
         let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
@@ -524,6 +757,7 @@ description: Missing explicit config fixture.
             path: workspace.root.clone(),
             format: ReportFormat::Summary,
             config: Some(config_path.clone()),
+            fail_on: Vec::new(),
         })
         .expect_err("missing config should fail before scan");
         let message = error.to_string();
@@ -552,6 +786,7 @@ description: Malformed explicit config fixture.
             path: workspace.root.clone(),
             format: ReportFormat::Summary,
             config: Some(config_path.clone()),
+            fail_on: Vec::new(),
         })
         .expect_err("malformed config should fail before scan");
         let message = error.to_string();
@@ -580,6 +815,7 @@ description: Invalid explicit config fixture.
             path: workspace.root.clone(),
             format: ReportFormat::Summary,
             config: Some(config_path.clone()),
+            fail_on: Vec::new(),
         })
         .expect_err("invalid config should fail before scan");
         let message = error.to_string();
@@ -608,10 +844,20 @@ description: No config discovery fixture.
             path: workspace.root.clone(),
             format: ReportFormat::Summary,
             config: None,
+            fail_on: Vec::new(),
         })
         .expect("implicit config discovery should not run");
 
         assert!(output.contains("Packages: 1\n"));
+    }
+
+    fn missing_name_skill() -> &'static str {
+        r#"---
+description: Missing name fail_on fixture.
+---
+
+This manifest intentionally starts with a paragraph so the scanner cannot derive a heading fallback name.
+"#
     }
 
     struct CliTestWorkspace {

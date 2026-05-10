@@ -151,7 +151,7 @@ fn validate_ignore_path(index: usize, path: &str) -> AuditResult<String> {
     Ok(path.replace('\\', "/"))
 }
 
-fn parse_severity(value: &str) -> Option<Severity> {
+pub fn parse_severity(value: &str) -> Option<Severity> {
     match value {
         "info" => Some(Severity::Info),
         "low" => Some(Severity::Low),
@@ -253,6 +253,17 @@ ignore:
         let error = parse_error("fail_on:\n  - warning\n");
 
         assert_validation_contains(error, "unknown severity `warning`");
+    }
+
+    #[test]
+    fn parses_known_severities_exactly() {
+        assert_eq!(parse_severity("info"), Some(Severity::Info));
+        assert_eq!(parse_severity("low"), Some(Severity::Low));
+        assert_eq!(parse_severity("medium"), Some(Severity::Medium));
+        assert_eq!(parse_severity("high"), Some(Severity::High));
+        assert_eq!(parse_severity("critical"), Some(Severity::Critical));
+        assert_eq!(parse_severity("Low"), None);
+        assert_eq!(parse_severity("warning"), None);
     }
 
     #[test]
