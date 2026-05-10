@@ -7,12 +7,14 @@ use crate::discovery::discover_skill_manifests;
 use crate::error::{AuditError, AuditResult};
 use crate::model::{
     FindingCategory, FindingLocation, ScanReport, ScanSummary, Severity, SkillArtifactKind,
-    SkillFile, SkillFileKind, SkillFinding, SkillGraph, SkillPackage, SkillReference,
+    SkillFile, SkillFileKind, SkillFinding, SkillGraph, SkillManifest, SkillPackage,
+    SkillReference,
 };
 use crate::parse::parse_skill_manifest;
 
 /// Portable frontmatter fields accepted by the initial structural scanner.
 const ACCEPTED_FRONTMATTER_FIELDS: &[&str] = &["name", "description", "tools", "permissions"];
+const UTF8_BOM: &str = "\u{feff}";
 
 #[derive(Debug, Clone)]
 pub struct ScanOptions {
@@ -33,13 +35,62 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
     let mut findings = Vec::new();
 
     for manifest_path in manifests {
+        let metadata =
+            std::fs::metadata(&manifest_path).map_err(|source| AuditError::Metadata {
+                path: manifest_path.clone(),
+                source,
+            })?;
+        let skill_root = manifest_path.parent().unwrap_or(root);
+        let manifest_display = display_path(root, &manifest_path);
+
+        if metadata.len() > options.max_manifest_bytes {
+            findings.push(oversized_manifest_finding(&manifest_display));
+            packages.push(SkillPackage {
+                root: display_path(root, skill_root),
+                manifest_path: manifest_display,
+                manifest: empty_skill_manifest(),
+                graph: empty_skill_graph(),
+            });
+            continue;
+        }
+
         let content =
             std::fs::read_to_string(&manifest_path).map_err(|source| AuditError::Read {
                 path: manifest_path.clone(),
                 source,
             })?;
-        let skill_root = manifest_path.parent().unwrap_or(root);
-        let manifest = parse_skill_manifest(&manifest_path, &content)?;
+        let manifest = match parse_skill_manifest(&manifest_path, &content) {
+            Ok(manifest) => manifest,
+            Err(AuditError::Frontmatter { source, .. }) => {
+                findings.push(malformed_frontmatter_finding(
+                    &manifest_display,
+                    source.location().map(|location| location.line() + 1),
+                    &source.to_string(),
+                ));
+                packages.push(SkillPackage {
+                    root: display_path(root, skill_root),
+                    manifest_path: manifest_display,
+                    manifest: empty_skill_manifest(),
+                    graph: empty_skill_graph(),
+                });
+                continue;
+            }
+            Err(AuditError::FrontmatterDelimiter { line, message, .. }) => {
+                findings.push(malformed_frontmatter_finding(
+                    &manifest_display,
+                    Some(line),
+                    &message,
+                ));
+                packages.push(SkillPackage {
+                    root: display_path(root, skill_root),
+                    manifest_path: manifest_display,
+                    manifest: empty_skill_manifest(),
+                    graph: empty_skill_graph(),
+                });
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
         let frontmatter_key_lines = frontmatter_key_lines(&content);
         let mut graph = SkillGraph {
             references: resolve_references(skill_root, &manifest.links),
@@ -50,7 +101,6 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
             .references
             .sort_by(|left, right| left.target.cmp(&right.target));
 
-        let manifest_display = display_path(root, &manifest_path);
         if manifest.name.is_none() {
             findings.push(structural_finding(
                 "SKILL001",
@@ -74,15 +124,7 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
             ));
         }
         if content.len() as u64 > options.max_manifest_bytes {
-            findings.push(structural_finding(
-                "SKILL020",
-                "Oversized skill manifest",
-                "The SKILL.md file exceeds the recommended manifest size.",
-                &manifest_display,
-                Some(1),
-                "Very large manifests are harder to review and may be rejected or truncated by hosts.",
-                "Move long reference material into `references/` and link to it from SKILL.md.",
-            ));
+            findings.push(oversized_manifest_finding(&manifest_display));
         }
         for field in manifest
             .frontmatter
@@ -135,7 +177,12 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
 
     let invalid_manifest_count = findings
         .iter()
-        .filter(|finding| matches!(finding.rule_id.as_str(), "SKILL001" | "SKILL002"))
+        .filter(|finding| {
+            matches!(
+                finding.rule_id.as_str(),
+                "SKILL001" | "SKILL002" | "SKILL041"
+            )
+        })
         .count();
     let broken_reference_count = findings
         .iter()
@@ -157,21 +204,109 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
 fn resolve_references(skill_root: &Path, references: &[SkillReference]) -> Vec<SkillReference> {
     references
         .iter()
-        .filter(|reference| is_relative_file_reference(&reference.target))
-        .map(|reference| {
-            let mut resolved = reference.clone();
-            resolved.exists = Some(skill_root.join(&reference.target).exists());
-            resolved
-        })
+        .filter_map(|reference| resolve_reference(skill_root, reference))
         .collect()
 }
 
-fn is_relative_file_reference(target: &str) -> bool {
-    !(target.starts_with("http://")
-        || target.starts_with("https://")
-        || target.starts_with("mailto:")
-        || target.starts_with('#')
-        || Path::new(target).is_absolute())
+fn resolve_reference(skill_root: &Path, reference: &SkillReference) -> Option<SkillReference> {
+    let mut resolved = reference.clone();
+    match relative_probe_target(&reference.target)? {
+        RelativeProbeTarget::Safe(target) => {
+            resolved.exists = Some(path_exists_without_symlink_dirs(skill_root, target));
+        }
+        RelativeProbeTarget::Unsafe => {
+            resolved.exists = Some(false);
+        }
+    }
+    Some(resolved)
+}
+
+enum RelativeProbeTarget<'a> {
+    Safe(&'a str),
+    Unsafe,
+}
+
+fn relative_probe_target(target: &str) -> Option<RelativeProbeTarget<'_>> {
+    let target = strip_query_and_fragment(target);
+
+    if target.is_empty() {
+        return None;
+    }
+    if has_windows_prefix(target) || is_absolute_path_target(target) || has_parent_component(target)
+    {
+        return Some(RelativeProbeTarget::Unsafe);
+    }
+    if has_uri_scheme(target) {
+        return None;
+    }
+
+    Some(RelativeProbeTarget::Safe(target))
+}
+
+fn strip_query_and_fragment(target: &str) -> &str {
+    match (target.find('?'), target.find('#')) {
+        (Some(query), Some(fragment)) => &target[..query.min(fragment)],
+        (Some(index), None) | (None, Some(index)) => &target[..index],
+        (None, None) => target,
+    }
+}
+
+fn has_uri_scheme(target: &str) -> bool {
+    let Some(colon_index) = target.find(':') else {
+        return false;
+    };
+    if target[..colon_index].contains(['/', '\\']) {
+        return false;
+    }
+
+    let mut chars = target[..colon_index].chars();
+    matches!(chars.next(), Some(first) if first.is_ascii_alphabetic())
+        && chars.all(|value| value.is_ascii_alphanumeric() || matches!(value, '+' | '-' | '.'))
+}
+
+fn has_windows_prefix(target: &str) -> bool {
+    let bytes = target.as_bytes();
+    matches!(
+        bytes,
+        [drive, b':', ..] if drive.is_ascii_alphabetic()
+    ) || target.starts_with(r"\\")
+        || target.starts_with("//")
+}
+
+fn is_absolute_path_target(target: &str) -> bool {
+    target.starts_with('/') || target.starts_with('\\') || Path::new(target).is_absolute()
+}
+
+fn has_parent_component(target: &str) -> bool {
+    target.split(['/', '\\']).any(|component| component == "..")
+}
+
+fn path_exists_without_symlink_dirs(skill_root: &Path, target: &str) -> bool {
+    let components = target
+        .split(['/', '\\'])
+        .filter(|component| !component.is_empty() && *component != ".")
+        .collect::<Vec<_>>();
+
+    if components.is_empty() {
+        return false;
+    }
+
+    let mut current = skill_root.to_path_buf();
+    for (index, component) in components.iter().enumerate() {
+        current.push(component);
+        let Ok(metadata) = std::fs::symlink_metadata(&current) else {
+            return false;
+        };
+        let is_final = index + 1 == components.len();
+        if metadata.file_type().is_symlink() {
+            return is_final;
+        }
+        if !is_final && !metadata.is_dir() {
+            return false;
+        }
+    }
+
+    true
 }
 
 fn discover_artifacts(skill_root: &Path) -> Vec<String> {
@@ -293,10 +428,7 @@ fn display_path(root: &Path, path: &Path) -> String {
 }
 
 fn frontmatter_key_lines(content: &str) -> BTreeMap<String, usize> {
-    let Some(rest) = content.strip_prefix("---\n") else {
-        return BTreeMap::new();
-    };
-    let Some((frontmatter, _body)) = rest.split_once("\n---\n") else {
+    let Some(frontmatter) = frontmatter_content(content) else {
         return BTreeMap::new();
     };
 
@@ -305,6 +437,47 @@ fn frontmatter_key_lines(content: &str) -> BTreeMap<String, usize> {
         .enumerate()
         .filter_map(|(index, line)| top_level_frontmatter_key(line).map(|key| (key, index + 2)))
         .collect()
+}
+
+fn frontmatter_content(content: &str) -> Option<&str> {
+    let content_after_bom = content.strip_prefix(UTF8_BOM).unwrap_or(content);
+    let delimiter_offset = content.len() - content_after_bom.len();
+    let after_opening_delimiter = content_after_bom.strip_prefix("---")?;
+    let opening_line_ending_len = line_ending_len(after_opening_delimiter)?;
+    let frontmatter_start = delimiter_offset + "---".len() + opening_line_ending_len;
+    let mut line_start = frontmatter_start;
+
+    while line_start <= content.len() {
+        let line_end = content[line_start..]
+            .find('\n')
+            .map_or(content.len(), |offset| line_start + offset + 1);
+        let line = &content[line_start..line_end];
+        if trim_line_ending(line) == "---" {
+            return Some(&content[frontmatter_start..line_start]);
+        }
+        if line_end == content.len() {
+            break;
+        }
+        line_start = line_end;
+    }
+
+    None
+}
+
+fn line_ending_len(value: &str) -> Option<usize> {
+    if value.starts_with("\r\n") {
+        Some(2)
+    } else if value.starts_with('\n') {
+        Some(1)
+    } else {
+        None
+    }
+}
+
+fn trim_line_ending(line: &str) -> &str {
+    line.strip_suffix("\r\n")
+        .or_else(|| line.strip_suffix('\n'))
+        .unwrap_or(line)
 }
 
 fn top_level_frontmatter_key(line: &str) -> Option<String> {
@@ -319,6 +492,57 @@ fn top_level_frontmatter_key(line: &str) -> Option<String> {
     let (key, _value) = line.split_once(':')?;
     let key = key.trim().trim_matches(['"', '\'']);
     (!key.is_empty()).then(|| key.to_owned())
+}
+
+fn empty_skill_manifest() -> SkillManifest {
+    SkillManifest {
+        name: None,
+        description: None,
+        frontmatter: BTreeMap::new(),
+        body: String::new(),
+        headings: Vec::new(),
+        links: Vec::new(),
+        inline_code: Vec::new(),
+        code_blocks: Vec::new(),
+        declared_tools: Vec::new(),
+        declared_permissions: Vec::new(),
+    }
+}
+
+fn empty_skill_graph() -> SkillGraph {
+    SkillGraph {
+        references: Vec::new(),
+        artifacts: Vec::new(),
+        files: Vec::new(),
+    }
+}
+
+fn oversized_manifest_finding(path: &str) -> SkillFinding {
+    structural_finding(
+        "SKILL020",
+        "Oversized skill manifest",
+        "The SKILL.md file exceeds the recommended manifest size.",
+        path,
+        Some(1),
+        "Very large manifests are harder to review and may be rejected or truncated by hosts.",
+        "Move long reference material into `references/` and link to it from SKILL.md.",
+    )
+}
+
+fn malformed_frontmatter_finding(
+    path: &str,
+    line: Option<usize>,
+    parse_message: &str,
+) -> SkillFinding {
+    structural_finding(
+        "SKILL041",
+        "Malformed frontmatter",
+        &format!("The skill manifest frontmatter could not be parsed: {parse_message}."),
+        path,
+        line.or(Some(1)),
+        "Malformed frontmatter prevents deterministic extraction of declared metadata and may cause hosts to reject or misread the skill.",
+        "Fix the YAML frontmatter syntax, or remove the frontmatter block and rely on Markdown fallbacks.",
+    )
 }
 
 fn structural_finding(
@@ -484,11 +708,9 @@ and [heading](#valid-skill).
     #[test]
     fn scan_ignores_non_relative_file_references() {
         let workspace = TestWorkspace::new("scan-non-relative-references");
-        let absolute_reference = workspace.root().join("outside.md");
         workspace.write_file(
             "SKILL.md",
-            &format!(
-                r#"---
+            r#"---
 name: non-relative-references
 description: Non-relative reference fixture.
 ---
@@ -497,16 +719,85 @@ description: Non-relative reference fixture.
 
 Use [http](http://example.test), [https](https://example.test),
 [mail](mailto:security@example.test), [anchor](#non-relative-references),
-and [absolute]({}).
+and [ftp](ftp://example.test/file), [tel](tel:+15551234567),
+[urn](urn:isbn:9780143127796), [vscode](vscode://file/example).
 "#,
-                absolute_reference.to_string_lossy().replace('\\', "/")
-            ),
         );
 
         let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
 
         assert!(report.packages[0].graph.references.is_empty());
         assert!(report.findings.is_empty());
+    }
+
+    #[test]
+    fn scan_checks_relative_references_after_stripping_query_and_fragment() {
+        let workspace = TestWorkspace::new("scan-reference-query-fragment");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: query-fragment-references
+description: Query and fragment reference fixture.
+---
+
+# Query Fragment References
+
+Read [guide](references/guide.md?raw=1#setup) and inspect ![badge](assets/badge.png#icon).
+"#,
+        );
+        workspace.write_file("references/guide.md", "# Guide\n");
+        workspace.write_file("assets/badge.png", "badge\n");
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_eq!(report.summary.broken_reference_count, 0);
+        assert_eq!(
+            report.packages[0]
+                .graph
+                .references
+                .iter()
+                .map(|reference| (reference.target.as_str(), reference.exists))
+                .collect::<Vec<_>>(),
+            vec![
+                ("assets/badge.png#icon", Some(true)),
+                ("references/guide.md?raw=1#setup", Some(true)),
+            ]
+        );
+    }
+
+    #[test]
+    fn scan_marks_unsafe_filesystem_references_missing_without_escaping_skill_root() {
+        let workspace = TestWorkspace::new("scan-unsafe-references");
+        workspace.write_file(
+            "skill/SKILL.md",
+            r#"---
+name: unsafe-references
+description: Unsafe reference fixture.
+---
+
+# Unsafe References
+
+Read [parent](../outside.md), [absolute](/outside.md), and [windows](C:/outside.md).
+"#,
+        );
+        workspace.write_file("outside.md", "# Outside\n");
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_eq!(report.summary.broken_reference_count, 3);
+        assert_eq!(
+            report.packages[0]
+                .graph
+                .references
+                .iter()
+                .map(|reference| (reference.target.as_str(), reference.exists))
+                .collect::<Vec<_>>(),
+            vec![
+                ("../outside.md", Some(false)),
+                ("/outside.md", Some(false)),
+                ("C:/outside.md", Some(false)),
+            ]
+        );
     }
 
     #[test]
@@ -871,6 +1162,21 @@ experimental_host_hint: codex-only
             finding.suppression,
             "Suppress `SKILL040` only with a documented reason in the project audit config."
         );
+    }
+
+    #[test]
+    fn reports_skill040_unknown_frontmatter_field_line_from_crlf_frontmatter() {
+        let workspace = TestWorkspace::new("scan-skill040-crlf-frontmatter");
+        workspace.write_file(
+            "SKILL.md",
+            "\u{feff}---\r\nname: crlf-frontmatter\r\ndescription: CRLF frontmatter fixture.\r\nwindows_only_hint: true\r\n---\r\n\r\n# CRLF Frontmatter\r\n",
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_eq!(report.findings.len(), 1);
+        assert_eq!(report.findings[0].rule_id, "SKILL040");
+        assert_eq!(report.findings[0].location.line, Some(4));
     }
 
     #[test]
@@ -1320,7 +1626,7 @@ description: Artifact file fixture.
     }
 
     #[test]
-    fn scan_returns_frontmatter_errors_without_panicking() {
+    fn scan_reports_malformed_frontmatter_without_aborting() {
         let workspace = TestWorkspace::new("scan-malformed-frontmatter");
         workspace.write_file(
             "SKILL.md",
@@ -1332,27 +1638,135 @@ name: [unterminated
 "#,
         );
 
-        let error =
-            scan_path(workspace.root(), &ScanOptions::default()).expect_err("scan should fail");
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
 
-        assert!(matches!(error, AuditError::Frontmatter { .. }));
-        assert!(error.to_string().contains("failed to parse frontmatter"));
+        assert_eq!(report.summary.package_count, 1);
+        assert_eq!(report.summary.finding_count, 1);
+        assert_eq!(report.summary.invalid_manifest_count, 1);
+        assert_eq!(report.summary.broken_reference_count, 0);
+        assert_eq!(report.packages[0].root, "");
+        assert_eq!(report.packages[0].manifest_path, "SKILL.md");
+        assert!(report.packages[0].manifest.name.is_none());
+        assert!(report.packages[0].manifest.description.is_none());
+        assert!(report.packages[0].manifest.frontmatter.is_empty());
+        assert!(report.packages[0].manifest.body.is_empty());
+        assert!(report.packages[0].manifest.headings.is_empty());
+        assert!(report.packages[0].manifest.links.is_empty());
+        assert!(report.packages[0].manifest.inline_code.is_empty());
+        assert!(report.packages[0].manifest.code_blocks.is_empty());
+        assert!(report.packages[0].manifest.declared_tools.is_empty());
+        assert!(report.packages[0].manifest.declared_permissions.is_empty());
+        assert!(report.packages[0].graph.references.is_empty());
+        assert!(report.packages[0].graph.artifacts.is_empty());
+        assert!(report.packages[0].graph.files.is_empty());
+
+        let finding = &report.findings[0];
+        assert_eq!(finding.rule_id, "SKILL041");
+        assert_eq!(finding.severity, Severity::Low);
+        assert_eq!(finding.category, FindingCategory::Spec);
+        assert_eq!(finding.title, "Malformed frontmatter");
+        assert!(finding
+            .message
+            .starts_with("The skill manifest frontmatter could not be parsed:"));
+        assert!(finding.message.contains("line"));
+        assert_eq!(finding.location.path, "SKILL.md");
+        assert_eq!(finding.location.line, Some(3));
+        assert_eq!(
+            finding.rationale,
+            "Malformed frontmatter prevents deterministic extraction of declared metadata and may cause hosts to reject or misread the skill."
+        );
+        assert_eq!(
+            finding.remediation,
+            "Fix the YAML frontmatter syntax, or remove the frontmatter block and rely on Markdown fallbacks."
+        );
+        assert_eq!(
+            finding.suppression,
+            "Suppress `SKILL041` only with a documented reason in the project audit config."
+        );
     }
 
     #[test]
-    fn scan_phase1_malformed_frontmatter_fixture_returns_frontmatter_error() {
+    fn scan_reports_unclosed_frontmatter_as_malformed_frontmatter() {
+        let workspace = TestWorkspace::new("scan-unclosed-frontmatter");
+        workspace.write_file(
+            "SKILL.md",
+            "\u{feff}---\r\nname: silently-accepted-before\r\n\r\n# Body Heading\r\n",
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_eq!(report.summary.package_count, 1);
+        assert_eq!(report.summary.finding_count, 1);
+        assert_eq!(report.summary.invalid_manifest_count, 1);
+        assert!(report.packages[0].manifest.name.is_none());
+        assert!(report.packages[0].manifest.description.is_none());
+        assert!(report.packages[0].manifest.headings.is_empty());
+        assert_eq!(report.findings[0].rule_id, "SKILL041");
+        assert_eq!(report.findings[0].title, "Malformed frontmatter");
+        assert_eq!(report.findings[0].location.path, "SKILL.md");
+        assert_eq!(report.findings[0].location.line, Some(1));
+        assert!(report.findings[0].message.contains("unclosed frontmatter"));
+    }
+
+    #[test]
+    fn scan_phase1_malformed_frontmatter_fixture_reports_skill041() {
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/spec/phase1/malformed-frontmatter");
 
-        let error = scan_path(&fixture, &ScanOptions::default()).expect_err("scan should fail");
+        let report = scan_path(&fixture, &ScanOptions::default()).expect("scan path");
 
-        match &error {
-            AuditError::Frontmatter { path, .. } => {
-                assert!(path.ends_with("SKILL.md"), "unexpected path: {path:?}");
-            }
-            _ => panic!("expected frontmatter error, got {error:?}"),
-        }
-        assert!(error.to_string().contains("failed to parse frontmatter"));
+        assert_eq!(report.summary.package_count, 1);
+        assert_eq!(report.summary.finding_count, 1);
+        assert_eq!(report.summary.invalid_manifest_count, 1);
+        assert_eq!(report.summary.broken_reference_count, 0);
+        assert_eq!(report.findings[0].rule_id, "SKILL041");
+        assert_eq!(report.findings[0].location.path, "SKILL.md");
+    }
+
+    #[test]
+    fn scan_continues_after_malformed_frontmatter_manifest() {
+        let workspace = TestWorkspace::new("scan-continues-after-malformed-frontmatter");
+        workspace.write_file(
+            "broken/SKILL.md",
+            r#"---
+name: [unterminated
+---
+
+# Broken
+"#,
+        );
+        workspace.write_file(
+            "valid/SKILL.md",
+            r#"---
+name: valid-after-broken
+description: Valid manifest after malformed frontmatter.
+---
+
+# Valid
+"#,
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_eq!(report.summary.package_count, 2);
+        assert_eq!(report.summary.finding_count, 1);
+        assert_eq!(report.summary.invalid_manifest_count, 1);
+        assert_eq!(
+            report
+                .packages
+                .iter()
+                .map(|package| (
+                    package.manifest_path.as_str(),
+                    package.manifest.name.as_deref()
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                ("broken/SKILL.md", None),
+                ("valid/SKILL.md", Some("valid-after-broken")),
+            ]
+        );
+        assert_eq!(report.findings[0].rule_id, "SKILL041");
+        assert_eq!(report.findings[0].location.path, "broken/SKILL.md");
     }
 
     #[test]
@@ -1371,6 +1785,50 @@ name: [unterminated
             }
             _ => panic!("expected read error"),
         }
+    }
+
+    #[test]
+    fn scan_reports_oversized_manifest_without_reading_invalid_utf8_body() {
+        let workspace = TestWorkspace::new("scan-oversized-invalid-utf8");
+        let path = workspace.root().join("SKILL.md");
+        let mut content = vec![b'a'; 129];
+        content.push(0xff);
+        std::fs::write(&path, content).expect("write oversized invalid UTF-8 manifest");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                max_manifest_bytes: 128,
+            },
+        )
+        .expect("oversized manifest should not be fully read");
+
+        assert_eq!(report.summary.package_count, 1);
+        assert_eq!(report.summary.finding_count, 1);
+        assert_eq!(report.summary.invalid_manifest_count, 0);
+        assert_eq!(report.summary.broken_reference_count, 0);
+        assert_eq!(report.packages[0].root, "");
+        assert_eq!(report.packages[0].manifest_path, "SKILL.md");
+        assert!(report.packages[0].manifest.name.is_none());
+        assert!(report.packages[0].manifest.description.is_none());
+        assert!(report.packages[0].manifest.frontmatter.is_empty());
+        assert!(report.packages[0].manifest.body.is_empty());
+        assert!(report.packages[0].manifest.headings.is_empty());
+        assert!(report.packages[0].graph.references.is_empty());
+        assert!(report.packages[0].graph.artifacts.is_empty());
+        assert!(report.packages[0].graph.files.is_empty());
+        assert_finding(
+            &report.findings[0],
+            ExpectedFinding {
+                rule_id: "SKILL020",
+                title: "Oversized skill manifest",
+                message: "The SKILL.md file exceeds the recommended manifest size.",
+                path: "SKILL.md",
+                line: Some(1),
+                rationale: "Very large manifests are harder to review and may be rejected or truncated by hosts.",
+                remediation: "Move long reference material into `references/` and link to it from SKILL.md.",
+            },
+        );
     }
 
     #[test]

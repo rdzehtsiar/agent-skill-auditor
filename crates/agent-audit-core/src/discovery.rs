@@ -11,11 +11,11 @@ pub fn discover_skill_manifests(root: &Path) -> AuditResult<Vec<PathBuf>> {
 
     for entry in WalkBuilder::new(root)
         .hidden(false)
-        .parents(true)
-        .ignore(true)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true)
+        .parents(false)
+        .ignore(false)
+        .git_ignore(false)
+        .git_global(false)
+        .git_exclude(false)
         .build()
     {
         let entry = entry.map_err(|source| AuditError::Walk {
@@ -109,6 +109,30 @@ mod tests {
         workspace.write_file("valid/SKILL.md", "# Valid\n");
 
         assert_eq!(relative_manifest_paths(&workspace), vec!["valid/SKILL.md"]);
+    }
+
+    #[test]
+    fn discovers_skill_manifests_hidden_by_local_ignore_files() {
+        let workspace = TestWorkspace::new("discovery-ignore-files-do-not-hide-manifests");
+        workspace.write_file(".ignore", "ignored-by-ignore/\nignored-by-all/SKILL.md\n");
+        workspace.write_file(
+            ".gitignore",
+            "ignored-by-gitignore/\nignored-by-all/SKILL.md\n",
+        );
+        workspace.write_file("ignored-by-ignore/SKILL.md", "# Ignore\n");
+        workspace.write_file("ignored-by-gitignore/SKILL.md", "# Gitignore\n");
+        workspace.write_file("ignored-by-all/SKILL.md", "# All\n");
+        workspace.write_file("visible/SKILL.md", "# Visible\n");
+
+        assert_eq!(
+            relative_manifest_paths(&workspace),
+            vec![
+                "ignored-by-all/SKILL.md",
+                "ignored-by-gitignore/SKILL.md",
+                "ignored-by-ignore/SKILL.md",
+                "visible/SKILL.md",
+            ]
+        );
     }
 
     fn relative_manifest_paths(workspace: &TestWorkspace) -> Vec<String> {

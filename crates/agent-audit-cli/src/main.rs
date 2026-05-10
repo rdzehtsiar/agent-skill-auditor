@@ -285,7 +285,7 @@ description: HTML output fixture.
     }
 
     #[test]
-    fn run_scan_returns_manifest_parse_errors() {
+    fn run_scan_renders_malformed_frontmatter_findings() {
         let workspace = CliTestWorkspace::new("parse-error");
         workspace.write_file(
             "SKILL.md",
@@ -297,19 +297,18 @@ name: [unterminated
 "#,
         );
 
-        let result = run_scan_with_writer(
-            ScanCommand {
-                path: workspace.root.clone(),
-                format: ReportFormat::Summary,
-            },
-            &mut Vec::new(),
-        );
+        let output = run_scan_output(ScanCommand {
+            path: workspace.root.clone(),
+            format: ReportFormat::Summary,
+        })
+        .expect("malformed frontmatter should render report");
 
-        let error = result.expect_err("malformed frontmatter should fail");
-        let message = error.to_string();
-
-        assert!(message.contains("failed to parse frontmatter"));
-        assert!(message.contains("SKILL.md"));
+        assert!(output.starts_with("Agent Skill Auditor scan summary\n"));
+        assert!(output.contains("Packages: 1\n"));
+        assert!(output.contains("Invalid manifests: 1\n"));
+        assert!(output.contains("SKILL041 [low/spec] SKILL.md:"));
+        assert!(output.contains("The skill manifest frontmatter could not be parsed:"));
+        assert!(output.ends_with('\n'));
     }
 
     fn run_scan_output(command: ScanCommand) -> Result<String> {

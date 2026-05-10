@@ -38,4 +38,10 @@ pub enum AuditError {
         #[source]
         source: serde_yaml::Error,
     },
+    #[error("failed to parse frontmatter in {path}: {message}")]
+    FrontmatterDelimiter {
+        path: PathBuf,
+        line: usize,
+        message: String,
+    },
 }

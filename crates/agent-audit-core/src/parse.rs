@@ -8,6 +8,8 @@ use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Parser, Tag, TagEnd};
 use crate::error::{AuditError, AuditResult};
 use crate::model::{MarkdownCodeBlock, SkillManifest, SkillReference};
 
+const UTF8_BOM: &str = "\u{feff}";
+
 pub fn parse_skill_manifest(path: &Path, content: &str) -> AuditResult<SkillManifest> {
     let split = split_frontmatter(path, content)?;
     let frontmatter = split.frontmatter;
@@ -17,7 +19,8 @@ pub fn parse_skill_manifest(path: &Path, content: &str) -> AuditResult<SkillMani
     let mut links = Vec::new();
     let mut inline_code = Vec::new();
     let mut code_blocks = Vec::new();
-    let mut current_heading: Option<String> = None;
+    let mut current_heading: Option<(HeadingLevel, String)> = None;
+    let mut first_h1_heading = None;
     let mut current_code_block: Option<MarkdownCodeBlock> = None;
     let mut first_paragraph = String::new();
     let mut in_first_paragraph = false;
@@ -25,11 +28,19 @@ pub fn parse_skill_manifest(path: &Path, content: &str) -> AuditResult<SkillMani
 
     for (event, range) in Parser::new(body).into_offset_iter() {
         match event {
-            Event::Start(Tag::Heading { .. }) => current_heading = Some(String::new()),
-            Event::End(TagEnd::Heading(_)) => {
-                if let Some(heading) = current_heading.take() {
+            Event::Start(Tag::Heading { level, .. }) => {
+                current_heading = Some((level, String::new()));
+            }
+            Event::End(TagEnd::Heading(level)) => {
+                if let Some((start_level, heading)) = current_heading.take() {
                     let heading = heading.trim();
                     if !heading.is_empty() {
+                        if start_level == HeadingLevel::H1
+                            && level == HeadingLevel::H1
+                            && first_h1_heading.is_none()
+                        {
+                            first_h1_heading = Some(heading.to_owned());
+                        }
                         headings.push(heading.to_owned());
                     }
                 }
@@ -41,7 +52,7 @@ pub fn parse_skill_manifest(path: &Path, content: &str) -> AuditResult<SkillMani
                 in_first_paragraph = false;
                 captured_first_paragraph = !first_paragraph.trim().is_empty();
             }
-            Event::Start(Tag::Link { dest_url, .. }) => {
+            Event::Start(Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. }) => {
                 links.push(SkillReference {
                     target: dest_url.to_string(),
                     line: Some(line_index.line_for_offset(range.start)),
@@ -67,7 +78,7 @@ pub fn parse_skill_manifest(path: &Path, content: &str) -> AuditResult<SkillMani
                 }
             }
             Event::Text(text) => {
-                if let Some(heading) = current_heading.as_mut() {
+                if let Some((_, heading)) = current_heading.as_mut() {
                     heading.push_str(&text);
                 }
                 if let Some(block) = current_code_block.as_mut() {
@@ -82,7 +93,7 @@ pub fn parse_skill_manifest(path: &Path, content: &str) -> AuditResult<SkillMani
         }
     }
 
-    let name = frontmatter_string(&frontmatter, "name").or_else(|| first_h1(&headings));
+    let name = frontmatter_string(&frontmatter, "name").or(first_h1_heading);
     let description = frontmatter_string(&frontmatter, "description").or_else(|| {
         let paragraph = first_paragraph.trim();
         (!paragraph.is_empty()).then(|| paragraph.to_owned())
@@ -108,21 +119,29 @@ struct FrontmatterSplit<'a> {
     body_start_line: usize,
 }
 
-fn split_frontmatter<'a>(path: &Path, content: &'a str) -> AuditResult<FrontmatterSplit<'a>> {
-    let Some(rest) = content.strip_prefix("---\n") else {
-        return Ok(FrontmatterSplit {
-            frontmatter: BTreeMap::new(),
-            body: content,
-            body_start_line: 1,
-        });
-    };
+enum FrontmatterSlices<'a> {
+    Absent,
+    Present { frontmatter: &'a str, body: &'a str },
+    Unclosed { line: usize },
+}
 
-    let Some((frontmatter, body)) = rest.split_once("\n---\n") else {
-        return Ok(FrontmatterSplit {
-            frontmatter: BTreeMap::new(),
-            body: content,
-            body_start_line: 1,
-        });
+fn split_frontmatter<'a>(path: &Path, content: &'a str) -> AuditResult<FrontmatterSplit<'a>> {
+    let (frontmatter, body) = match frontmatter_slices(content) {
+        FrontmatterSlices::Absent => {
+            return Ok(FrontmatterSplit {
+                frontmatter: BTreeMap::new(),
+                body: content,
+                body_start_line: 1,
+            });
+        }
+        FrontmatterSlices::Present { frontmatter, body } => (frontmatter, body),
+        FrontmatterSlices::Unclosed { line } => {
+            return Err(AuditError::FrontmatterDelimiter {
+                path: path.to_path_buf(),
+                line,
+                message: "unclosed frontmatter block".to_owned(),
+            });
+        }
     };
 
     let parsed = serde_yaml::from_str(frontmatter).map_err(|source| AuditError::Frontmatter {
@@ -136,6 +155,54 @@ fn split_frontmatter<'a>(path: &Path, content: &'a str) -> AuditResult<Frontmatt
         body,
         body_start_line: line_for_content_offset(content, body_start_offset),
     })
+}
+
+fn frontmatter_slices(content: &str) -> FrontmatterSlices<'_> {
+    let content_after_bom = content.strip_prefix(UTF8_BOM).unwrap_or(content);
+    let delimiter_offset = content.len() - content_after_bom.len();
+    let Some(after_opening_delimiter) = content_after_bom.strip_prefix("---") else {
+        return FrontmatterSlices::Absent;
+    };
+    let Some(opening_line_ending_len) = line_ending_len(after_opening_delimiter) else {
+        return FrontmatterSlices::Absent;
+    };
+    let frontmatter_start = delimiter_offset + "---".len() + opening_line_ending_len;
+    let mut line_start = frontmatter_start;
+
+    while line_start <= content.len() {
+        let line_end = content[line_start..]
+            .find('\n')
+            .map_or(content.len(), |offset| line_start + offset + 1);
+        let line = &content[line_start..line_end];
+        if trim_line_ending(line) == "---" {
+            return FrontmatterSlices::Present {
+                frontmatter: &content[frontmatter_start..line_start],
+                body: &content[line_end..],
+            };
+        }
+        if line_end == content.len() {
+            break;
+        }
+        line_start = line_end;
+    }
+
+    FrontmatterSlices::Unclosed { line: 1 }
+}
+
+fn line_ending_len(value: &str) -> Option<usize> {
+    if value.starts_with("\r\n") {
+        Some(2)
+    } else if value.starts_with('\n') {
+        Some(1)
+    } else {
+        None
+    }
+}
+
+fn trim_line_ending(line: &str) -> &str {
+    line.strip_suffix("\r\n")
+        .or_else(|| line.strip_suffix('\n'))
+        .unwrap_or(line)
 }
 
 struct LineIndex {
@@ -208,10 +275,6 @@ fn frontmatter_string_list(
     }
 }
 
-fn first_h1(headings: &[String]) -> Option<String> {
-    headings.first().map(ToOwned::to_owned)
-}
-
 #[allow(dead_code)]
 fn heading_rank(level: HeadingLevel) -> u8 {
     match level {
@@ -259,6 +322,76 @@ Paragraph fallback not used.
     }
 
     #[test]
+    fn extracts_frontmatter_with_utf8_bom_and_crlf_delimiters() {
+        let content = "\u{feff}---\r\nname: windows-authored\r\ndescription: Windows authored fixture.\r\n---\r\n\r\n# Windows Authored\r\n\r\nRead [guide](references/guide.md).\r\n";
+
+        let manifest = parse(content);
+
+        assert_eq!(manifest.name.as_deref(), Some("windows-authored"));
+        assert_eq!(
+            manifest.description.as_deref(),
+            Some("Windows authored fixture.")
+        );
+        assert_eq!(
+            manifest.body,
+            "\r\n# Windows Authored\r\n\r\nRead [guide](references/guide.md).\r\n"
+        );
+        assert_eq!(manifest.links[0].line, Some(8));
+    }
+
+    #[test]
+    fn extracts_frontmatter_with_mixed_closing_delimiter_line_endings() {
+        for (label, content) in [
+            (
+                "bom lf opening lf closing",
+                "\u{feff}---\nname: bom-lf\ndescription: Mixed close.\n---\n# Mixed\n",
+            ),
+            (
+                "lf opening crlf closing",
+                "---\nname: mixed-crlf-close\ndescription: Mixed close.\n---\r\n# Mixed\r\n",
+            ),
+            (
+                "crlf opening lf closing",
+                "---\r\nname: mixed-lf-close\r\ndescription: Mixed close.\r\n---\n# Mixed\n",
+            ),
+        ] {
+            let manifest = parse(content);
+
+            assert_eq!(
+                manifest.description.as_deref(),
+                Some("Mixed close."),
+                "{label}"
+            );
+            assert_eq!(manifest.headings, vec!["Mixed"], "{label}");
+            assert!(manifest.code_blocks.is_empty(), "{label}");
+        }
+    }
+
+    #[test]
+    fn accepts_frontmatter_closing_delimiter_at_eof_without_trailing_newline() {
+        for (label, content) in [
+            (
+                "lf",
+                "---\nname: eof-frontmatter\ndescription: EOF close.\n---",
+            ),
+            (
+                "bom crlf",
+                "\u{feff}---\r\nname: eof-frontmatter\r\ndescription: EOF close.\r\n---",
+            ),
+        ] {
+            let manifest = parse(content);
+
+            assert_eq!(manifest.name.as_deref(), Some("eof-frontmatter"), "{label}");
+            assert_eq!(
+                manifest.description.as_deref(),
+                Some("EOF close."),
+                "{label}"
+            );
+            assert_eq!(manifest.body, "", "{label}");
+        }
+    }
+
+    #[test]
     fn falls_back_to_heading_and_first_paragraph_without_frontmatter() {
         let content = r#"# Fallback Name
 
@@ -298,6 +431,47 @@ Second paragraph.
     }
 
     #[test]
+    fn name_fallback_uses_first_top_level_heading_only() {
+        let content = r#"## Secondary Is Not A Name
+
+Opening description.
+
+# Primary Name
+
+### Tertiary
+"#;
+
+        let manifest = parse(content);
+
+        assert_eq!(
+            manifest.headings,
+            vec!["Secondary Is Not A Name", "Primary Name", "Tertiary"]
+        );
+        assert_eq!(manifest.name.as_deref(), Some("Primary Name"));
+        assert_eq!(
+            manifest.description.as_deref(),
+            Some("Opening description.")
+        );
+    }
+
+    #[test]
+    fn name_fallback_ignores_documents_without_top_level_heading() {
+        let content = r#"## Secondary Only
+
+Opening description.
+"#;
+
+        let manifest = parse(content);
+
+        assert_eq!(manifest.headings, vec!["Secondary Only"]);
+        assert!(manifest.name.is_none());
+        assert_eq!(
+            manifest.description.as_deref(),
+            Some("Opening description.")
+        );
+    }
+
+    #[test]
     fn extracts_markdown_links_without_filtering_targets() {
         let content = r#"---
 name: link-fixture
@@ -332,6 +506,33 @@ Use [relative](references/guide.md), [absolute](https://example.test/guide),
                 ("https://example.test/guide", Some(8), None),
                 ("mailto:security@example.test", Some(9), None),
                 ("#links", Some(9), None),
+            ]
+        );
+    }
+
+    #[test]
+    fn extracts_markdown_image_destinations_as_references() {
+        let content = r#"---
+name: image-fixture
+description: Image fixture.
+---
+
+# Images
+
+Use ![local badge](assets/badge.png) and ![remote badge](vscode://example/icon).
+"#;
+
+        let manifest = parse(content);
+
+        assert_eq!(
+            manifest
+                .links
+                .iter()
+                .map(|reference| (reference.target.as_str(), reference.line, reference.exists))
+                .collect::<Vec<_>>(),
+            vec![
+                ("assets/badge.png", Some(8), None),
+                ("vscode://example/icon", Some(8), None),
             ]
         );
     }
@@ -440,7 +641,7 @@ echo line
     }
 
     #[test]
-    fn reports_markdown_lines_from_start_when_frontmatter_is_unclosed() {
+    fn returns_frontmatter_error_when_opening_delimiter_is_unclosed() {
         let content = r#"---
 name: ignored-without-closing-delimiter
 
@@ -449,9 +650,11 @@ name: ignored-without-closing-delimiter
 Read [guide](references/guide.md).
 "#;
 
-        let manifest = parse(content);
+        let error = parse_skill_manifest(Path::new("SKILL.md"), content)
+            .expect_err("unclosed frontmatter should fail");
 
-        assert_eq!(manifest.links[0].line, Some(6));
+        assert!(matches!(error, AuditError::FrontmatterDelimiter { .. }));
+        assert!(error.to_string().contains("unclosed frontmatter"));
     }
 
     #[test]
@@ -521,21 +724,28 @@ permissions:
     }
 
     #[test]
-    fn treats_unclosed_frontmatter_delimiter_as_markdown_body() {
+    fn returns_frontmatter_error_when_bom_prefixed_opening_delimiter_is_unclosed() {
+        let content =
+            "\u{feff}---\r\nname: ignored-without-closing-delimiter\r\n\r\n# Body Heading\r\n";
+
+        let error = parse_skill_manifest(Path::new("SKILL.md"), content)
+            .expect_err("unclosed frontmatter should fail");
+
+        assert!(matches!(error, AuditError::FrontmatterDelimiter { .. }));
+        assert!(error.to_string().contains("unclosed frontmatter"));
+    }
+
+    #[test]
+    fn returns_frontmatter_error_when_unclosed_delimiter_reaches_eof_without_newline() {
         let content = r#"---
 name: ignored-without-closing-delimiter
-
-# Body Heading
 "#;
 
-        let manifest = parse(content);
+        let error = parse_skill_manifest(Path::new("SKILL.md"), content)
+            .expect_err("unclosed frontmatter should fail");
 
-        assert!(manifest.frontmatter.is_empty());
-        assert_eq!(manifest.name.as_deref(), Some("Body Heading"));
-        assert_eq!(
-            manifest.description.as_deref(),
-            Some("name: ignored-without-closing-delimiter")
-        );
+        assert!(matches!(error, AuditError::FrontmatterDelimiter { .. }));
+        assert!(error.to_string().contains("unclosed frontmatter"));
     }
 
     #[test]
