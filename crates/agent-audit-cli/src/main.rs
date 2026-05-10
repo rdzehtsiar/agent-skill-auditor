@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use agent_audit_core::{
     parse_audit_config, parse_severity, report_matches_fail_on, scan_path, AuditConfig, AuditError,
-    ScanOptions, Severity,
+    ScanOptions, ScanReport, Severity,
 };
 use agent_audit_report::{
     render_report, ReportFormat, UnsupportedReportFormat, SUPPORTED_REPORT_FORMATS_HELP,
@@ -84,12 +84,21 @@ fn run_scan_with_writer(command: ScanCommand, writer: &mut impl Write) -> Result
             ..ScanOptions::default()
         },
     )?;
-    let rendered = render_report(&report, command.format)?;
+    write_report_and_apply_fail_on(&report, command.format, &fail_on, writer)
+}
+
+fn write_report_and_apply_fail_on(
+    report: &ScanReport,
+    format: ReportFormat,
+    fail_on: &[Severity],
+    writer: &mut impl Write,
+) -> Result<()> {
+    let rendered = render_report(report, format)?;
 
     writer.write_all(rendered.as_bytes())?;
     writer.flush()?;
 
-    if report_matches_fail_on(&report, &fail_on) {
+    if report_matches_fail_on(report, fail_on) {
         return Err(anyhow!(
             "scan failed because fail_on matched an unsuppressed finding severity"
         ));
@@ -141,6 +150,10 @@ fn parse_fail_on_severity(value: &str) -> Result<Severity, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use agent_audit_core::model::ScanSummary;
+    use agent_audit_core::{
+        FindingCategory, FindingLocation, SkillFinding, SuppressedFinding, SuppressionMatch,
+    };
     use clap::CommandFactory;
     use std::fs;
     use std::path::Path;
@@ -174,6 +187,20 @@ mod tests {
 
         assert!(help.contains("--config <PATH>"));
         assert!(help.contains("Read and validate an explicit config file before scanning"));
+    }
+
+    #[test]
+    fn scan_help_lists_fail_on_option_and_matching_wording() {
+        let mut command = Cli::command();
+        let help = command
+            .find_subcommand_mut("scan")
+            .expect("scan subcommand should be registered")
+            .render_long_help()
+            .to_string();
+
+        assert!(help.contains("--fail-on <SEVERITY>"));
+        assert!(help.contains("Fail when an unsuppressed finding exactly matches severity"));
+        assert!(help.contains("repeat for multiple severities"));
     }
 
     #[test]
@@ -243,6 +270,22 @@ mod tests {
 
         assert!(message.contains("unknown severity `warning`"));
         assert!(message.contains("info, low, medium, high, critical"));
+    }
+
+    #[test]
+    fn rejects_uppercase_scan_fail_on_severity_with_lowercase_names() {
+        let error = Cli::try_parse_from([
+            "agent-audit",
+            "scan",
+            "fixtures/spec/basic",
+            "--fail-on",
+            "LOW",
+        ])
+        .expect_err("uppercase fail-on severity should fail");
+        let message = error.to_string();
+
+        assert!(message.contains("unknown severity `LOW`"));
+        assert!(message.contains("expected one of: info, low, medium, high, critical"));
     }
 
     #[test]
@@ -561,6 +604,33 @@ fail_on:
     }
 
     #[test]
+    fn run_scan_multiple_config_fail_on_values_match_low_findings() {
+        let workspace = CliTestWorkspace::new("config-multiple-fail-low");
+        workspace.write_file("SKILL.md", missing_name_skill());
+        workspace.write_file(
+            "agent-audit.yaml",
+            r#"
+fail_on:
+  - medium
+  - low
+"#,
+        );
+
+        let (output, result) = run_scan_attempt(ScanCommand {
+            path: workspace.root.clone(),
+            format: ReportFormat::Summary,
+            config: Some(workspace.root.join("agent-audit.yaml")),
+            fail_on: Vec::new(),
+        });
+        let error = result.expect_err("multiple config fail_on values should match low finding");
+
+        assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
+        assert!(error
+            .to_string()
+            .contains("fail_on matched an unsuppressed finding severity"));
+    }
+
+    #[test]
     fn run_scan_config_high_does_not_fail_low_findings() {
         let workspace = CliTestWorkspace::new("config-high-low-finding");
         workspace.write_file("SKILL.md", missing_name_skill());
@@ -579,6 +649,30 @@ fail_on:
             fail_on: Vec::new(),
         })
         .expect("high fail_on should not match low finding");
+
+        assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
+    }
+
+    #[test]
+    fn run_scan_multiple_config_fail_on_values_do_not_match_low_findings() {
+        let workspace = CliTestWorkspace::new("config-multiple-no-low");
+        workspace.write_file("SKILL.md", missing_name_skill());
+        workspace.write_file(
+            "agent-audit.yaml",
+            r#"
+fail_on:
+  - medium
+  - high
+"#,
+        );
+
+        let output = run_scan_output(ScanCommand {
+            path: workspace.root.clone(),
+            format: ReportFormat::Summary,
+            config: Some(workspace.root.join("agent-audit.yaml")),
+            fail_on: Vec::new(),
+        })
+        .expect("multiple config fail_on values should not match low finding");
 
         assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
     }
@@ -617,6 +711,46 @@ ignore:
     }
 
     #[test]
+    fn write_report_ignores_suppressed_high_findings_for_fail_on() {
+        let report = ScanReport {
+            packages: Vec::new(),
+            summary: ScanSummary {
+                package_count: 0,
+                finding_count: 0,
+                suppressed_finding_count: 1,
+                invalid_manifest_count: 0,
+                broken_reference_count: 0,
+            },
+            findings: Vec::new(),
+            suppressed_findings: vec![SuppressedFinding {
+                finding: test_finding("SEC005", Severity::High),
+                suppression: SuppressionMatch {
+                    matched_rule: "SEC005".to_owned(),
+                    matched_path: "SKILL.md".to_owned(),
+                    reason: "Accepted privileged setup fixture.".to_owned(),
+                },
+            }],
+        };
+        let mut output = Vec::new();
+
+        write_report_and_apply_fail_on(&report, ReportFormat::Json, &[Severity::High], &mut output)
+            .expect("suppressed high finding should not trigger fail_on");
+        let output = String::from_utf8(output).expect("scan output should be UTF-8");
+        let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
+
+        assert_eq!(value["summary"]["finding_count"], 0);
+        assert_eq!(value["summary"]["suppressed_finding_count"], 1);
+        assert_eq!(
+            value["suppressed_findings"][0]["finding"]["severity"],
+            "high"
+        );
+        assert_eq!(
+            value["suppressed_findings"][0]["finding"]["rule_id"],
+            "SEC005"
+        );
+    }
+
+    #[test]
     fn run_scan_cli_fail_low_works_without_config() {
         let workspace = CliTestWorkspace::new("cli-fail-low");
         workspace.write_file("SKILL.md", missing_name_skill());
@@ -630,6 +764,25 @@ ignore:
 
         result.expect_err("CLI fail_on low should fail without config");
         assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
+    }
+
+    #[test]
+    fn run_scan_multiple_cli_fail_on_values_match_low_findings() {
+        let workspace = CliTestWorkspace::new("cli-multiple-fail-low");
+        workspace.write_file("SKILL.md", missing_name_skill());
+
+        let (output, result) = run_scan_attempt(ScanCommand {
+            path: workspace.root.clone(),
+            format: ReportFormat::Summary,
+            config: None,
+            fail_on: vec![Severity::Medium, Severity::Low],
+        });
+        let error = result.expect_err("multiple CLI fail_on values should match low finding");
+
+        assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
+        assert!(error
+            .to_string()
+            .contains("fail_on matched an unsuppressed finding severity"));
     }
 
     #[test]
@@ -826,6 +979,37 @@ description: Invalid explicit config fixture.
     }
 
     #[test]
+    fn run_scan_reports_invalid_config_fail_on_severity_with_lowercase_names() {
+        let workspace = CliTestWorkspace::new("invalid-config-fail-on");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: invalid-config-fail-on
+description: Invalid config fail_on fixture.
+---
+
+# Invalid Config Fail On
+"#,
+        );
+        workspace.write_file("agent-audit.yaml", "fail_on:\n  - LOW\n");
+        let config_path = workspace.root.join("agent-audit.yaml");
+
+        let error = run_scan_output(ScanCommand {
+            path: workspace.root.clone(),
+            format: ReportFormat::Summary,
+            config: Some(config_path.clone()),
+            fail_on: Vec::new(),
+        })
+        .expect_err("invalid config fail_on severity should fail before scan");
+        let message = error.to_string();
+
+        assert!(message.contains("invalid config"));
+        assert!(message.contains(&config_path.display().to_string()));
+        assert!(message.contains("fail_on[0] uses unknown severity `LOW`"));
+        assert!(message.contains("expected one of: info, low, medium, high, critical"));
+    }
+
+    #[test]
     fn run_scan_does_not_auto_discover_project_config() {
         let workspace = CliTestWorkspace::new("no-config-discovery");
         workspace.write_file(
@@ -858,6 +1042,24 @@ description: Missing name fail_on fixture.
 
 This manifest intentionally starts with a paragraph so the scanner cannot derive a heading fallback name.
 "#
+    }
+
+    fn test_finding(rule_id: &str, severity: Severity) -> SkillFinding {
+        SkillFinding {
+            rule_id: rule_id.to_owned(),
+            severity,
+            category: FindingCategory::Security,
+            title: "Privileged command".to_owned(),
+            message: "The skill fixture uses privileged command examples.".to_owned(),
+            location: FindingLocation {
+                path: "SKILL.md".to_owned(),
+                line: Some(7),
+            },
+            rationale: "Privileged commands increase review risk.".to_owned(),
+            remediation: "Avoid privileged commands or document the required privilege boundary."
+                .to_owned(),
+            suppression: format!("Suppress `{rule_id}` only with a documented reason."),
+        }
     }
 
     struct CliTestWorkspace {
