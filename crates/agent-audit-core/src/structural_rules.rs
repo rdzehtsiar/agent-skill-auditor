@@ -280,6 +280,289 @@ mod tests {
     use super::*;
 
     #[test]
+    fn skill001_reports_missing_name_with_registry_metadata() {
+        let packages = vec![parsed_manifest_package(
+            "missing-name/SKILL.md",
+            ParsedManifestFacts {
+                name: None,
+                description: Some("Reviews pull requests.".to_owned()),
+                frontmatter_fields: Vec::new(),
+                references: Vec::new(),
+                oversized: false,
+            },
+        )];
+
+        let findings = evaluate_structural_rules(&packages);
+
+        assert_eq!(findings.len(), 1);
+        assert_finding_matches_metadata(
+            &findings[0],
+            "SKILL001",
+            "The skill manifest does not declare a name.",
+            "missing-name/SKILL.md",
+            Some(1),
+        );
+    }
+
+    #[test]
+    fn skill002_reports_missing_description_with_registry_metadata() {
+        let packages = vec![parsed_manifest_package(
+            "missing-description/SKILL.md",
+            ParsedManifestFacts {
+                name: Some("reviewer".to_owned()),
+                description: None,
+                frontmatter_fields: Vec::new(),
+                references: Vec::new(),
+                oversized: false,
+            },
+        )];
+
+        let findings = evaluate_structural_rules(&packages);
+
+        assert_eq!(findings.len(), 1);
+        assert_finding_matches_metadata(
+            &findings[0],
+            "SKILL002",
+            "The skill manifest does not declare a description.",
+            "missing-description/SKILL.md",
+            Some(1),
+        );
+    }
+
+    #[test]
+    fn skill010_reports_broken_relative_reference_with_registry_metadata() {
+        let packages = vec![parsed_manifest_package(
+            "broken-reference/SKILL.md",
+            ParsedManifestFacts {
+                name: Some("reviewer".to_owned()),
+                description: Some("Reviews pull requests.".to_owned()),
+                frontmatter_fields: Vec::new(),
+                references: vec![ReferenceFact {
+                    target: "references/missing.md".to_owned(),
+                    line: Some(9),
+                    exists: Some(false),
+                }],
+                oversized: false,
+            },
+        )];
+
+        let findings = evaluate_structural_rules(&packages);
+
+        assert_eq!(findings.len(), 1);
+        assert_finding_matches_metadata(
+            &findings[0],
+            "SKILL010",
+            "The manifest references `references/missing.md`, but the file was not found.",
+            "broken-reference/SKILL.md",
+            Some(9),
+        );
+    }
+
+    #[test]
+    fn skill020_reports_oversized_manifest_with_registry_metadata() {
+        let packages = vec![parsed_manifest_package(
+            "oversized/SKILL.md",
+            ParsedManifestFacts {
+                name: Some("reviewer".to_owned()),
+                description: Some("Reviews pull requests.".to_owned()),
+                frontmatter_fields: Vec::new(),
+                references: Vec::new(),
+                oversized: true,
+            },
+        )];
+
+        let findings = evaluate_structural_rules(&packages);
+
+        assert_eq!(findings.len(), 1);
+        assert_finding_matches_metadata(
+            &findings[0],
+            "SKILL020",
+            "The SKILL.md file exceeds the recommended manifest size.",
+            "oversized/SKILL.md",
+            Some(1),
+        );
+    }
+
+    #[test]
+    fn skill030_reports_duplicate_skill_names_with_registry_metadata() {
+        let packages = vec![
+            parsed_package("beta/SKILL.md", Some("duplicate")),
+            parsed_package("alpha/SKILL.md", Some("duplicate")),
+            parsed_package("unique/SKILL.md", Some("unique")),
+        ];
+
+        let findings = evaluate_structural_rules(&packages);
+
+        assert_eq!(findings.len(), 2);
+        assert_finding_matches_metadata(
+            &findings[0],
+            "SKILL030",
+            "The skill name `duplicate` is also declared by other manifest path(s): `beta/SKILL.md`.",
+            "alpha/SKILL.md",
+            Some(1),
+        );
+        assert_finding_matches_metadata(
+            &findings[1],
+            "SKILL030",
+            "The skill name `duplicate` is also declared by other manifest path(s): `alpha/SKILL.md`.",
+            "beta/SKILL.md",
+            Some(1),
+        );
+    }
+
+    #[test]
+    fn skill040_reports_unknown_frontmatter_field_with_registry_metadata() {
+        let packages = vec![parsed_manifest_package(
+            "unknown-field/SKILL.md",
+            ParsedManifestFacts {
+                name: Some("reviewer".to_owned()),
+                description: Some("Reviews pull requests.".to_owned()),
+                frontmatter_fields: vec![FrontmatterFieldFact {
+                    name: "owner".to_owned(),
+                    line: Some(4),
+                }],
+                references: Vec::new(),
+                oversized: false,
+            },
+        )];
+
+        let findings = evaluate_structural_rules(&packages);
+
+        assert_eq!(findings.len(), 1);
+        assert_finding_matches_metadata(
+            &findings[0],
+            "SKILL040",
+            "The manifest declares unsupported frontmatter field `owner`.",
+            "unknown-field/SKILL.md",
+            Some(4),
+        );
+    }
+
+    #[test]
+    fn skill041_reports_malformed_frontmatter_with_registry_metadata() {
+        let packages = vec![PackageFacts {
+            manifest_path: "malformed/SKILL.md".to_owned(),
+            manifest: ManifestFacts::MalformedFrontmatter(MalformedFrontmatterFact {
+                line: Some(2),
+                parse_message: "invalid YAML at line 2".to_owned(),
+            }),
+        }];
+
+        let findings = evaluate_structural_rules(&packages);
+
+        assert_eq!(findings.len(), 1);
+        assert_finding_matches_metadata(
+            &findings[0],
+            "SKILL041",
+            "The skill manifest frontmatter could not be parsed: invalid YAML at line 2.",
+            "malformed/SKILL.md",
+            Some(2),
+        );
+    }
+
+    #[test]
+    fn valid_package_facts_do_not_report_structural_findings() {
+        let packages = vec![
+            parsed_manifest_package(
+                "alpha/SKILL.md",
+                ParsedManifestFacts {
+                    name: Some("alpha".to_owned()),
+                    description: Some("Reviews pull requests.".to_owned()),
+                    frontmatter_fields: vec![
+                        FrontmatterFieldFact {
+                            name: "name".to_owned(),
+                            line: Some(2),
+                        },
+                        FrontmatterFieldFact {
+                            name: "description".to_owned(),
+                            line: Some(3),
+                        },
+                        FrontmatterFieldFact {
+                            name: "tools".to_owned(),
+                            line: Some(4),
+                        },
+                        FrontmatterFieldFact {
+                            name: "permissions".to_owned(),
+                            line: Some(5),
+                        },
+                    ],
+                    references: vec![
+                        ReferenceFact {
+                            target: "references/guide.md".to_owned(),
+                            line: Some(9),
+                            exists: Some(true),
+                        },
+                        ReferenceFact {
+                            target: "references/deferred.md".to_owned(),
+                            line: Some(10),
+                            exists: None,
+                        },
+                    ],
+                    oversized: false,
+                },
+            ),
+            parsed_package("beta/SKILL.md", Some("beta")),
+        ];
+
+        let findings = evaluate_structural_rules(&packages);
+
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn structural_findings_are_sorted_by_path_location_rule_id_and_message() {
+        let packages = vec![
+            parsed_manifest_package(
+                "zeta/SKILL.md",
+                ParsedManifestFacts {
+                    name: None,
+                    description: None,
+                    frontmatter_fields: Vec::new(),
+                    references: Vec::new(),
+                    oversized: false,
+                },
+            ),
+            parsed_manifest_package(
+                "alpha/SKILL.md",
+                ParsedManifestFacts {
+                    name: Some("alpha".to_owned()),
+                    description: Some("Reviews pull requests.".to_owned()),
+                    frontmatter_fields: vec![
+                        FrontmatterFieldFact {
+                            name: "zeta".to_owned(),
+                            line: Some(4),
+                        },
+                        FrontmatterFieldFact {
+                            name: "alpha".to_owned(),
+                            line: Some(4),
+                        },
+                    ],
+                    references: vec![ReferenceFact {
+                        target: "references/missing.md".to_owned(),
+                        line: Some(2),
+                        exists: Some(false),
+                    }],
+                    oversized: false,
+                },
+            ),
+        ];
+
+        let findings = evaluate_structural_rules(&packages);
+
+        assert_eq!(
+            finding_projection(&findings),
+            vec![
+                ("SKILL010", "alpha/SKILL.md", Some(2)),
+                ("SKILL040", "alpha/SKILL.md", Some(4)),
+                ("SKILL040", "alpha/SKILL.md", Some(4)),
+                ("SKILL001", "zeta/SKILL.md", Some(1)),
+                ("SKILL002", "zeta/SKILL.md", Some(1)),
+            ]
+        );
+        assert!(findings[1].message < findings[2].message);
+    }
+
+    #[test]
     fn evaluator_reports_parsed_manifest_structural_findings_without_filesystem() {
         let packages = vec![PackageFacts {
             manifest_path: "skill/SKILL.md".to_owned(),
@@ -373,6 +656,13 @@ mod tests {
         assert!(findings[1].message.contains("`a/SKILL.md`"));
     }
 
+    fn parsed_manifest_package(path: &str, manifest: ParsedManifestFacts) -> PackageFacts {
+        PackageFacts {
+            manifest_path: path.to_owned(),
+            manifest: ManifestFacts::Parsed(manifest),
+        }
+    }
+
     fn parsed_package(path: &str, name: Option<&str>) -> PackageFacts {
         PackageFacts {
             manifest_path: path.to_owned(),
@@ -397,5 +687,40 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    fn assert_finding_matches_metadata(
+        finding: &SkillFinding,
+        rule_id: &str,
+        message: &str,
+        path: &str,
+        line: Option<usize>,
+    ) {
+        let metadata = rule_metadata(rule_id).expect("rule metadata exists");
+
+        assert_eq!(finding.rule_id, metadata.id.as_str(), "{rule_id} id");
+        assert_eq!(finding.title, metadata.title, "{rule_id} title");
+        assert_eq!(
+            finding.severity,
+            severity_from_metadata(metadata.severity),
+            "{rule_id} severity"
+        );
+        assert_eq!(
+            finding.category,
+            category_from_metadata(metadata.category),
+            "{rule_id} category"
+        );
+        assert_eq!(finding.message, message, "{rule_id} message");
+        assert_eq!(finding.location.path, path, "{rule_id} path");
+        assert_eq!(finding.location.line, line, "{rule_id} line");
+        assert_eq!(finding.rationale, metadata.rationale, "{rule_id} rationale");
+        assert_eq!(
+            finding.remediation, metadata.remediation,
+            "{rule_id} remediation"
+        );
+        assert_eq!(
+            finding.suppression, metadata.suppression_guidance,
+            "{rule_id} suppression"
+        );
     }
 }
