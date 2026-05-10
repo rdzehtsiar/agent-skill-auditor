@@ -14,13 +14,48 @@ Do not steer the project toward a generic Markdown/YAML linter, hosted SaaS, mar
 
 ## Current State
 
-This repository is bootstrapped from the root implementation plan:
+This repository is bootstrapped from the implementation plan in `.plan/`:
 
-- `agent_skill_auditor_implementation_plan.md`
+- `.plan/agent_skill_auditor_implementation_plan.md`
+- `.plan/phase1.md`
 - `README.md`
 - `AGENTS.md`
 
-If implementation has not started yet, use the plan as the product source of truth. Keep README user-facing and keep this file agent-facing.
+Use the plan documents as the product source of truth. Keep README user-facing and keep this file agent-facing.
+
+## Code Quality Requirements
+
+All code changes must be well structured, readable, maintainable, and aligned with clean code and clean architecture practices.
+
+All coding agents must follow these rules:
+
+- Keep module boundaries clear and preserve the intended crate responsibilities.
+- Prefer small, explicit functions with clear names over large procedural blocks.
+- Keep domain models, parsing, rule evaluation, reporting, and CLI concerns separated.
+- Avoid hidden side effects, global mutable state, and behavior that makes output nondeterministic.
+- Prefer deterministic data structures and stable ordering where output can be observed.
+- Write code that is easy to test, with pure logic separated from filesystem and terminal concerns when practical.
+- Do not introduce abstractions unless they reduce real duplication, clarify ownership, or match the existing architecture.
+- Keep errors explainable and actionable instead of panicking on malformed input.
+- Follow Rust best practices for ownership, error handling, typed data, and dependency use.
+- Keep public APIs conservative and documented enough for future crates to use safely.
+
+## Test-First Development Requirements
+
+All coding agents must follow a test-first pattern whenever practical.
+
+Testing expectations:
+
+- Write or update tests before implementing behavior changes when the desired behavior can be specified up front.
+- Cover every code change with meaningful tests unless there is a documented reason that testing is impractical.
+- Improve test coverage while keeping tests practical, maintainable, and tied to real regression risk.
+- Do not add shallow tests only to raise a coverage number; tests should prove behavior, edge cases, error handling, and deterministic output.
+- Prefer focused unit tests for parsing, discovery, rule evaluation, report rendering, and config behavior.
+- Prefer fixture and snapshot-style tests for scanner output, findings, JSON stability, SARIF shape, and host compatibility matrices.
+- Include malformed input and negative-path tests where parser or scanner behavior could otherwise panic or silently misreport.
+- Keep tests deterministic, offline, and independent of network access, host-specific absolute paths, timestamps, and local machine state.
+- When changing existing behavior, update or add regression tests that would fail without the fix.
+- If a change cannot reasonably be tested in the current task, state the gap clearly in the final response.
 
 ## Non-Negotiable Product Constraints
 
