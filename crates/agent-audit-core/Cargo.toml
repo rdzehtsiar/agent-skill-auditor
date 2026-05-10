@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+agent-audit-rules = { path = "../agent-audit-rules" }
 ignore.workspace = true
 pulldown-cmark.workspace = true
 serde.workspace = true

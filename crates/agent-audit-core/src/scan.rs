@@ -11,6 +11,9 @@ use crate::model::{
     SkillReference,
 };
 use crate::parse::parse_skill_manifest;
+use agent_audit_rules::{
+    rule_metadata, RuleCategory as RegistryCategory, RuleMetadata, RuleSeverity as RegistrySeverity,
+};
 
 /// Portable frontmatter fields accepted by the initial structural scanner.
 const ACCEPTED_FRONTMATTER_FIELDS: &[&str] = &["name", "description", "tools", "permissions"];
@@ -104,23 +107,17 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         if manifest.name.is_none() {
             findings.push(structural_finding(
                 "SKILL001",
-                "Missing skill name",
                 "The skill manifest does not declare a name.",
                 &manifest_display,
                 Some(1),
-                "Skills without stable names are hard to inventory and compare across hosts.",
-                "Add a non-empty `name` field to frontmatter or a clear top-level heading.",
             ));
         }
         if manifest.description.is_none() {
             findings.push(structural_finding(
                 "SKILL002",
-                "Missing skill description",
                 "The skill manifest does not declare a description.",
                 &manifest_display,
                 Some(1),
-                "Reviewers and host profiles need a concise behavior statement for the skill.",
-                "Add a non-empty `description` field to frontmatter or an opening paragraph.",
             ));
         }
         if content.len() as u64 > options.max_manifest_bytes {
@@ -147,12 +144,12 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         {
             findings.push(structural_finding(
                 "SKILL010",
-                "Broken relative reference",
-                &format!("The manifest references `{}`, but the file was not found.", reference.target),
+                &format!(
+                    "The manifest references `{}`, but the file was not found.",
+                    reference.target
+                ),
                 &manifest_display,
                 reference.line,
-                "Broken references can make a skill behave differently than documented or fail at runtime.",
-                "Create the referenced file, update the link, or remove the stale reference.",
             ));
         }
 
@@ -520,12 +517,9 @@ fn empty_skill_graph() -> SkillGraph {
 fn oversized_manifest_finding(path: &str) -> SkillFinding {
     structural_finding(
         "SKILL020",
-        "Oversized skill manifest",
         "The SKILL.md file exceeds the recommended manifest size.",
         path,
         Some(1),
-        "Very large manifests are harder to review and may be rejected or truncated by hosts.",
-        "Move long reference material into `references/` and link to it from SKILL.md.",
     )
 }
 
@@ -536,39 +530,66 @@ fn malformed_frontmatter_finding(
 ) -> SkillFinding {
     structural_finding(
         "SKILL041",
-        "Malformed frontmatter",
         &format!("The skill manifest frontmatter could not be parsed: {parse_message}."),
         path,
         line.or(Some(1)),
-        "Malformed frontmatter prevents deterministic extraction of declared metadata and may cause hosts to reject or misread the skill.",
-        "Fix the YAML frontmatter syntax, or remove the frontmatter block and rely on Markdown fallbacks.",
     )
 }
 
 fn structural_finding(
     rule_id: &str,
-    title: &str,
     message: &str,
     path: &str,
     line: Option<usize>,
-    rationale: &str,
-    remediation: &str,
+) -> SkillFinding {
+    let metadata = scanner_rule_metadata(rule_id);
+    finding_from_metadata(metadata, message, path, line)
+}
+
+fn scanner_rule_metadata(rule_id: &str) -> &'static RuleMetadata {
+    rule_metadata(rule_id).expect("implemented scanner rule must have registry metadata")
+}
+
+fn finding_from_metadata(
+    metadata: &RuleMetadata,
+    message: &str,
+    path: &str,
+    line: Option<usize>,
 ) -> SkillFinding {
     SkillFinding {
-        rule_id: rule_id.to_owned(),
-        severity: Severity::Low,
-        category: FindingCategory::Spec,
-        title: title.to_owned(),
+        rule_id: metadata.id.as_str().to_owned(),
+        severity: severity_from_metadata(metadata.severity),
+        category: category_from_metadata(metadata.category),
+        title: metadata.title.to_owned(),
         message: message.to_owned(),
         location: FindingLocation {
             path: path.to_owned(),
             line,
         },
-        rationale: rationale.to_owned(),
-        remediation: remediation.to_owned(),
-        suppression: format!(
-            "Suppress `{rule_id}` only with a documented reason in the project audit config."
-        ),
+        rationale: metadata.rationale.to_owned(),
+        remediation: metadata.remediation.to_owned(),
+        suppression: metadata.suppression_guidance.to_owned(),
+    }
+}
+
+fn severity_from_metadata(severity: RegistrySeverity) -> Severity {
+    match severity {
+        RegistrySeverity::Info => Severity::Info,
+        RegistrySeverity::Low => Severity::Low,
+        RegistrySeverity::Medium => Severity::Medium,
+        RegistrySeverity::High => Severity::High,
+        RegistrySeverity::Critical => Severity::Critical,
+    }
+}
+
+fn category_from_metadata(category: RegistryCategory) -> FindingCategory {
+    match category {
+        RegistryCategory::Spec => FindingCategory::Spec,
+        RegistryCategory::Compatibility => FindingCategory::Compatibility,
+        RegistryCategory::Security => FindingCategory::Security,
+        RegistryCategory::Quality => FindingCategory::Quality,
+        RegistryCategory::Portability => FindingCategory::Portability,
+        RegistryCategory::Reproducibility => FindingCategory::Reproducibility,
     }
 }
 
@@ -600,26 +621,14 @@ fn duplicate_skill_name_findings(packages: &[SkillPackage]) -> Vec<SkillFinding>
                 .collect::<Vec<_>>()
                 .join(", ");
 
-            findings.push(SkillFinding {
-                rule_id: "SKILL030".to_owned(),
-                severity: Severity::Low,
-                category: FindingCategory::Compatibility,
-                title: "Duplicate skill name".to_owned(),
-                message: format!(
+            findings.push(finding_from_metadata(
+                scanner_rule_metadata("SKILL030"),
+                &format!(
                     "The skill name `{name}` is also declared by other manifest path(s): {other_paths}."
                 ),
-                location: FindingLocation {
-                    path: manifest_path.to_owned(),
-                    line: Some(1),
-                },
-                rationale: "Duplicate names make inventory, policy, host routing, and review ambiguous."
-                    .to_owned(),
-                remediation:
-                    "Rename packages so every scanned skill has a unique stable name.".to_owned(),
-                suppression:
-                    "Suppress `SKILL030` only with a documented reason in the project audit config."
-                        .to_owned(),
-            });
+                manifest_path,
+                Some(1),
+            ));
         }
     }
 
@@ -627,22 +636,12 @@ fn duplicate_skill_name_findings(packages: &[SkillPackage]) -> Vec<SkillFinding>
 }
 
 fn unknown_frontmatter_field_finding(field: &str, path: &str, line: Option<usize>) -> SkillFinding {
-    SkillFinding {
-        rule_id: "SKILL040".to_owned(),
-        severity: Severity::Low,
-        category: FindingCategory::Compatibility,
-        title: "Unknown frontmatter field".to_owned(),
-        message: format!("The manifest declares unsupported frontmatter field `{field}`."),
-        location: FindingLocation {
-            path: path.to_owned(),
-            line,
-        },
-        rationale: "Unknown fields may be ignored, rejected, or interpreted differently by hosts, reducing portability and reviewability.".to_owned(),
-        remediation: "Remove the field, move the information into the Markdown body, or wait for documented host profile support.".to_owned(),
-        suppression:
-            "Suppress `SKILL040` only with a documented reason in the project audit config."
-                .to_owned(),
-    }
+    finding_from_metadata(
+        scanner_rule_metadata("SKILL040"),
+        &format!("The manifest declares unsupported frontmatter field `{field}`."),
+        path,
+        line,
+    )
 }
 
 #[cfg(test)]
@@ -1326,6 +1325,136 @@ This second extra line makes the intended `SKILL020` case unambiguous.
             .remediation
             .contains("Create the referenced file"));
         assert!(broken_reference.suppression.contains("SKILL010"));
+    }
+
+    #[test]
+    fn scan_finding_metadata_matches_rule_registry_for_implemented_rules() {
+        let workspace = TestWorkspace::new("scan-rule-metadata");
+        workspace.write_file(
+            "a-broken-reference/SKILL.md",
+            r#"---
+name: broken-reference
+description: Broken reference fixture.
+---
+
+# Broken Reference
+
+Read [missing](references/missing.md).
+"#,
+        );
+        workspace.write_file(
+            "b-missing-name/SKILL.md",
+            r#"---
+description: Missing name fixture.
+---
+
+No heading fallback is present here.
+"#,
+        );
+        workspace.write_file(
+            "c-missing-description/SKILL.md",
+            r#"---
+name: missing-description
+---
+
+# Missing Description
+"#,
+        );
+        workspace.write_file(
+            "d-duplicate-a/SKILL.md",
+            r#"---
+name: duplicate-name
+description: Duplicate fixture A.
+---
+
+# Duplicate A
+"#,
+        );
+        workspace.write_file(
+            "e-duplicate-b/SKILL.md",
+            r#"---
+name: duplicate-name
+description: Duplicate fixture B.
+---
+
+# Duplicate B
+"#,
+        );
+        workspace.write_file(
+            "f-unknown-frontmatter/SKILL.md",
+            r#"---
+name: unknown-frontmatter
+description: Unknown frontmatter fixture.
+owner: security
+---
+
+# Unknown Frontmatter
+"#,
+        );
+        workspace.write_file(
+            "g-malformed-frontmatter/SKILL.md",
+            r#"---
+name: [unterminated
+---
+
+# Malformed Frontmatter
+"#,
+        );
+        let mut oversized_manifest = String::from(
+            "---\nname: oversized\ndescription: Oversized fixture.\n---\n\n# Oversized\n\n",
+        );
+        oversized_manifest
+            .push_str(&"x".repeat(ScanOptions::default().max_manifest_bytes as usize));
+        workspace.write_file("h-oversized/SKILL.md", &oversized_manifest);
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+        let mut covered_rule_ids = report
+            .findings
+            .iter()
+            .map(|finding| finding.rule_id.as_str())
+            .collect::<Vec<_>>();
+        covered_rule_ids.sort_unstable();
+        covered_rule_ids.dedup();
+
+        assert_eq!(
+            covered_rule_ids,
+            vec![
+                "SKILL001", "SKILL002", "SKILL010", "SKILL020", "SKILL030", "SKILL040", "SKILL041",
+            ]
+        );
+        for finding in &report.findings {
+            let metadata =
+                rule_metadata(&finding.rule_id).expect("scanner finding must have metadata");
+
+            assert_eq!(finding.title, metadata.title, "{} title", finding.rule_id);
+            assert_eq!(
+                finding.severity,
+                expected_severity(metadata.severity),
+                "{} severity",
+                finding.rule_id
+            );
+            assert_eq!(
+                finding.category,
+                expected_category(metadata.category),
+                "{} category",
+                finding.rule_id
+            );
+            assert_eq!(
+                finding.rationale, metadata.rationale,
+                "{} rationale",
+                finding.rule_id
+            );
+            assert_eq!(
+                finding.remediation, metadata.remediation,
+                "{} remediation",
+                finding.rule_id
+            );
+            assert_eq!(
+                finding.suppression, metadata.suppression_guidance,
+                "{} suppression",
+                finding.rule_id
+            );
+        }
     }
 
     #[test]
@@ -2320,6 +2449,27 @@ Read [guidance](references/guidance.md).
             finding.rule_id.as_str(),
             finding.message.as_str(),
         )
+    }
+
+    fn expected_severity(severity: RegistrySeverity) -> Severity {
+        match severity {
+            RegistrySeverity::Info => Severity::Info,
+            RegistrySeverity::Low => Severity::Low,
+            RegistrySeverity::Medium => Severity::Medium,
+            RegistrySeverity::High => Severity::High,
+            RegistrySeverity::Critical => Severity::Critical,
+        }
+    }
+
+    fn expected_category(category: RegistryCategory) -> FindingCategory {
+        match category {
+            RegistryCategory::Spec => FindingCategory::Spec,
+            RegistryCategory::Compatibility => FindingCategory::Compatibility,
+            RegistryCategory::Security => FindingCategory::Security,
+            RegistryCategory::Quality => FindingCategory::Quality,
+            RegistryCategory::Portability => FindingCategory::Portability,
+            RegistryCategory::Reproducibility => FindingCategory::Reproducibility,
+        }
     }
 
     fn file_projection(files: &[SkillFile]) -> Vec<(&str, SkillArtifactKind, SkillFileKind, u64)> {
