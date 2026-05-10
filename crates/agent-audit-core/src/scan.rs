@@ -11,9 +11,11 @@ use crate::model::{
     SkillManifest, SkillPackage, SkillReference, SuppressedFinding, SuppressionMatch,
 };
 use crate::parse::parse_skill_manifest;
-use crate::structural_rules::{
-    evaluate_structural_rules, FrontmatterFieldFact, MalformedFrontmatterFact, ManifestFacts,
-    PackageFacts, ParsedManifestFacts, ReferenceFact,
+use agent_audit_rules::{
+    active_rule_metadata, evaluate_structural_rules, rule_counts_as_broken_reference,
+    rule_counts_as_invalid_manifest, EvaluatedRuleFinding, RuleCategory as RegistryCategory,
+    RuleFrontmatterFieldFact, RuleMalformedFrontmatterFact, RuleManifestFacts, RulePackageFacts,
+    RuleParsedManifestFacts, RuleReferenceFact, RuleSeverity as RegistrySeverity,
 };
 
 const UTF8_BOM: &str = "\u{feff}";
@@ -48,9 +50,9 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         let manifest_display = display_path(root, &manifest_path);
 
         if metadata.len() > options.max_manifest_bytes {
-            package_facts.push(PackageFacts {
+            package_facts.push(RulePackageFacts {
                 manifest_path: manifest_display.clone(),
-                manifest: ManifestFacts::UnreadOversized,
+                manifest: RuleManifestFacts::UnreadOversized,
             });
             packages.push(SkillPackage {
                 root: display_path(root, skill_root),
@@ -69,12 +71,14 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         let manifest = match parse_skill_manifest(&manifest_path, &content) {
             Ok(manifest) => manifest,
             Err(AuditError::Frontmatter { source, .. }) => {
-                package_facts.push(PackageFacts {
+                package_facts.push(RulePackageFacts {
                     manifest_path: manifest_display.clone(),
-                    manifest: ManifestFacts::MalformedFrontmatter(MalformedFrontmatterFact {
-                        line: source.location().map(|location| location.line() + 1),
-                        parse_message: source.to_string(),
-                    }),
+                    manifest: RuleManifestFacts::MalformedFrontmatter(
+                        RuleMalformedFrontmatterFact {
+                            line: source.location().map(|location| location.line() + 1),
+                            parse_message: source.to_string(),
+                        },
+                    ),
                 });
                 packages.push(SkillPackage {
                     root: display_path(root, skill_root),
@@ -85,12 +89,14 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
                 continue;
             }
             Err(AuditError::FrontmatterDelimiter { line, message, .. }) => {
-                package_facts.push(PackageFacts {
+                package_facts.push(RulePackageFacts {
                     manifest_path: manifest_display.clone(),
-                    manifest: ManifestFacts::MalformedFrontmatter(MalformedFrontmatterFact {
-                        line: Some(line),
-                        parse_message: message,
-                    }),
+                    manifest: RuleManifestFacts::MalformedFrontmatter(
+                        RuleMalformedFrontmatterFact {
+                            line: Some(line),
+                            parse_message: message,
+                        },
+                    ),
                 });
                 packages.push(SkillPackage {
                     root: display_path(root, skill_root),
@@ -112,15 +118,15 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
             .references
             .sort_by(|left, right| left.target.cmp(&right.target));
 
-        package_facts.push(PackageFacts {
+        package_facts.push(RulePackageFacts {
             manifest_path: manifest_display.clone(),
-            manifest: ManifestFacts::Parsed(ParsedManifestFacts {
+            manifest: RuleManifestFacts::Parsed(RuleParsedManifestFacts {
                 name: manifest.name.clone(),
                 description: manifest.description.clone(),
                 frontmatter_fields: manifest
                     .frontmatter
                     .keys()
-                    .map(|field| FrontmatterFieldFact {
+                    .map(|field| RuleFrontmatterFieldFact {
                         name: field.clone(),
                         line: frontmatter_key_lines.get(field.as_str()).copied(),
                     })
@@ -128,7 +134,7 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
                 references: graph
                     .references
                     .iter()
-                    .map(|reference| ReferenceFact {
+                    .map(|reference| RuleReferenceFact {
                         target: reference.target.clone(),
                         line: reference.line,
                         exists: reference.exists,
@@ -146,21 +152,19 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         });
     }
 
-    let findings = evaluate_structural_rules(&package_facts);
+    let findings = evaluate_structural_rules(&package_facts)
+        .into_iter()
+        .map(skill_finding_from_evaluated_rule)
+        .collect();
     let (findings, suppressed_findings) = apply_suppressions(findings, options.config.as_ref());
 
     let invalid_manifest_count = findings
         .iter()
-        .filter(|finding| {
-            matches!(
-                finding.rule_id.as_str(),
-                "SKILL001" | "SKILL002" | "SKILL041"
-            )
-        })
+        .filter(|finding| rule_counts_as_invalid_manifest(&finding.rule_id))
         .count();
     let broken_reference_count = findings
         .iter()
-        .filter(|finding| finding.rule_id == "SKILL010")
+        .filter(|finding| rule_counts_as_broken_reference(&finding.rule_id))
         .count();
 
     Ok(ScanReport {
@@ -175,6 +179,47 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         findings,
         suppressed_findings,
     })
+}
+
+fn skill_finding_from_evaluated_rule(finding: EvaluatedRuleFinding) -> SkillFinding {
+    let metadata = active_rule_metadata(finding.rule_id.as_str())
+        .expect("evaluated structural rule must have active registry metadata");
+
+    SkillFinding {
+        rule_id: metadata.id.as_str().to_owned(),
+        severity: severity_from_metadata(metadata.severity),
+        category: category_from_metadata(metadata.category),
+        title: metadata.title.to_owned(),
+        message: finding.message,
+        location: crate::model::FindingLocation {
+            path: finding.location.path,
+            line: finding.location.line,
+        },
+        rationale: metadata.rationale.to_owned(),
+        remediation: metadata.remediation.to_owned(),
+        suppression: metadata.suppression_guidance.to_owned(),
+    }
+}
+
+fn severity_from_metadata(severity: RegistrySeverity) -> crate::model::Severity {
+    match severity {
+        RegistrySeverity::Info => crate::model::Severity::Info,
+        RegistrySeverity::Low => crate::model::Severity::Low,
+        RegistrySeverity::Medium => crate::model::Severity::Medium,
+        RegistrySeverity::High => crate::model::Severity::High,
+        RegistrySeverity::Critical => crate::model::Severity::Critical,
+    }
+}
+
+fn category_from_metadata(category: RegistryCategory) -> crate::model::FindingCategory {
+    match category {
+        RegistryCategory::Spec => crate::model::FindingCategory::Spec,
+        RegistryCategory::Compatibility => crate::model::FindingCategory::Compatibility,
+        RegistryCategory::Security => crate::model::FindingCategory::Security,
+        RegistryCategory::Quality => crate::model::FindingCategory::Quality,
+        RegistryCategory::Portability => crate::model::FindingCategory::Portability,
+        RegistryCategory::Reproducibility => crate::model::FindingCategory::Reproducibility,
+    }
 }
 
 fn apply_suppressions(
@@ -724,14 +769,9 @@ This manifest has a description but no frontmatter name or heading fallback.
             &report.findings[0],
             ExpectedFinding {
                 rule_id: "SKILL001",
-                title: "Missing skill name",
                 message: "The skill manifest does not declare a name.",
                 path: "SKILL.md",
                 line: Some(1),
-                rationale:
-                    "Skills without stable names are hard to inventory and compare across hosts.",
-                remediation:
-                    "Add a non-empty `name` field to frontmatter or a clear top-level heading.",
             },
         );
     }
@@ -756,14 +796,9 @@ name: missing-description
             &report.findings[0],
             ExpectedFinding {
                 rule_id: "SKILL002",
-                title: "Missing skill description",
                 message: "The skill manifest does not declare a description.",
                 path: "SKILL.md",
                 line: Some(1),
-                rationale:
-                    "Reviewers and host profiles need a concise behavior statement for the skill.",
-                remediation:
-                    "Add a non-empty `description` field to frontmatter or an opening paragraph.",
             },
         );
     }
@@ -791,12 +826,10 @@ Read [missing guidance](references/missing.md).
             &report.findings[0],
             ExpectedFinding {
                 rule_id: "SKILL010",
-                title: "Broken relative reference",
-                message: "The manifest references `references/missing.md`, but the file was not found.",
+                message:
+                    "The manifest references `references/missing.md`, but the file was not found.",
                 path: "SKILL.md",
                 line: Some(8),
-                rationale: "Broken references can make a skill behave differently than documented or fail at runtime.",
-                remediation: "Create the referenced file, update the link, or remove the stale reference.",
             },
         );
     }
@@ -831,12 +864,9 @@ This manifest is valid but deliberately longer than the low test threshold.
             &report.findings[0],
             ExpectedFinding {
                 rule_id: "SKILL020",
-                title: "Oversized skill manifest",
                 message: "The SKILL.md file exceeds the recommended manifest size.",
                 path: "SKILL.md",
                 line: Some(1),
-                rationale: "Very large manifests are harder to review and may be rejected or truncated by hosts.",
-                remediation: "Move long reference material into `references/` and link to it from SKILL.md.",
             },
         );
     }
@@ -1037,28 +1067,20 @@ experimental_host_hint: codex-only
         assert_eq!(report.summary.broken_reference_count, 0);
 
         let finding = &report.findings[0];
+        let metadata = rule_metadata("SKILL040").expect("rule metadata exists");
         assert_eq!(finding.rule_id, "SKILL040");
         assert_eq!(finding.severity, Severity::Low);
         assert_eq!(finding.category, FindingCategory::Compatibility);
-        assert_eq!(finding.title, "Unknown frontmatter field");
+        assert_eq!(finding.title, metadata.title);
         assert_eq!(
             finding.message,
             "The manifest declares unsupported frontmatter field `experimental_host_hint`."
         );
         assert_eq!(finding.location.path, "SKILL.md");
         assert_eq!(finding.location.line, Some(4));
-        assert_eq!(
-            finding.rationale,
-            "Unknown fields may be ignored, rejected, or interpreted differently by hosts, reducing portability and reviewability."
-        );
-        assert_eq!(
-            finding.remediation,
-            "Remove the field, move the information into the Markdown body, or wait for documented host profile support."
-        );
-        assert_eq!(
-            finding.suppression,
-            "Suppress `SKILL040` only with a documented reason in the project audit config."
-        );
+        assert_eq!(finding.rationale, metadata.rationale);
+        assert_eq!(finding.remediation, metadata.remediation);
+        assert_eq!(finding.suppression, metadata.suppression_guidance);
     }
 
     #[test]
@@ -1244,19 +1266,18 @@ This second extra line makes the intended `SKILL020` case unambiguous.
         assert_eq!(report.summary.broken_reference_count, 1);
 
         let broken_reference = &report.findings[0];
+        let metadata = rule_metadata("SKILL010").expect("rule metadata exists");
         assert_eq!(broken_reference.severity, Severity::Low);
         assert_eq!(broken_reference.category, FindingCategory::Spec);
-        assert_eq!(broken_reference.title, "Broken relative reference");
+        assert_eq!(broken_reference.title, metadata.title);
         assert!(broken_reference.message.contains("references/missing.md"));
         assert_eq!(
             broken_reference.location.path,
             "a-broken-reference/SKILL.md"
         );
-        assert!(broken_reference.rationale.contains("Broken references"));
-        assert!(broken_reference
-            .remediation
-            .contains("Create the referenced file"));
-        assert!(broken_reference.suppression.contains("SKILL010"));
+        assert_eq!(broken_reference.rationale, metadata.rationale);
+        assert_eq!(broken_reference.remediation, metadata.remediation);
+        assert_eq!(broken_reference.suppression, metadata.suppression_guidance);
     }
 
     #[test]
@@ -1722,28 +1743,20 @@ name: [unterminated
         assert!(report.packages[0].graph.files.is_empty());
 
         let finding = &report.findings[0];
+        let metadata = rule_metadata("SKILL041").expect("rule metadata exists");
         assert_eq!(finding.rule_id, "SKILL041");
         assert_eq!(finding.severity, Severity::Low);
         assert_eq!(finding.category, FindingCategory::Spec);
-        assert_eq!(finding.title, "Malformed frontmatter");
+        assert_eq!(finding.title, metadata.title);
         assert!(finding
             .message
             .starts_with("The skill manifest frontmatter could not be parsed:"));
         assert!(finding.message.contains("line"));
         assert_eq!(finding.location.path, "SKILL.md");
         assert_eq!(finding.location.line, Some(3));
-        assert_eq!(
-            finding.rationale,
-            "Malformed frontmatter prevents deterministic extraction of declared metadata and may cause hosts to reject or misread the skill."
-        );
-        assert_eq!(
-            finding.remediation,
-            "Fix the YAML frontmatter syntax, or remove the frontmatter block and rely on Markdown fallbacks."
-        );
-        assert_eq!(
-            finding.suppression,
-            "Suppress `SKILL041` only with a documented reason in the project audit config."
-        );
+        assert_eq!(finding.rationale, metadata.rationale);
+        assert_eq!(finding.remediation, metadata.remediation);
+        assert_eq!(finding.suppression, metadata.suppression_guidance);
     }
 
     #[test]
@@ -1762,8 +1775,9 @@ name: [unterminated
         assert!(report.packages[0].manifest.name.is_none());
         assert!(report.packages[0].manifest.description.is_none());
         assert!(report.packages[0].manifest.headings.is_empty());
+        let metadata = rule_metadata("SKILL041").expect("rule metadata exists");
         assert_eq!(report.findings[0].rule_id, "SKILL041");
-        assert_eq!(report.findings[0].title, "Malformed frontmatter");
+        assert_eq!(report.findings[0].title, metadata.title);
         assert_eq!(report.findings[0].location.path, "SKILL.md");
         assert_eq!(report.findings[0].location.line, Some(1));
         assert!(report.findings[0].message.contains("unclosed frontmatter"));
@@ -1883,12 +1897,9 @@ description: Valid manifest after malformed frontmatter.
             &report.findings[0],
             ExpectedFinding {
                 rule_id: "SKILL020",
-                title: "Oversized skill manifest",
                 message: "The SKILL.md file exceeds the recommended manifest size.",
                 path: "SKILL.md",
                 line: Some(1),
-                rationale: "Very large manifests are harder to review and may be rejected or truncated by hosts.",
-                remediation: "Move long reference material into `references/` and link to it from SKILL.md.",
             },
         );
     }
@@ -2816,12 +2827,9 @@ Read [guidance](references/guidance.md).
 
     struct ExpectedFinding {
         rule_id: &'static str,
-        title: &'static str,
         message: &'static str,
         path: &'static str,
         line: Option<usize>,
-        rationale: &'static str,
-        remediation: &'static str,
     }
 
     fn assert_duplicate_name_finding(
@@ -2839,7 +2847,9 @@ Read [guidance](references/guidance.md).
         assert_eq!(finding.rule_id, "SKILL030");
         assert_eq!(finding.severity, Severity::Low);
         assert_eq!(finding.category, FindingCategory::Compatibility);
-        assert_eq!(finding.title, "Duplicate skill name");
+        let metadata = rule_metadata("SKILL030").expect("rule metadata exists");
+
+        assert_eq!(finding.title, metadata.title);
         assert_eq!(
             finding.message,
             format!(
@@ -2848,37 +2858,24 @@ Read [guidance](references/guidance.md).
         );
         assert_eq!(finding.location.path, path);
         assert_eq!(finding.location.line, Some(1));
-        assert_eq!(
-            finding.rationale,
-            "Duplicate names make inventory, policy, host routing, and review ambiguous."
-        );
-        assert_eq!(
-            finding.remediation,
-            "Rename packages so every scanned skill has a unique stable name."
-        );
-        assert_eq!(
-            finding.suppression,
-            "Suppress `SKILL030` only with a documented reason in the project audit config."
-        );
+        assert_eq!(finding.rationale, metadata.rationale);
+        assert_eq!(finding.remediation, metadata.remediation);
+        assert_eq!(finding.suppression, metadata.suppression_guidance);
     }
 
     fn assert_finding(finding: &SkillFinding, expected: ExpectedFinding) {
+        let metadata = rule_metadata(expected.rule_id).expect("rule metadata exists");
+
         assert_eq!(finding.rule_id, expected.rule_id);
         assert_eq!(finding.severity, Severity::Low);
         assert_eq!(finding.category, FindingCategory::Spec);
-        assert_eq!(finding.title, expected.title);
+        assert_eq!(finding.title, metadata.title);
         assert_eq!(finding.message, expected.message);
         assert_eq!(finding.location.path, expected.path);
         assert_eq!(finding.location.line, expected.line);
-        assert_eq!(finding.rationale, expected.rationale);
-        assert_eq!(finding.remediation, expected.remediation);
-        assert_eq!(
-            finding.suppression,
-            format!(
-                "Suppress `{}` only with a documented reason in the project audit config.",
-                expected.rule_id
-            )
-        );
+        assert_eq!(finding.rationale, metadata.rationale);
+        assert_eq!(finding.remediation, metadata.remediation);
+        assert_eq!(finding.suppression, metadata.suppression_guidance);
     }
 
     fn finding_sort_tuple(finding: &SkillFinding) -> (&str, Option<usize>, &str, &str) {
