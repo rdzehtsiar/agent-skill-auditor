@@ -1062,6 +1062,39 @@ experimental_host_hint: codex-only
     }
 
     #[test]
+    fn host_specific_frontmatter_still_reports_skill040_not_reserved_skill050() {
+        let workspace = TestWorkspace::new("scan-host-specific-metadata-skill040");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: host-specific-frontmatter
+description: Host-specific frontmatter fixture.
+codex:
+  tools:
+    - shell
+---
+
+# Host-specific Frontmatter
+"#,
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_eq!(
+            report
+                .findings
+                .iter()
+                .map(|finding| finding.rule_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["SKILL040"]
+        );
+        assert_eq!(
+            report.findings[0].message,
+            "The manifest declares unsupported frontmatter field `codex`."
+        );
+    }
+
+    #[test]
     fn reports_skill040_unknown_frontmatter_field_line_from_crlf_frontmatter() {
         let workspace = TestWorkspace::new("scan-skill040-crlf-frontmatter");
         workspace.write_file(
@@ -2360,20 +2393,14 @@ ignore:
                 .iter()
                 .map(|entry| {
                     (
-                        entry["finding"]["location"]["path"]
-                            .as_str()
-                            .expect("path"),
+                        entry["finding"]["location"]["path"].as_str().expect("path"),
                         entry["finding"]["rule_id"].as_str().expect("rule id"),
                         entry["suppression"]["reason"].as_str().expect("reason"),
                     )
                 })
                 .collect::<Vec<_>>(),
             vec![
-                (
-                    "alpha/SKILL.md",
-                    "SKILL001",
-                    "Name intentionally omitted."
-                ),
+                ("alpha/SKILL.md", "SKILL001", "Name intentionally omitted."),
                 (
                     "alpha/SKILL.md",
                     "SKILL002",

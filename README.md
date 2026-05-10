@@ -124,6 +124,8 @@ The Phase 1 scanner currently supports:
   - `SKILL040`: unknown frontmatter field.
   - `SKILL041`: malformed frontmatter.
 
+`SKILL050` is reserved for future host-specific metadata validation in Phase 3 host profiles. In the current scanner, host-specific or otherwise unknown frontmatter is still reported as `SKILL040`, and `SKILL050` is not emitted or accepted in suppression config.
+
 ## Security Model
 
 Agent Skill Auditor is designed to inspect untrusted or third-party skill packages before they are installed into an AI agent environment.
@@ -184,7 +186,7 @@ Future compatibility findings should explain whether a package is likely to pass
 | Fixture and snapshot-style tests | Implemented for current scanner and report behavior. |
 | Host compatibility profiles | Planned. |
 | Static script security analyzers | Planned. |
-| Rule documentation generation | Planned. |
+| Rule documentation generation | Implemented from rule metadata. |
 | Policy and suppression configuration | Implemented for explicit config loading, fail thresholds, and path-scoped suppressions. |
 
 ## License

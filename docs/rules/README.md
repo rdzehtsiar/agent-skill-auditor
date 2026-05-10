@@ -4,20 +4,24 @@ This document is generated from `agent-audit-rules` metadata. Keep rule changes 
 
 The initial rule set is intentionally conservative. Rules report deterministic, explainable findings for offline skill audits.
 
+Rule status is explicit: `active` rules may emit findings and be suppressed, while `reserved` rules document future rule IDs and are not emitted or accepted in suppression config.
+
 ## Rule Index
 
-| Rule | Severity | Category | Title |
-| --- | --- | --- | --- |
-| [SKILL001](#skill001-missing-skill-name) | `low` | `spec` | Missing skill name |
-| [SKILL002](#skill002-missing-skill-description) | `low` | `spec` | Missing skill description |
-| [SKILL010](#skill010-broken-relative-reference) | `low` | `spec` | Broken relative reference |
-| [SKILL020](#skill020-oversized-skill-manifest) | `low` | `spec` | Oversized skill manifest |
-| [SKILL030](#skill030-duplicate-skill-name) | `low` | `compatibility` | Duplicate skill name |
-| [SKILL040](#skill040-unknown-frontmatter-field) | `low` | `compatibility` | Unknown frontmatter field |
-| [SKILL041](#skill041-malformed-frontmatter) | `low` | `spec` | Malformed frontmatter |
+| Rule | Status | Severity | Category | Title |
+| --- | --- | --- | --- | --- |
+| [SKILL001](#skill001-missing-skill-name) | `active` | `low` | `spec` | Missing skill name |
+| [SKILL002](#skill002-missing-skill-description) | `active` | `low` | `spec` | Missing skill description |
+| [SKILL010](#skill010-broken-relative-reference) | `active` | `low` | `spec` | Broken relative reference |
+| [SKILL020](#skill020-oversized-skill-manifest) | `active` | `low` | `spec` | Oversized skill manifest |
+| [SKILL030](#skill030-duplicate-skill-name) | `active` | `low` | `compatibility` | Duplicate skill name |
+| [SKILL040](#skill040-unknown-frontmatter-field) | `active` | `low` | `compatibility` | Unknown frontmatter field |
+| [SKILL041](#skill041-malformed-frontmatter) | `active` | `low` | `spec` | Malformed frontmatter |
+| [SKILL050](#skill050-invalid-host-specific-metadata) | `reserved` | `low` | `compatibility` | Invalid host-specific metadata |
 
 ## SKILL001: Missing skill name
 
+- Status: `active`
 - Severity: `low`
 - Category: `spec`
 - Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
@@ -58,6 +62,7 @@ description: Reviews pull requests.
 
 ## SKILL002: Missing skill description
 
+- Status: `active`
 - Severity: `low`
 - Category: `spec`
 - Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
@@ -98,6 +103,7 @@ description: Reviews pull requests.
 
 ## SKILL010: Broken relative reference
 
+- Status: `active`
 - Severity: `low`
 - Category: `spec`
 - Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
@@ -133,6 +139,7 @@ See [guide](references/guide.md).
 
 ## SKILL020: Oversized skill manifest
 
+- Status: `active`
 - Severity: `low`
 - Category: `spec`
 - Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
@@ -168,6 +175,7 @@ A compact SKILL.md that links to detailed files under references/.
 
 ## SKILL030: Duplicate skill name
 
+- Status: `active`
 - Severity: `low`
 - Category: `compatibility`
 - Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
@@ -203,6 +211,7 @@ One manifest declares name: pr-reviewer and another declares name: release-revie
 
 ## SKILL040: Unknown frontmatter field
 
+- Status: `active`
 - Severity: `low`
 - Category: `compatibility`
 - Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
@@ -245,6 +254,7 @@ description: Reviews changes.
 
 ## SKILL041: Malformed frontmatter
 
+- Status: `active`
 - Severity: `low`
 - Category: `spec`
 - Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
@@ -271,6 +281,51 @@ Non-compliant:
 ```text
 ---
 name: [unterminated
+---
+```
+
+Compliant:
+
+```text
+---
+name: reviewer
+description: Reviews changes.
+---
+```
+
+## SKILL050: Invalid host-specific metadata
+
+- Status: `reserved` (reserved; not emitted in Phase 2)
+- Severity: `low`
+- Category: `compatibility`
+- Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
+- Input nodes: `frontmatter`
+
+### Why It Matters
+
+Host-specific metadata needs profile-specific schemas so compatibility findings stay accurate and explainable.
+
+### How To Fix
+
+In Phase 2, keep host-specific metadata review under `SKILL040`; wait for Phase 3 host profiles before relying on `SKILL050`.
+
+### Safe Suppression
+
+`SKILL050` is reserved for Phase 3 host profiles and is not emitted in Phase 2; do not suppress it until it becomes active.
+
+### Examples
+
+Reserve host-specific metadata validation for Phase 3 host profiles.
+
+Non-compliant:
+
+```text
+---
+name: reviewer
+description: Reviews changes.
+codex:
+  tools:
+    - shell
 ---
 ```
 

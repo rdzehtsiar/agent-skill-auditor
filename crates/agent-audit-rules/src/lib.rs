@@ -11,6 +11,7 @@ pub enum RuleId {
     Skill030,
     Skill040,
     Skill041,
+    Skill050,
 }
 
 impl RuleId {
@@ -23,6 +24,7 @@ impl RuleId {
             Self::Skill030 => "SKILL030",
             Self::Skill040 => "SKILL040",
             Self::Skill041 => "SKILL041",
+            Self::Skill050 => "SKILL050",
         }
     }
 }
@@ -84,6 +86,31 @@ impl RuleCategory {
 }
 
 impl fmt::Display for RuleCategory {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RuleStatus {
+    Active,
+    Reserved,
+}
+
+impl RuleStatus {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Reserved => "reserved",
+        }
+    }
+
+    pub const fn emits_findings(self) -> bool {
+        matches!(self, Self::Active)
+    }
+}
+
+impl fmt::Display for RuleStatus {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.as_str())
     }
@@ -153,6 +180,7 @@ pub struct RuleExample {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RuleMetadata {
     pub id: RuleId,
+    pub status: RuleStatus,
     pub title: &'static str,
     pub severity: RuleSeverity,
     pub category: RuleCategory,
@@ -189,6 +217,10 @@ impl RuleRegistry {
 pub const STRUCTURAL_RULE_IDS: &[&str] = &[
     "SKILL001", "SKILL002", "SKILL010", "SKILL020", "SKILL030", "SKILL040", "SKILL041",
 ];
+
+pub const ACTIVE_RULE_IDS: &[&str] = STRUCTURAL_RULE_IDS;
+
+pub const RESERVED_RULE_IDS: &[&str] = &["SKILL050"];
 
 pub const ALL_HOST_PROFILES: &[HostProfile] = &[
     HostProfile::AgentSkillsSpec,
@@ -247,9 +279,17 @@ const SKILL041_EXAMPLES: &[RuleExample] = &[RuleExample {
     compliant: "---\nname: reviewer\ndescription: Reviews changes.\n---\n",
 }];
 
+const SKILL050_EXAMPLES: &[RuleExample] = &[RuleExample {
+    summary: "Reserve host-specific metadata validation for Phase 3 host profiles.",
+    non_compliant:
+        "---\nname: reviewer\ndescription: Reviews changes.\ncodex:\n  tools:\n    - shell\n---\n",
+    compliant: "---\nname: reviewer\ndescription: Reviews changes.\n---\n",
+}];
+
 pub const RULE_METADATA: &[RuleMetadata] = &[
     RuleMetadata {
         id: RuleId::Skill001,
+        status: RuleStatus::Active,
         title: "Missing skill name",
         severity: RuleSeverity::Low,
         category: RuleCategory::Spec,
@@ -263,6 +303,7 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
     },
     RuleMetadata {
         id: RuleId::Skill002,
+        status: RuleStatus::Active,
         title: "Missing skill description",
         severity: RuleSeverity::Low,
         category: RuleCategory::Spec,
@@ -276,6 +317,7 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
     },
     RuleMetadata {
         id: RuleId::Skill010,
+        status: RuleStatus::Active,
         title: "Broken relative reference",
         severity: RuleSeverity::Low,
         category: RuleCategory::Spec,
@@ -290,6 +332,7 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
     },
     RuleMetadata {
         id: RuleId::Skill020,
+        status: RuleStatus::Active,
         title: "Oversized skill manifest",
         severity: RuleSeverity::Low,
         category: RuleCategory::Spec,
@@ -303,6 +346,7 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
     },
     RuleMetadata {
         id: RuleId::Skill030,
+        status: RuleStatus::Active,
         title: "Duplicate skill name",
         severity: RuleSeverity::Low,
         category: RuleCategory::Compatibility,
@@ -316,6 +360,7 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
     },
     RuleMetadata {
         id: RuleId::Skill040,
+        status: RuleStatus::Active,
         title: "Unknown frontmatter field",
         severity: RuleSeverity::Low,
         category: RuleCategory::Compatibility,
@@ -329,6 +374,7 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
     },
     RuleMetadata {
         id: RuleId::Skill041,
+        status: RuleStatus::Active,
         title: "Malformed frontmatter",
         severity: RuleSeverity::Low,
         category: RuleCategory::Spec,
@@ -341,12 +387,33 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
             "Suppress `SKILL041` only with a documented reason in the project audit config.",
         examples: SKILL041_EXAMPLES,
     },
+    RuleMetadata {
+        id: RuleId::Skill050,
+        status: RuleStatus::Reserved,
+        title: "Invalid host-specific metadata",
+        severity: RuleSeverity::Low,
+        category: RuleCategory::Compatibility,
+        applicable_profiles: ALL_HOST_PROFILES,
+        input_node_types: FRONTMATTER_INPUT,
+        rationale: "Host-specific metadata needs profile-specific schemas so compatibility findings stay accurate and explainable.",
+        remediation:
+            "In Phase 2, keep host-specific metadata review under `SKILL040`; wait for Phase 3 host profiles before relying on `SKILL050`.",
+        suppression_guidance:
+            "`SKILL050` is reserved for Phase 3 host profiles and is not emitted in Phase 2; do not suppress it until it becomes active.",
+        examples: SKILL050_EXAMPLES,
+    },
 ];
 
 pub const RULE_REGISTRY: RuleRegistry = RuleRegistry::new(RULE_METADATA);
 
 pub fn rule_metadata(rule_id: &str) -> Option<&'static RuleMetadata> {
     RULE_REGISTRY.metadata(rule_id)
+}
+
+pub fn active_rule_metadata(rule_id: &str) -> Option<&'static RuleMetadata> {
+    RULE_REGISTRY
+        .metadata(rule_id)
+        .filter(|metadata| metadata.status.emits_findings())
 }
 
 pub fn render_rule_documentation() -> String {
@@ -361,9 +428,10 @@ pub fn render_rule_documentation_for(registry: &RuleRegistry) -> String {
         "This document is generated from `agent-audit-rules` metadata. Keep rule changes in source and regenerate this file when metadata changes.\n\n",
     );
     markdown.push_str("The initial rule set is intentionally conservative. Rules report deterministic, explainable findings for offline skill audits.\n\n");
+    markdown.push_str("Rule status is explicit: `active` rules may emit findings and be suppressed, while `reserved` rules document future rule IDs and are not emitted or accepted in suppression config.\n\n");
     markdown.push_str("## Rule Index\n\n");
-    markdown.push_str("| Rule | Severity | Category | Title |\n");
-    markdown.push_str("| --- | --- | --- | --- |\n");
+    markdown.push_str("| Rule | Status | Severity | Category | Title |\n");
+    markdown.push_str("| --- | --- | --- | --- | --- |\n");
 
     for metadata in registry.rules() {
         markdown.push_str("| [");
@@ -371,6 +439,8 @@ pub fn render_rule_documentation_for(registry: &RuleRegistry) -> String {
         markdown.push_str("](#");
         markdown.push_str(&rule_anchor(metadata));
         markdown.push_str(") | `");
+        markdown.push_str(metadata.status.as_str());
+        markdown.push_str("` | `");
         markdown.push_str(metadata.severity.as_str());
         markdown.push_str("` | `");
         markdown.push_str(metadata.category.as_str());
@@ -386,6 +456,13 @@ pub fn render_rule_documentation_for(registry: &RuleRegistry) -> String {
         markdown.push_str(": ");
         markdown.push_str(metadata.title);
         markdown.push_str("\n\n");
+        markdown.push_str("- Status: `");
+        markdown.push_str(metadata.status.as_str());
+        markdown.push_str("`");
+        if !metadata.status.emits_findings() {
+            markdown.push_str(" (reserved; not emitted in Phase 2)");
+        }
+        markdown.push('\n');
         markdown.push_str("- Severity: `");
         markdown.push_str(metadata.severity.as_str());
         markdown.push_str("`\n");
@@ -486,18 +563,20 @@ mod tests {
 
     #[test]
     fn metadata_covers_current_structural_rule_ids_in_deterministic_order() {
-        let metadata_ids = RULE_REGISTRY
+        let active_metadata_ids = RULE_REGISTRY
             .rules()
             .iter()
+            .filter(|metadata| metadata.status == RuleStatus::Active)
             .map(|metadata| metadata.id.as_str())
             .collect::<Vec<_>>();
 
-        assert_eq!(metadata_ids, STRUCTURAL_RULE_IDS);
-        assert!(metadata_ids.windows(2).all(|ids| ids[0] < ids[1]));
+        assert_eq!(active_metadata_ids, STRUCTURAL_RULE_IDS);
+        assert_eq!(active_metadata_ids, ACTIVE_RULE_IDS);
+        assert!(active_metadata_ids.windows(2).all(|ids| ids[0] < ids[1]));
     }
 
     #[test]
-    fn registry_rules_are_unique_sorted_and_match_current_implemented_set() {
+    fn registry_rules_are_unique_sorted_and_include_reserved_metadata() {
         let registry_ids = RULE_REGISTRY
             .rules()
             .iter()
@@ -514,9 +593,9 @@ mod tests {
                 RuleId::Skill030.as_str(),
                 RuleId::Skill040.as_str(),
                 RuleId::Skill041.as_str(),
+                RuleId::Skill050.as_str(),
             ]
         );
-        assert_eq!(registry_ids, STRUCTURAL_RULE_IDS);
         assert!(
             registry_ids.windows(2).all(|ids| ids[0] < ids[1]),
             "registry ids must remain sorted for deterministic output and binary lookup"
@@ -525,6 +604,28 @@ mod tests {
             registry_ids.windows(2).all(|ids| ids[0] != ids[1]),
             "registry ids must be unique"
         );
+    }
+
+    #[test]
+    fn active_and_reserved_rule_ids_are_explicit_and_deterministic() {
+        let active_ids = RULE_REGISTRY
+            .rules()
+            .iter()
+            .filter(|metadata| metadata.status == RuleStatus::Active)
+            .map(|metadata| metadata.id.as_str())
+            .collect::<Vec<_>>();
+        let reserved_ids = RULE_REGISTRY
+            .rules()
+            .iter()
+            .filter(|metadata| metadata.status == RuleStatus::Reserved)
+            .map(|metadata| metadata.id.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(active_ids, ACTIVE_RULE_IDS);
+        assert_eq!(reserved_ids, RESERVED_RULE_IDS);
+        assert_eq!(reserved_ids, vec!["SKILL050"]);
+        assert!(active_ids.windows(2).all(|ids| ids[0] < ids[1]));
+        assert!(reserved_ids.windows(2).all(|ids| ids[0] < ids[1]));
     }
 
     #[test]
@@ -615,6 +716,7 @@ mod tests {
             ("SKILL030", RuleSeverity::Low, RuleCategory::Compatibility),
             ("SKILL040", RuleSeverity::Low, RuleCategory::Compatibility),
             ("SKILL041", RuleSeverity::Low, RuleCategory::Spec),
+            ("SKILL050", RuleSeverity::Low, RuleCategory::Compatibility),
         ];
 
         for (rule_id, severity, category) in expected {
@@ -641,6 +743,20 @@ mod tests {
     }
 
     #[test]
+    fn active_metadata_lookup_rejects_reserved_and_unknown_ids() {
+        assert_eq!(
+            active_rule_metadata("SKILL040").map(|metadata| metadata.title),
+            Some("Unknown frontmatter field")
+        );
+        assert_eq!(
+            rule_metadata("SKILL050").map(|metadata| metadata.status),
+            Some(RuleStatus::Reserved)
+        );
+        assert!(active_rule_metadata("SKILL050").is_none());
+        assert!(active_rule_metadata("SEC001").is_none());
+    }
+
+    #[test]
     fn rendered_rule_documentation_is_deterministic_and_complete() {
         let first_render = render_rule_documentation();
         let second_render = render_rule_documentation();
@@ -648,6 +764,9 @@ mod tests {
         assert_eq!(first_render, second_render);
         assert!(first_render.ends_with('\n'));
         assert!(first_render.contains("## Rule Index"));
+        assert!(first_render.contains("| Rule | Status | Severity | Category | Title |"));
+        assert!(first_render.contains("| [SKILL050](#skill050-invalid-host-specific-metadata) | `reserved` | `low` | `compatibility` | Invalid host-specific metadata |"));
+        assert!(first_render.contains("- Status: `reserved` (reserved; not emitted in Phase 2)"));
 
         for metadata in RULE_REGISTRY.rules() {
             assert!(first_render.contains(metadata.id.as_str()));

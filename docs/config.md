@@ -73,3 +73,5 @@ ignore:
     path: skills/codex-release/SKILL.md
     reason: Accepted risk: codex-specific frontmatter is required by the target host and is retained until compatibility metadata rules replace SKILL040.
 ```
+
+`SKILL050` is reserved for future host-specific metadata validation. It is documented in the rule registry, but Phase 2 does not emit `SKILL050` findings and config entries such as `ignore.rule: SKILL050` are rejected until that rule becomes active.

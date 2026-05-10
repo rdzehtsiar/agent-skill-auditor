@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 
 use crate::model::{FindingCategory, FindingLocation, Severity, SkillFinding};
 use agent_audit_rules::{
-    rule_metadata, RuleCategory as RegistryCategory, RuleMetadata, RuleSeverity as RegistrySeverity,
+    active_rule_metadata, RuleCategory as RegistryCategory, RuleMetadata,
+    RuleSeverity as RegistrySeverity,
 };
 
 /// Portable frontmatter fields accepted by the initial structural scanner.
@@ -175,7 +176,8 @@ fn structural_finding(
 }
 
 fn scanner_rule_metadata(rule_id: &str) -> &'static RuleMetadata {
-    rule_metadata(rule_id).expect("implemented scanner rule must have registry metadata")
+    active_rule_metadata(rule_id)
+        .expect("implemented scanner rule must have active registry metadata")
 }
 
 fn finding_from_metadata(
@@ -278,6 +280,7 @@ fn unknown_frontmatter_field_finding(field: &str, path: &str, line: Option<usize
 #[cfg(test)]
 mod tests {
     use super::*;
+    use agent_audit_rules::rule_metadata;
 
     #[test]
     fn skill001_reports_missing_name_with_registry_metadata() {

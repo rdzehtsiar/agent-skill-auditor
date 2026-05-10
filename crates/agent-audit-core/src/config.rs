@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use agent_audit_hosts::HOST_PROFILES;
-use agent_audit_rules::rule_metadata;
+use agent_audit_rules::{rule_metadata, RuleStatus};
 use serde::Deserialize;
 
 use crate::error::{AuditError, AuditResult};
@@ -104,10 +104,18 @@ fn validate_ignore(entries: Vec<RawIgnoreEntry>) -> AuditResult<Vec<ConfigIgnore
 
 fn validate_ignore_entry(index: usize, entry: RawIgnoreEntry) -> AuditResult<ConfigIgnoreEntry> {
     let rule = required_non_empty_field(entry.rule.as_deref(), index, "rule")?;
-    if rule_metadata(rule).is_none() {
-        return Err(validation_error(format!(
-            "ignore[{index}].rule uses unknown rule ID `{rule}`; expected a registered rule ID"
-        )));
+    match rule_metadata(rule) {
+        Some(metadata) if metadata.status == RuleStatus::Active => {}
+        Some(_) => {
+            return Err(validation_error(format!(
+                "ignore[{index}].rule uses reserved rule ID `{rule}`; reserved rules are not emitted and cannot be suppressed yet"
+            )));
+        }
+        None => {
+            return Err(validation_error(format!(
+                "ignore[{index}].rule uses unknown rule ID `{rule}`; expected an active rule ID"
+            )));
+        }
     }
 
     let raw_path = required_non_empty_field(entry.path.as_deref(), index, "path")?;
@@ -278,6 +286,26 @@ ignore:
         );
 
         assert_validation_contains(error, "unknown rule ID `SEC999`");
+    }
+
+    #[test]
+    fn rejects_reserved_ignore_rule() {
+        let error = parse_error(
+            r#"
+ignore:
+  - rule: SKILL050
+    path: SKILL.md
+    reason: Host-specific metadata will be reviewed later.
+"#,
+        );
+
+        assert!(
+            matches!(error, AuditError::ConfigValidation { .. }),
+            "expected validation error, got {error:?}"
+        );
+        let message = error.to_string();
+        assert!(message.contains("reserved rule ID `SKILL050`"));
+        assert!(message.contains("cannot be suppressed yet"));
     }
 
     #[test]
