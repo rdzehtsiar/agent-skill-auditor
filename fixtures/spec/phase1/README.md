@@ -21,4 +21,5 @@ Fixture cases:
 - `duplicate-names`: two separate skill packages with the same declared name.
 - `nested-paths`: manifests under recursive and host-convention paths.
 - `malformed-frontmatter`: manifest with invalid YAML frontmatter.
-
+- `artifact-inventory`: valid manifest with deterministic nested files under
+  `scripts/`, `references/`, and `assets/`.

@@ -674,15 +674,7 @@ description: Artifact file fixture.
         let files = &report.packages[0].graph.files;
 
         assert_eq!(
-            files
-                .iter()
-                .map(|file| (
-                    file.path.as_str(),
-                    file.artifact,
-                    file.kind,
-                    file.size_bytes
-                ))
-                .collect::<Vec<_>>(),
+            file_projection(files),
             vec![
                 (
                     "assets/images",
@@ -717,6 +709,142 @@ description: Artifact file fixture.
             ]
         );
         assert!(files
+            .iter()
+            .all(|file| !matches!(file.path.as_str(), "scripts" | "references" | "assets")));
+    }
+
+    #[test]
+    fn scan_reports_no_artifact_files_when_artifact_dirs_are_absent() {
+        let workspace = TestWorkspace::new("scan-no-artifact-dirs");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: no-artifacts
+description: No artifact directories fixture.
+---
+
+# No Artifacts
+"#,
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_eq!(report.summary.package_count, 1);
+        assert!(report.packages[0].graph.artifacts.is_empty());
+        assert!(report.packages[0].graph.files.is_empty());
+    }
+
+    #[test]
+    fn scan_inventories_only_files_under_skill_package_root() {
+        let workspace = TestWorkspace::new("scan-package-root-artifacts");
+        workspace.write_file(
+            "skill/SKILL.md",
+            r#"---
+name: package-root-artifacts
+description: Package root artifact fixture.
+---
+
+# Package Root Artifacts
+"#,
+        );
+        workspace.write_file("skill/scripts/in-package.sh", "echo package\n");
+        workspace.write_file("scripts/outside.sh", "echo outside\n");
+        workspace.write_file("references/outside.md", "# Outside\n");
+        workspace.write_file("assets/outside.txt", "outside\n");
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_eq!(report.summary.package_count, 1);
+        assert_eq!(report.packages[0].root, "skill");
+        assert_eq!(
+            report.packages[0].graph.artifacts,
+            vec!["scripts".to_owned()]
+        );
+        assert_eq!(
+            file_projection(&report.packages[0].graph.files),
+            vec![(
+                "scripts/in-package.sh",
+                SkillArtifactKind::Scripts,
+                SkillFileKind::File,
+                13
+            )]
+        );
+    }
+
+    #[test]
+    fn scan_phase1_artifact_inventory_fixture_is_stable() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/spec/phase1/artifact-inventory");
+        let fixture_file_size = |relative_path: &str| {
+            std::fs::metadata(fixture.join(relative_path))
+                .expect("fixture file metadata")
+                .len()
+        };
+
+        let report = scan_path(&fixture, &ScanOptions::default()).expect("scan path");
+
+        assert_eq!(report.summary.package_count, 1);
+        assert_eq!(report.packages[0].root, "");
+        assert_eq!(
+            report.packages[0].graph.artifacts,
+            vec!["scripts", "references", "assets"]
+        );
+        assert_eq!(
+            file_projection(&report.packages[0].graph.files),
+            vec![
+                (
+                    "assets/images",
+                    SkillArtifactKind::Assets,
+                    SkillFileKind::Directory,
+                    0
+                ),
+                (
+                    "assets/images/icon.txt",
+                    SkillArtifactKind::Assets,
+                    SkillFileKind::File,
+                    fixture_file_size("assets/images/icon.txt")
+                ),
+                (
+                    "references/guide.md",
+                    SkillArtifactKind::References,
+                    SkillFileKind::File,
+                    fixture_file_size("references/guide.md")
+                ),
+                (
+                    "references/nested",
+                    SkillArtifactKind::References,
+                    SkillFileKind::Directory,
+                    0
+                ),
+                (
+                    "references/nested/checklist.md",
+                    SkillArtifactKind::References,
+                    SkillFileKind::File,
+                    fixture_file_size("references/nested/checklist.md")
+                ),
+                (
+                    "scripts/build.sh",
+                    SkillArtifactKind::Scripts,
+                    SkillFileKind::File,
+                    fixture_file_size("scripts/build.sh")
+                ),
+                (
+                    "scripts/nested",
+                    SkillArtifactKind::Scripts,
+                    SkillFileKind::Directory,
+                    0
+                ),
+                (
+                    "scripts/nested/prepare.ps1",
+                    SkillArtifactKind::Scripts,
+                    SkillFileKind::File,
+                    fixture_file_size("scripts/nested/prepare.ps1")
+                ),
+            ]
+        );
+        assert!(report.packages[0]
+            .graph
+            .files
             .iter()
             .all(|file| !matches!(file.path.as_str(), "scripts" | "references" | "assets")));
     }
@@ -1159,6 +1287,20 @@ Read [guidance](references/guidance.md).
             finding.rule_id.as_str(),
             finding.message.as_str(),
         )
+    }
+
+    fn file_projection(files: &[SkillFile]) -> Vec<(&str, SkillArtifactKind, SkillFileKind, u64)> {
+        files
+            .iter()
+            .map(|file| {
+                (
+                    file.path.as_str(),
+                    file.artifact,
+                    file.kind,
+                    file.size_bytes,
+                )
+            })
+            .collect()
     }
 
     fn report_json_value(report: &ScanReport) -> (String, serde_json::Value) {

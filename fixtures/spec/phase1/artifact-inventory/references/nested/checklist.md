@@ -1,0 +1,3 @@
+# Checklist
+
+- Verify paths.
