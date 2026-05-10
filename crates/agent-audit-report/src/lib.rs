@@ -495,6 +495,195 @@ mod tests {
     }
 
     #[test]
+    fn html_output_renders_all_summary_counts() {
+        let report = report_with_summary(2, 3, 1, 2);
+
+        let html = render_html(&report);
+
+        assert!(html.contains("<span class=\"count\">2</span>Packages"));
+        assert!(html.contains("<span class=\"count\">3</span>Findings"));
+        assert!(html.contains("<span class=\"count\">1</span>Invalid manifests"));
+        assert!(html.contains("<span class=\"count\">2</span>Broken references"));
+    }
+
+    #[test]
+    fn html_output_escapes_every_untrusted_column() {
+        let report = report_with_packages_and_findings(
+            vec![package(
+                "skills/<root>",
+                "skills/<manifest>/SKILL.md",
+                Some("<name>"),
+                Some("\"description\" & 'summary'"),
+            )],
+            vec![finding_with_details(
+                "SEC<001>",
+                Severity::High,
+                FindingCategory::Security,
+                "<x-title>",
+                "</td><script>alert('message')</script>",
+                "skills/<finding>/SKILL.md",
+                Some(7),
+                "\"rationale\" & 'risk'",
+                "<remediation>",
+                "</td><img src=x>",
+            )],
+        );
+
+        let html = render_html(&report);
+
+        assert!(html.contains("skills/&lt;root&gt;"));
+        assert!(html.contains("skills/&lt;manifest&gt;/SKILL.md"));
+        assert!(html.contains("&lt;name&gt;"));
+        assert!(html.contains("&quot;description&quot; &amp; &#39;summary&#39;"));
+        assert!(html.contains("SEC&lt;001&gt;"));
+        assert!(html.contains("skills/&lt;finding&gt;/SKILL.md:7"));
+        assert!(html.contains("&lt;x-title&gt;"));
+        assert!(html.contains("&lt;/td&gt;&lt;script&gt;alert(&#39;message&#39;)&lt;/script&gt;"));
+        assert!(html.contains("&quot;rationale&quot; &amp; &#39;risk&#39;"));
+        assert!(html.contains("&lt;remediation&gt;"));
+        assert!(html.contains("&lt;/td&gt;&lt;img src=x&gt;"));
+
+        for raw in [
+            "skills/<root>",
+            "skills/<manifest>/SKILL.md",
+            "<name>",
+            "\"description\" & 'summary'",
+            "SEC<001>",
+            "skills/<finding>/SKILL.md:7",
+            "<x-title>",
+            "</td><script>alert('message')</script>",
+            "\"rationale\" & 'risk'",
+            "<remediation>",
+            "</td><img src=x>",
+        ] {
+            assert!(
+                !html.contains(raw),
+                "raw dangerous value was rendered: {raw}"
+            );
+        }
+    }
+
+    #[test]
+    fn html_output_renders_missing_optional_package_fields_as_empty_cells() {
+        let report = report_with_packages_and_findings(
+            vec![package("skills/empty", "skills/empty/SKILL.md", None, None)],
+            Vec::new(),
+        );
+
+        let html = render_html(&report);
+
+        assert!(html.contains(
+            "<tr><td></td><td></td><td>skills/empty/SKILL.md</td><td>skills/empty</td></tr>"
+        ));
+        assert!(!html.contains("None"));
+        assert!(!html.contains("Some("));
+        assert!(!html.contains("null"));
+    }
+
+    #[test]
+    fn html_output_orders_findings_by_path_line_rule_id_then_message() {
+        let report = report_with_findings(vec![
+            finding(
+                "SKILL200",
+                Severity::Low,
+                FindingCategory::Spec,
+                "Ordering marker",
+                "marker-05 line 2 sorts last.",
+                "skills/order/SKILL.md",
+                Some(2),
+            ),
+            finding(
+                "SKILL010",
+                Severity::Low,
+                FindingCategory::Spec,
+                "Ordering marker",
+                "marker-03 same rule second message.",
+                "skills/order/SKILL.md",
+                Some(1),
+            ),
+            finding(
+                "SKILL999",
+                Severity::Low,
+                FindingCategory::Spec,
+                "Ordering marker",
+                "marker-01 no line sorts first.",
+                "skills/order/SKILL.md",
+                None,
+            ),
+            finding(
+                "SKILL020",
+                Severity::Low,
+                FindingCategory::Spec,
+                "Ordering marker",
+                "marker-04 same line later rule.",
+                "skills/order/SKILL.md",
+                Some(1),
+            ),
+            finding(
+                "SKILL010",
+                Severity::Low,
+                FindingCategory::Spec,
+                "Ordering marker",
+                "marker-02 same rule first message.",
+                "skills/order/SKILL.md",
+                Some(1),
+            ),
+        ]);
+
+        let html = render_html(&report);
+
+        assert_in_order(
+            &html,
+            &[
+                "marker-01",
+                "marker-02",
+                "marker-03",
+                "marker-04",
+                "marker-05",
+            ],
+        );
+    }
+
+    #[test]
+    fn html_output_uses_only_self_contained_markup() {
+        let report = report_with_packages_and_findings(
+            vec![package(
+                "skills/review",
+                "skills/review/SKILL.md",
+                Some("review"),
+                Some("Review skills."),
+            )],
+            vec![finding(
+                "SKILL001",
+                Severity::Low,
+                FindingCategory::Spec,
+                "Missing skill name",
+                "The skill manifest does not declare a name.",
+                "skills/review/SKILL.md",
+                Some(1),
+            )],
+        );
+
+        let html = render_html(&report);
+
+        for forbidden in [
+            "src=",
+            "href=",
+            "@import",
+            "url(",
+            "integrity=",
+            "crossorigin=",
+            "http://",
+            "https://",
+        ] {
+            assert!(
+                !html.contains(forbidden),
+                "HTML should not contain external markup token {forbidden:?}"
+            );
+        }
+    }
+
+    #[test]
     fn sarif_output_has_required_shape() {
         let report = report_with_findings(vec![finding(
             "SKILL001",
@@ -892,6 +1081,24 @@ mod tests {
         report_with_packages_and_findings(Vec::new(), findings)
     }
 
+    fn report_with_summary(
+        package_count: usize,
+        finding_count: usize,
+        invalid_manifest_count: usize,
+        broken_reference_count: usize,
+    ) -> ScanReport {
+        ScanReport {
+            packages: Vec::new(),
+            summary: ScanSummary {
+                package_count,
+                finding_count,
+                invalid_manifest_count,
+                broken_reference_count,
+            },
+            findings: Vec::new(),
+        }
+    }
+
     fn report_with_packages_and_findings(
         packages: Vec<SkillPackage>,
         findings: Vec<SkillFinding>,
@@ -964,6 +1171,34 @@ mod tests {
             rationale: format!("{title} rationale."),
             remediation: format!("{title} remediation."),
             suppression: format!("Suppress `{rule_id}` only with a documented reason."),
+        }
+    }
+
+    fn finding_with_details(
+        rule_id: &str,
+        severity: Severity,
+        category: FindingCategory,
+        title: &str,
+        message: &str,
+        path: &str,
+        line: Option<usize>,
+        rationale: &str,
+        remediation: &str,
+        suppression: &str,
+    ) -> SkillFinding {
+        SkillFinding {
+            rule_id: rule_id.to_owned(),
+            severity,
+            category,
+            title: title.to_owned(),
+            message: message.to_owned(),
+            location: FindingLocation {
+                path: path.to_owned(),
+                line,
+            },
+            rationale: rationale.to_owned(),
+            remediation: remediation.to_owned(),
+            suppression: suppression.to_owned(),
         }
     }
 
