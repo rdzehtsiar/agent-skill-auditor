@@ -40,6 +40,7 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
             })?;
         let skill_root = manifest_path.parent().unwrap_or(root);
         let manifest = parse_skill_manifest(&manifest_path, &content)?;
+        let frontmatter_key_lines = frontmatter_key_lines(&content);
         let mut graph = SkillGraph {
             references: resolve_references(skill_root, &manifest.links),
             artifacts: discover_artifacts(skill_root),
@@ -56,6 +57,7 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
                 "Missing skill name",
                 "The skill manifest does not declare a name.",
                 &manifest_display,
+                Some(1),
                 "Skills without stable names are hard to inventory and compare across hosts.",
                 "Add a non-empty `name` field to frontmatter or a clear top-level heading.",
             ));
@@ -66,6 +68,7 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
                 "Missing skill description",
                 "The skill manifest does not declare a description.",
                 &manifest_display,
+                Some(1),
                 "Reviewers and host profiles need a concise behavior statement for the skill.",
                 "Add a non-empty `description` field to frontmatter or an opening paragraph.",
             ));
@@ -76,6 +79,7 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
                 "Oversized skill manifest",
                 "The SKILL.md file exceeds the recommended manifest size.",
                 &manifest_display,
+                Some(1),
                 "Very large manifests are harder to review and may be rejected or truncated by hosts.",
                 "Move long reference material into `references/` and link to it from SKILL.md.",
             ));
@@ -85,7 +89,14 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
             .keys()
             .filter(|field| !ACCEPTED_FRONTMATTER_FIELDS.contains(&field.as_str()))
         {
-            findings.push(unknown_frontmatter_field_finding(field, &manifest_display));
+            findings.push(unknown_frontmatter_field_finding(
+                field,
+                &manifest_display,
+                frontmatter_key_lines
+                    .get(field.as_str())
+                    .copied()
+                    .or(Some(1)),
+            ));
         }
         for reference in graph
             .references
@@ -97,6 +108,7 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
                 "Broken relative reference",
                 &format!("The manifest references `{}`, but the file was not found.", reference.target),
                 &manifest_display,
+                reference.line,
                 "Broken references can make a skill behave differently than documented or fail at runtime.",
                 "Create the referenced file, update the link, or remove the stale reference.",
             ));
@@ -280,11 +292,41 @@ fn display_path(root: &Path, path: &Path) -> String {
         .replace('\\', "/")
 }
 
+fn frontmatter_key_lines(content: &str) -> BTreeMap<String, usize> {
+    let Some(rest) = content.strip_prefix("---\n") else {
+        return BTreeMap::new();
+    };
+    let Some((frontmatter, _body)) = rest.split_once("\n---\n") else {
+        return BTreeMap::new();
+    };
+
+    frontmatter
+        .lines()
+        .enumerate()
+        .filter_map(|(index, line)| top_level_frontmatter_key(line).map(|key| (key, index + 2)))
+        .collect()
+}
+
+fn top_level_frontmatter_key(line: &str) -> Option<String> {
+    if line.is_empty()
+        || line.starts_with(char::is_whitespace)
+        || line.starts_with('#')
+        || line.starts_with('-')
+    {
+        return None;
+    }
+
+    let (key, _value) = line.split_once(':')?;
+    let key = key.trim().trim_matches(['"', '\'']);
+    (!key.is_empty()).then(|| key.to_owned())
+}
+
 fn structural_finding(
     rule_id: &str,
     title: &str,
     message: &str,
     path: &str,
+    line: Option<usize>,
     rationale: &str,
     remediation: &str,
 ) -> SkillFinding {
@@ -296,7 +338,7 @@ fn structural_finding(
         message: message.to_owned(),
         location: FindingLocation {
             path: path.to_owned(),
-            line: None,
+            line,
         },
         rationale: rationale.to_owned(),
         remediation: remediation.to_owned(),
@@ -344,7 +386,7 @@ fn duplicate_skill_name_findings(packages: &[SkillPackage]) -> Vec<SkillFinding>
                 ),
                 location: FindingLocation {
                     path: manifest_path.to_owned(),
-                    line: None,
+                    line: Some(1),
                 },
                 rationale: "Duplicate names make inventory, policy, host routing, and review ambiguous."
                     .to_owned(),
@@ -360,7 +402,7 @@ fn duplicate_skill_name_findings(packages: &[SkillPackage]) -> Vec<SkillFinding>
     findings
 }
 
-fn unknown_frontmatter_field_finding(field: &str, path: &str) -> SkillFinding {
+fn unknown_frontmatter_field_finding(field: &str, path: &str, line: Option<usize>) -> SkillFinding {
     SkillFinding {
         rule_id: "SKILL040".to_owned(),
         severity: Severity::Low,
@@ -369,7 +411,7 @@ fn unknown_frontmatter_field_finding(field: &str, path: &str) -> SkillFinding {
         message: format!("The manifest declares unsupported frontmatter field `{field}`."),
         location: FindingLocation {
             path: path.to_owned(),
-            line: None,
+            line,
         },
         rationale: "Unknown fields may be ignored, rejected, or interpreted differently by hosts, reducing portability and reviewability.".to_owned(),
         remediation: "Remove the field, move the information into the Markdown body, or wait for documented host profile support.".to_owned(),
@@ -497,6 +539,7 @@ This manifest has a description but no frontmatter name or heading fallback.
                 title: "Missing skill name",
                 message: "The skill manifest does not declare a name.",
                 path: "SKILL.md",
+                line: Some(1),
                 rationale:
                     "Skills without stable names are hard to inventory and compare across hosts.",
                 remediation:
@@ -528,6 +571,7 @@ name: missing-description
                 title: "Missing skill description",
                 message: "The skill manifest does not declare a description.",
                 path: "SKILL.md",
+                line: Some(1),
                 rationale:
                     "Reviewers and host profiles need a concise behavior statement for the skill.",
                 remediation:
@@ -562,6 +606,7 @@ Read [missing guidance](references/missing.md).
                 title: "Broken relative reference",
                 message: "The manifest references `references/missing.md`, but the file was not found.",
                 path: "SKILL.md",
+                line: Some(8),
                 rationale: "Broken references can make a skill behave differently than documented or fail at runtime.",
                 remediation: "Create the referenced file, update the link, or remove the stale reference.",
             },
@@ -600,6 +645,7 @@ This manifest is valid but deliberately longer than the low test threshold.
                 title: "Oversized skill manifest",
                 message: "The SKILL.md file exceeds the recommended manifest size.",
                 path: "SKILL.md",
+                line: Some(1),
                 rationale: "Very large manifests are harder to review and may be rejected or truncated by hosts.",
                 remediation: "Move long reference material into `references/` and link to it from SKILL.md.",
             },
@@ -811,7 +857,7 @@ experimental_host_hint: codex-only
             "The manifest declares unsupported frontmatter field `experimental_host_hint`."
         );
         assert_eq!(finding.location.path, "SKILL.md");
-        assert_eq!(finding.location.line, None);
+        assert_eq!(finding.location.line, Some(4));
         assert_eq!(
             finding.rationale,
             "Unknown fields may be ignored, rejected, or interpreted differently by hosts, reducing portability and reviewability."
@@ -876,9 +922,9 @@ middle_hint: middle
                 .map(|finding| finding.message.as_str())
                 .collect::<Vec<_>>(),
             vec![
+                "The manifest declares unsupported frontmatter field `zeta_hint`.",
                 "The manifest declares unsupported frontmatter field `alpha_hint`.",
                 "The manifest declares unsupported frontmatter field `middle_hint`.",
-                "The manifest declares unsupported frontmatter field `zeta_hint`.",
             ]
         );
         assert!(report
@@ -1001,19 +1047,19 @@ This second extra line makes the intended `SKILL020` case unambiguous.
             vec![
                 (
                     "alpha/SKILL.md",
-                    None,
+                    Some(1),
                     "SKILL002",
                     "The skill manifest does not declare a description."
                 ),
                 (
                     "middle/SKILL.md",
-                    None,
+                    Some(1),
                     "SKILL002",
                     "The skill manifest does not declare a description."
                 ),
                 (
                     "zeta/SKILL.md",
-                    None,
+                    Some(1),
                     "SKILL002",
                     "The skill manifest does not declare a description."
                 ),
@@ -1588,8 +1634,15 @@ This second extra line makes the intended `SKILL020` case unambiguous.
                 .as_str()
                 .expect("location path")
                 .ends_with("SKILL.md"));
-            assert!(finding["location"]["line"].is_null());
+            assert!(finding["location"]["line"].is_number());
         }
+        assert_eq!(
+            findings
+                .iter()
+                .map(|finding| finding["location"]["line"].as_u64().expect("line"))
+                .collect::<Vec<_>>(),
+            vec![8, 1, 1, 1]
+        );
     }
 
     #[test]
@@ -1624,6 +1677,7 @@ Read [guidance](references/guidance.md).
             value["packages"][0]["graph"]["references"][0]["exists"],
             true
         );
+        assert_eq!(value["packages"][0]["graph"]["references"][0]["line"], 8);
         assert_eq!(
             value["packages"][0]["graph"]["artifacts"]
                 .as_array()
@@ -1659,6 +1713,7 @@ Read [guidance](references/guidance.md).
         title: &'static str,
         message: &'static str,
         path: &'static str,
+        line: Option<usize>,
         rationale: &'static str,
         remediation: &'static str,
     }
@@ -1686,7 +1741,7 @@ Read [guidance](references/guidance.md).
             )
         );
         assert_eq!(finding.location.path, path);
-        assert_eq!(finding.location.line, None);
+        assert_eq!(finding.location.line, Some(1));
         assert_eq!(
             finding.rationale,
             "Duplicate names make inventory, policy, host routing, and review ambiguous."
@@ -1708,7 +1763,7 @@ Read [guidance](references/guidance.md).
         assert_eq!(finding.title, expected.title);
         assert_eq!(finding.message, expected.message);
         assert_eq!(finding.location.path, expected.path);
-        assert_eq!(finding.location.line, None);
+        assert_eq!(finding.location.line, expected.line);
         assert_eq!(finding.rationale, expected.rationale);
         assert_eq!(finding.remediation, expected.remediation);
         assert_eq!(

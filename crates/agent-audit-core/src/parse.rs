@@ -9,7 +9,10 @@ use crate::error::{AuditError, AuditResult};
 use crate::model::{MarkdownCodeBlock, SkillManifest, SkillReference};
 
 pub fn parse_skill_manifest(path: &Path, content: &str) -> AuditResult<SkillManifest> {
-    let (frontmatter, body) = split_frontmatter(path, content)?;
+    let split = split_frontmatter(path, content)?;
+    let frontmatter = split.frontmatter;
+    let body = split.body;
+    let line_index = LineIndex::new(body, split.body_start_line);
     let mut headings = Vec::new();
     let mut links = Vec::new();
     let mut inline_code = Vec::new();
@@ -20,7 +23,7 @@ pub fn parse_skill_manifest(path: &Path, content: &str) -> AuditResult<SkillMani
     let mut in_first_paragraph = false;
     let mut captured_first_paragraph = false;
 
-    for event in Parser::new(body) {
+    for (event, range) in Parser::new(body).into_offset_iter() {
         match event {
             Event::Start(Tag::Heading { .. }) => current_heading = Some(String::new()),
             Event::End(TagEnd::Heading(_)) => {
@@ -41,7 +44,7 @@ pub fn parse_skill_manifest(path: &Path, content: &str) -> AuditResult<SkillMani
             Event::Start(Tag::Link { dest_url, .. }) => {
                 links.push(SkillReference {
                     target: dest_url.to_string(),
-                    line: None,
+                    line: Some(line_index.line_for_offset(range.start)),
                     exists: None,
                 });
             }
@@ -55,7 +58,7 @@ pub fn parse_skill_manifest(path: &Path, content: &str) -> AuditResult<SkillMani
                 current_code_block = Some(MarkdownCodeBlock {
                     language,
                     content: String::new(),
-                    line: None,
+                    line: Some(line_index.line_for_offset(range.start)),
                 });
             }
             Event::End(TagEnd::CodeBlock) => {
@@ -99,16 +102,27 @@ pub fn parse_skill_manifest(path: &Path, content: &str) -> AuditResult<SkillMani
     })
 }
 
-fn split_frontmatter<'a>(
-    path: &Path,
-    content: &'a str,
-) -> AuditResult<(BTreeMap<String, serde_yaml::Value>, &'a str)> {
+struct FrontmatterSplit<'a> {
+    frontmatter: BTreeMap<String, serde_yaml::Value>,
+    body: &'a str,
+    body_start_line: usize,
+}
+
+fn split_frontmatter<'a>(path: &Path, content: &'a str) -> AuditResult<FrontmatterSplit<'a>> {
     let Some(rest) = content.strip_prefix("---\n") else {
-        return Ok((BTreeMap::new(), content));
+        return Ok(FrontmatterSplit {
+            frontmatter: BTreeMap::new(),
+            body: content,
+            body_start_line: 1,
+        });
     };
 
     let Some((frontmatter, body)) = rest.split_once("\n---\n") else {
-        return Ok((BTreeMap::new(), content));
+        return Ok(FrontmatterSplit {
+            frontmatter: BTreeMap::new(),
+            body: content,
+            body_start_line: 1,
+        });
     };
 
     let parsed = serde_yaml::from_str(frontmatter).map_err(|source| AuditError::Frontmatter {
@@ -116,7 +130,51 @@ fn split_frontmatter<'a>(
         source,
     })?;
 
-    Ok((parsed, body))
+    let body_start_offset = content.len() - body.len();
+    Ok(FrontmatterSplit {
+        frontmatter: parsed,
+        body,
+        body_start_line: line_for_content_offset(content, body_start_offset),
+    })
+}
+
+struct LineIndex {
+    body_start_line: usize,
+    line_starts: Vec<usize>,
+}
+
+impl LineIndex {
+    fn new(body: &str, body_start_line: usize) -> Self {
+        let mut line_starts = vec![0];
+        line_starts.extend(
+            body.bytes()
+                .enumerate()
+                .filter_map(|(index, byte)| (byte == b'\n').then_some(index + 1)),
+        );
+
+        Self {
+            body_start_line,
+            line_starts,
+        }
+    }
+
+    fn line_for_offset(&self, offset: usize) -> usize {
+        let line_index = self
+            .line_starts
+            .partition_point(|line_start| *line_start <= offset)
+            .saturating_sub(1);
+        self.body_start_line + line_index
+    }
+}
+
+fn line_for_content_offset(content: &str, offset: usize) -> usize {
+    content
+        .as_bytes()
+        .iter()
+        .take(offset)
+        .filter(|byte| **byte == b'\n')
+        .count()
+        + 1
 }
 
 fn frontmatter_string(
@@ -263,10 +321,19 @@ Use [relative](references/guide.md), [absolute](https://example.test/guide),
                 "#links",
             ]
         );
-        assert!(manifest
-            .links
-            .iter()
-            .all(|reference| reference.line.is_none() && reference.exists.is_none()));
+        assert_eq!(
+            manifest
+                .links
+                .iter()
+                .map(|reference| (reference.target.as_str(), reference.line, reference.exists))
+                .collect::<Vec<_>>(),
+            vec![
+                ("references/guide.md", Some(8), None),
+                ("https://example.test/guide", Some(8), None),
+                ("mailto:security@example.test", Some(9), None),
+                ("#links", Some(9), None),
+            ]
+        );
     }
 
     #[test]
@@ -322,6 +389,7 @@ echo parser
         assert_eq!(manifest.code_blocks.len(), 1);
         assert_eq!(manifest.code_blocks[0].language.as_deref(), Some("bash"));
         assert_eq!(manifest.code_blocks[0].content, "echo parser\n");
+        assert_eq!(manifest.code_blocks[0].line, Some(15));
         assert_eq!(manifest.declared_tools, vec!["shell", "git"]);
         assert_eq!(manifest.declared_permissions, vec!["read-files"]);
     }
@@ -342,8 +410,48 @@ echo parser
                     block.line
                 ))
                 .collect::<Vec<_>>(),
-            vec![(None, "unlabeled\n", None), (None, "indented\n", None),]
+            vec![
+                (None, "unlabeled\n", Some(3)),
+                (None, "indented\n", Some(7)),
+            ]
         );
+    }
+
+    #[test]
+    fn reports_markdown_lines_relative_to_manifest_not_body_slice() {
+        let content = r#"---
+name: line-numbers
+description: Line number fixture.
+---
+
+# Line Numbers
+
+Read [guide](references/guide.md).
+
+```bash
+echo line
+```
+"#;
+
+        let manifest = parse(content);
+
+        assert_eq!(manifest.links[0].line, Some(8));
+        assert_eq!(manifest.code_blocks[0].line, Some(10));
+    }
+
+    #[test]
+    fn reports_markdown_lines_from_start_when_frontmatter_is_unclosed() {
+        let content = r#"---
+name: ignored-without-closing-delimiter
+
+# Body Heading
+
+Read [guide](references/guide.md).
+"#;
+
+        let manifest = parse(content);
+
+        assert_eq!(manifest.links[0].line, Some(6));
     }
 
     #[test]
