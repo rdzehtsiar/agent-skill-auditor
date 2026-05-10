@@ -1,0 +1,41 @@
+{
+  "summary": {
+    "package_count": 3,
+    "finding_count": 2,
+    "suppressed_finding_count": 2,
+    "invalid_manifest_count": 1,
+    "broken_reference_count": 0
+  },
+  "findings": [
+    {
+      "path": "beta/SKILL.md",
+      "line": 4,
+      "rule_id": "SKILL040",
+      "message": "The manifest declares unsupported frontmatter field `owner`."
+    },
+    {
+      "path": "gamma/SKILL.md",
+      "line": 1,
+      "rule_id": "SKILL002",
+      "message": "The skill manifest does not declare a description."
+    }
+  ],
+  "suppressed_findings": [
+    {
+      "path": "alpha/SKILL.md",
+      "line": 1,
+      "rule_id": "SKILL001",
+      "matched_rule": "SKILL001",
+      "matched_path": "alpha/SKILL.md",
+      "reason": "Alpha fixture intentionally omits a stable name."
+    },
+    {
+      "path": "beta/SKILL.md",
+      "line": 7,
+      "rule_id": "SKILL010",
+      "matched_rule": "SKILL010",
+      "matched_path": "beta/SKILL.md",
+      "reason": "Broken beta reference is tracked in a compatibility issue."
+    }
+  ]
+}

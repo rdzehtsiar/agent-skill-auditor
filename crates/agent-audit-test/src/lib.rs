@@ -5,11 +5,12 @@ pub const FIXTURE_GROUPS: &[&str] = &["spec", "compatibility", "security", "beha
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agent_audit_core::{scan_path, FindingCategory, ScanOptions};
+    use agent_audit_core::{parse_audit_config, scan_path, FindingCategory, ScanOptions};
     use agent_audit_report::{
         render_html, render_json, render_report, render_sarif, render_summary, ReportFormat,
     };
     use std::collections::BTreeMap;
+    use std::fs;
     use std::path::{Path, PathBuf};
 
     #[test]
@@ -162,8 +163,123 @@ mod tests {
         assert_eq!(finding_keys, sorted_finding_keys);
     }
 
+    #[test]
+    fn phase2_suppression_mixed_order_fixture_matches_expected_json_snapshot() {
+        let fixture_root = phase2_root().join("suppressions/mixed-order");
+        let config = parse_audit_config(
+            &fs::read_to_string(fixture_root.join("agent-audit.yaml")).expect("read config"),
+        )
+        .expect("parse config");
+        let options = ScanOptions {
+            config: Some(config),
+            ..ScanOptions::default()
+        };
+
+        let first_report = scan_path(&fixture_root, &options).expect("scan suppression fixture");
+        let second_report = scan_path(&fixture_root, &options).expect("rescan suppression fixture");
+        let first_projection = suppression_snapshot_projection(&first_report);
+        let second_projection = suppression_snapshot_projection(&second_report);
+        let expected: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/spec/phase2/expected/suppression-mixed-order.json"
+        ))
+        .expect("parse expected suppression snapshot");
+
+        assert_eq!(first_projection, second_projection);
+        assert_eq!(first_projection, expected);
+
+        let rendered = render_json(&first_report).expect("render JSON");
+        assert!(!json_contains_path(&rendered, &workspace_root()));
+        assert!(!rendered.contains("timestamp"));
+        assert!(!rendered.contains("generated_at"));
+    }
+
+    #[test]
+    fn phase2_rule_doc_example_fixtures_emit_documented_rules() {
+        for rule_id in [
+            "SKILL001", "SKILL002", "SKILL010", "SKILL020", "SKILL030", "SKILL040", "SKILL041",
+        ] {
+            let non_compliant = phase2_root()
+                .join("rule-doc-examples")
+                .join(rule_id)
+                .join("non-compliant");
+            let options = rule_doc_example_scan_options(rule_id);
+            let report = scan_path(&non_compliant, &options).expect("scan non-compliant");
+            let expected_findings = rule_doc_non_compliant_finding_count(rule_id);
+
+            assert_eq!(
+                report
+                    .findings
+                    .iter()
+                    .map(|finding| finding.rule_id.as_str())
+                    .collect::<Vec<_>>(),
+                vec![rule_id; expected_findings],
+                "{rule_id} non-compliant fixture should emit only that rule"
+            );
+            assert_eq!(
+                report.summary.finding_count, expected_findings,
+                "{rule_id} finding count"
+            );
+            assert_eq!(
+                report.summary.suppressed_finding_count, 0,
+                "{rule_id} suppressed count"
+            );
+        }
+    }
+
+    #[test]
+    fn phase2_rule_doc_compliant_fixtures_scan_cleanly() {
+        for rule_id in [
+            "SKILL001", "SKILL002", "SKILL010", "SKILL020", "SKILL030", "SKILL040", "SKILL041",
+        ] {
+            let compliant = phase2_root()
+                .join("rule-doc-examples")
+                .join(rule_id)
+                .join("compliant");
+            let report = scan_path(&compliant, &ScanOptions::default()).expect("scan compliant");
+
+            assert_eq!(
+                report.summary.package_count,
+                rule_doc_compliant_package_count(rule_id),
+                "{rule_id} package count"
+            );
+            assert!(
+                report.findings.is_empty(),
+                "{rule_id} compliant fixture should not emit findings: {:?}",
+                report.findings
+            );
+        }
+    }
+
     fn representative_corpus_root() -> PathBuf {
         workspace_root().join("fixtures/spec/phase1/representative-corpus")
+    }
+
+    fn phase2_root() -> PathBuf {
+        workspace_root().join("fixtures/spec/phase2")
+    }
+
+    fn rule_doc_example_scan_options(rule_id: &str) -> ScanOptions {
+        match rule_id {
+            "SKILL020" => ScanOptions {
+                max_manifest_bytes: 180,
+                ..ScanOptions::default()
+            },
+            _ => ScanOptions::default(),
+        }
+    }
+
+    fn rule_doc_non_compliant_finding_count(rule_id: &str) -> usize {
+        match rule_id {
+            "SKILL030" => 2,
+            _ => 1,
+        }
+    }
+
+    fn rule_doc_compliant_package_count(rule_id: &str) -> usize {
+        match rule_id {
+            "SKILL030" => 2,
+            _ => 1,
+        }
     }
 
     fn expected_representative_corpus_json() -> &'static str {
@@ -240,6 +356,36 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    fn suppression_snapshot_projection(report: &agent_audit_core::ScanReport) -> serde_json::Value {
+        serde_json::json!({
+            "summary": {
+                "package_count": report.summary.package_count,
+                "finding_count": report.summary.finding_count,
+                "suppressed_finding_count": report.summary.suppressed_finding_count,
+                "invalid_manifest_count": report.summary.invalid_manifest_count,
+                "broken_reference_count": report.summary.broken_reference_count,
+            },
+            "findings": report.findings.iter().map(|finding| {
+                serde_json::json!({
+                    "path": finding.location.path,
+                    "line": finding.location.line,
+                    "rule_id": finding.rule_id,
+                    "message": finding.message,
+                })
+            }).collect::<Vec<_>>(),
+            "suppressed_findings": report.suppressed_findings.iter().map(|entry| {
+                serde_json::json!({
+                    "path": entry.finding.location.path,
+                    "line": entry.finding.location.line,
+                    "rule_id": entry.finding.rule_id,
+                    "matched_rule": entry.suppression.matched_rule,
+                    "matched_path": entry.suppression.matched_path,
+                    "reason": entry.suppression.reason,
+                })
+            }).collect::<Vec<_>>(),
+        })
     }
 
     fn json_contains_path(json: &str, path: &Path) -> bool {

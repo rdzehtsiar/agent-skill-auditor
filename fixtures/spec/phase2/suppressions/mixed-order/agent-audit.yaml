@@ -1,0 +1,10 @@
+ignore:
+  - rule: SKILL010
+    path: beta/SKILL.md
+    reason: Broken beta reference is tracked in a compatibility issue.
+  - rule: SKILL001
+    path: alpha/SKILL.md
+    reason: Alpha fixture intentionally omits a stable name.
+  - rule: SKILL002
+    path: delta/SKILL.md
+    reason: Unmatched entry proves suppressions are exact.

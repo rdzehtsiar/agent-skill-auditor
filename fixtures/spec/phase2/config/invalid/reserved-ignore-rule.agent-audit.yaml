@@ -1,0 +1,4 @@
+ignore:
+  - rule: SKILL050
+    path: SKILL.md
+    reason: Reserved rules cannot be suppressed yet.

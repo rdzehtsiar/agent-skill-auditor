@@ -195,6 +195,76 @@ mod tests {
     use super::*;
 
     #[test]
+    fn phase2_valid_config_fixtures_parse_deterministically() {
+        let full = parse(include_str!(
+            "../../../fixtures/spec/phase2/config/valid/full.agent-audit.yaml"
+        ));
+        let empty = parse(include_str!(
+            "../../../fixtures/spec/phase2/config/valid/empty.agent-audit.yaml"
+        ));
+
+        assert_eq!(full.profiles, vec!["codex", "generic"]);
+        assert_eq!(full.fail_on, vec![Severity::Low, Severity::High]);
+        assert_eq!(
+            full.ignore,
+            vec![ConfigIgnoreEntry {
+                rule: "SKILL010".to_owned(),
+                path: "skills/legacy/SKILL.md".to_owned(),
+                reason: "Legacy fixture intentionally keeps a stale reference.".to_owned(),
+            }]
+        );
+        assert_eq!(
+            empty,
+            AuditConfig {
+                profiles: Vec::new(),
+                fail_on: Vec::new(),
+                ignore: Vec::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn phase2_invalid_config_fixtures_return_actionable_errors() {
+        let cases = [
+            (
+                include_str!(
+                    "../../../fixtures/spec/phase2/config/invalid/unknown-profile.agent-audit.yaml"
+                ),
+                "unknown host profile `unknown-host`",
+            ),
+            (
+                include_str!(
+                    "../../../fixtures/spec/phase2/config/invalid/unknown-severity.agent-audit.yaml"
+                ),
+                "unknown severity `warning`",
+            ),
+            (
+                include_str!(
+                    "../../../fixtures/spec/phase2/config/invalid/absolute-ignore-path.agent-audit.yaml"
+                ),
+                "path must be relative and stay inside the scanned project",
+            ),
+            (
+                include_str!(
+                    "../../../fixtures/spec/phase2/config/invalid/reserved-ignore-rule.agent-audit.yaml"
+                ),
+                "reserved rule ID `SKILL050`",
+            ),
+        ];
+
+        for (content, expected) in cases {
+            let error = parse_error(content);
+
+            assert!(
+                error.to_string().contains(expected),
+                "expected `{}` to contain `{}`",
+                error,
+                expected
+            );
+        }
+    }
+
+    #[test]
     fn parses_valid_config_and_normalizes_ignore_paths() {
         let config = parse(
             r#"

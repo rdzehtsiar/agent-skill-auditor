@@ -809,6 +809,60 @@ fail_on:
     }
 
     #[test]
+    fn run_scan_phase2_fail_on_low_fixture_fails_after_output() {
+        let fixture = phase2_fail_on_fixture("low-unsuppressed");
+
+        let (output, result) = run_scan_attempt(ScanCommand {
+            path: fixture.clone(),
+            format: ReportFormat::Summary,
+            config: Some(fixture.join("agent-audit.yaml")),
+            fail_on: Vec::new(),
+        });
+        let error = result.expect_err("low fail_on fixture should fail");
+
+        assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
+        assert!(error
+            .to_string()
+            .contains("fail_on matched an unsuppressed finding severity"));
+    }
+
+    #[test]
+    fn run_scan_phase2_suppressed_low_fixture_does_not_fail() {
+        let fixture = phase2_fail_on_fixture("suppressed-low");
+
+        let output = run_scan_output(ScanCommand {
+            path: fixture.clone(),
+            format: ReportFormat::Json,
+            config: Some(fixture.join("agent-audit.yaml")),
+            fail_on: Vec::new(),
+        })
+        .expect("suppressed low fixture should not fail");
+        let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
+
+        assert_eq!(value["summary"]["finding_count"], 0);
+        assert_eq!(value["summary"]["suppressed_finding_count"], 1);
+        assert_eq!(
+            value["suppressed_findings"][0]["finding"]["rule_id"],
+            "SKILL001"
+        );
+    }
+
+    #[test]
+    fn run_scan_phase2_high_threshold_fixture_does_not_fail_low_finding() {
+        let fixture = phase2_fail_on_fixture("high-threshold");
+
+        let output = run_scan_output(ScanCommand {
+            path: fixture.clone(),
+            format: ReportFormat::Summary,
+            config: Some(fixture.join("agent-audit.yaml")),
+            fail_on: Vec::new(),
+        })
+        .expect("high threshold should not fail low findings");
+
+        assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
+    }
+
+    #[test]
     fn run_scan_validates_explicit_config_before_scanning() {
         let workspace = CliTestWorkspace::new("valid-config");
         workspace.write_file(
@@ -1060,6 +1114,17 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
                 .to_owned(),
             suppression: format!("Suppress `{rule_id}` only with a documented reason."),
         }
+    }
+
+    fn phase2_fail_on_fixture(name: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("fixtures")
+            .join("spec")
+            .join("phase2")
+            .join("fail-on")
+            .join(name)
     }
 
     struct CliTestWorkspace {

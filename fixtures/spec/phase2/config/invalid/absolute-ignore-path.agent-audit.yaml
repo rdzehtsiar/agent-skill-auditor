@@ -1,0 +1,4 @@
+ignore:
+  - rule: SKILL010
+    path: 'C:\skills\SKILL.md'
+    reason: Absolute paths are not portable.

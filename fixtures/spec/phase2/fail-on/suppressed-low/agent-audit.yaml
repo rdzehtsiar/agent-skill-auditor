@@ -1,0 +1,6 @@
+fail_on:
+  - low
+ignore:
+  - rule: SKILL001
+    path: SKILL.md
+    reason: Missing name is accepted for this fail-on fixture.

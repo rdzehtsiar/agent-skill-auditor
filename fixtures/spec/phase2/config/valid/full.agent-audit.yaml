@@ -1,0 +1,10 @@
+profiles:
+  - codex
+  - generic
+fail_on:
+  - low
+  - high
+ignore:
+  - rule: SKILL010
+    path: skills\legacy\SKILL.md
+    reason: Legacy fixture intentionally keeps a stale reference.
