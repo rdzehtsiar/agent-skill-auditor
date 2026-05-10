@@ -1974,6 +1974,82 @@ ignore:
     }
 
     #[test]
+    fn config_suppression_requires_exact_path_without_globs() {
+        let workspace = TestWorkspace::new("scan-suppression-exact-path-only");
+        workspace.write_file(
+            "skills/reviewer/SKILL.md",
+            r#"---
+description: Missing name fixture.
+---
+
+This manifest intentionally has no heading fallback.
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+ignore:
+  - rule: SKILL001
+    path: skills/*/SKILL.md
+    reason: Glob-like paths must not match.
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(report.summary.finding_count, 1);
+        assert_eq!(report.summary.suppressed_finding_count, 0);
+        assert!(report.suppressed_findings.is_empty());
+        assert_eq!(report.findings[0].rule_id, "SKILL001");
+        assert_eq!(report.findings[0].location.path, "skills/reviewer/SKILL.md");
+    }
+
+    #[test]
+    fn config_suppression_requires_exact_rule_id() {
+        let workspace = TestWorkspace::new("scan-suppression-exact-rule-only");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+description: Missing name fixture.
+---
+
+This manifest intentionally has no heading fallback.
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+ignore:
+  - rule: SKILL002
+    path: SKILL.md
+    reason: Different rule on the same path must not match.
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(report.summary.finding_count, 1);
+        assert_eq!(report.summary.suppressed_finding_count, 0);
+        assert!(report.suppressed_findings.is_empty());
+        assert_eq!(report.findings[0].rule_id, "SKILL001");
+        assert_eq!(report.findings[0].location.path, "SKILL.md");
+    }
+
+    #[test]
     fn config_suppression_leaves_unrelated_findings_unaffected() {
         let workspace = TestWorkspace::new("scan-suppression-unrelated");
         workspace.write_file(
@@ -2019,6 +2095,163 @@ ignore:
             vec!["SKILL040"]
         );
         assert_eq!(report.suppressed_findings[0].finding.rule_id, "SKILL010");
+    }
+
+    #[test]
+    fn multiple_suppressed_findings_keep_deterministic_finding_order() {
+        let workspace = TestWorkspace::new("scan-suppression-multiple-order");
+        workspace.write_file("alpha/SKILL.md", "```\nno manifest metadata\n```\n");
+        workspace.write_file(
+            "beta/SKILL.md",
+            r#"---
+name: broken-reference
+description: Broken reference fixture.
+---
+
+# Broken Reference
+
+Read [missing](references/missing.md).
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+ignore:
+  - rule: SKILL010
+    path: beta/SKILL.md
+    reason: Broken reference tracked elsewhere.
+  - rule: SKILL002
+    path: alpha/SKILL.md
+    reason: Description intentionally omitted.
+  - rule: SKILL001
+    path: alpha/SKILL.md
+    reason: Name intentionally omitted.
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert!(report.findings.is_empty());
+        assert_eq!(report.summary.suppressed_finding_count, 3);
+        assert_eq!(
+            suppressed_finding_projection(&report.suppressed_findings),
+            vec![
+                ("alpha/SKILL.md", "SKILL001"),
+                ("alpha/SKILL.md", "SKILL002"),
+                ("beta/SKILL.md", "SKILL010"),
+            ]
+        );
+    }
+
+    #[test]
+    fn summary_counts_exclude_suppressed_findings_in_mixed_reports() {
+        let workspace = TestWorkspace::new("scan-suppression-summary-mixed");
+        workspace.write_file(
+            "SKILL.md",
+            r#"[](references/missing.md)
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+ignore:
+  - rule: SKILL001
+    path: SKILL.md
+    reason: Name intentionally omitted.
+  - rule: SKILL010
+    path: SKILL.md
+    reason: Broken reference tracked elsewhere.
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(report.summary.finding_count, 1);
+        assert_eq!(report.summary.suppressed_finding_count, 2);
+        assert_eq!(report.summary.invalid_manifest_count, 1);
+        assert_eq!(report.summary.broken_reference_count, 0);
+        assert_eq!(
+            report
+                .findings
+                .iter()
+                .map(|finding| finding.rule_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["SKILL002"]
+        );
+        assert_eq!(
+            suppressed_finding_projection(&report.suppressed_findings),
+            vec![("SKILL.md", "SKILL001"), ("SKILL.md", "SKILL010")]
+        );
+    }
+
+    #[test]
+    fn duplicate_name_suppression_leaves_sibling_duplicate_finding_active() {
+        let workspace = TestWorkspace::new("scan-suppression-duplicate-sibling");
+        workspace.write_file(
+            "alpha/SKILL.md",
+            r#"---
+name: shared-duplicate
+description: Alpha duplicate fixture.
+---
+
+# Alpha Duplicate
+"#,
+        );
+        workspace.write_file(
+            "beta/SKILL.md",
+            r#"---
+name: shared-duplicate
+description: Beta duplicate fixture.
+---
+
+# Beta Duplicate
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+ignore:
+  - rule: SKILL030
+    path: alpha/SKILL.md
+    reason: Alpha duplicate accepted for fixture coverage.
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(report.summary.finding_count, 1);
+        assert_eq!(report.summary.suppressed_finding_count, 1);
+        assert_duplicate_name_finding(
+            &report.findings[0],
+            "shared-duplicate",
+            "beta/SKILL.md",
+            &["alpha/SKILL.md"],
+        );
+        assert_eq!(
+            suppressed_finding_projection(&report.suppressed_findings),
+            vec![("alpha/SKILL.md", "SKILL030")]
+        );
     }
 
     #[test]
@@ -2070,6 +2303,88 @@ ignore:
         assert_eq!(
             value["suppressed_findings"][0]["suppression"]["reason"],
             "Name intentionally omitted in regression fixture."
+        );
+    }
+
+    #[test]
+    fn json_output_keeps_suppressed_findings_order_and_stable_bytes() {
+        let workspace = TestWorkspace::new("scan-json-suppression-order-stability");
+        workspace.write_file("alpha/SKILL.md", "```\nno manifest metadata\n```\n");
+        workspace.write_file(
+            "beta/SKILL.md",
+            r#"---
+name: broken-reference
+description: Broken reference fixture.
+---
+
+# Broken Reference
+
+Read [missing](references/missing.md).
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+ignore:
+  - rule: SKILL010
+    path: beta/SKILL.md
+    reason: Broken reference tracked elsewhere.
+  - rule: SKILL001
+    path: alpha/SKILL.md
+    reason: Name intentionally omitted.
+  - rule: SKILL002
+    path: alpha/SKILL.md
+    reason: Description intentionally omitted.
+"#,
+        )
+        .expect("valid config");
+        let options = ScanOptions {
+            config: Some(config),
+            ..ScanOptions::default()
+        };
+
+        let first = scan_path(workspace.root(), &options).expect("first scan");
+        let second = scan_path(workspace.root(), &options).expect("second scan");
+        let (first_json, first_value) = report_json_value(&first);
+        let (second_json, second_value) = report_json_value(&second);
+
+        assert_eq!(first_json.as_bytes(), second_json.as_bytes());
+        assert_eq!(first_value, second_value);
+        assert_eq!(first_value["summary"]["finding_count"], 0);
+        assert_eq!(first_value["summary"]["suppressed_finding_count"], 3);
+
+        let suppressed = first_value["suppressed_findings"]
+            .as_array()
+            .expect("suppressed findings array");
+        assert_eq!(
+            suppressed
+                .iter()
+                .map(|entry| {
+                    (
+                        entry["finding"]["location"]["path"]
+                            .as_str()
+                            .expect("path"),
+                        entry["finding"]["rule_id"].as_str().expect("rule id"),
+                        entry["suppression"]["reason"].as_str().expect("reason"),
+                    )
+                })
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    "alpha/SKILL.md",
+                    "SKILL001",
+                    "Name intentionally omitted."
+                ),
+                (
+                    "alpha/SKILL.md",
+                    "SKILL002",
+                    "Description intentionally omitted."
+                ),
+                (
+                    "beta/SKILL.md",
+                    "SKILL010",
+                    "Broken reference tracked elsewhere."
+                ),
+            ]
         );
     }
 
@@ -2595,6 +2910,18 @@ Read [guidance](references/guidance.md).
             .expect("JSON array")
             .iter()
             .map(|item| item[key].as_str().expect("string field").to_owned())
+            .collect()
+    }
+
+    fn suppressed_finding_projection(findings: &[SuppressedFinding]) -> Vec<(&str, &str)> {
+        findings
+            .iter()
+            .map(|entry| {
+                (
+                    entry.finding.location.path.as_str(),
+                    entry.finding.rule_id.as_str(),
+                )
+            })
             .collect()
     }
 
