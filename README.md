@@ -1,5 +1,8 @@
 # Agent Skill Auditor
 
+[![Tests](https://github.com/rdzehtsiar/agent-skill-auditor/actions/workflows/tests.yml/badge.svg)](https://github.com/rdzehtsiar/agent-skill-auditor/actions/workflows/tests.yml)
+[![codecov](https://codecov.io/gh/rdzehtsiar/agent-skill-auditor/graph/badge.svg)](https://codecov.io/gh/rdzehtsiar/agent-skill-auditor)
+
 Offline security and compatibility auditor for AI agent skills.
 
 Agent Skill Auditor helps answer a practical trust question:
