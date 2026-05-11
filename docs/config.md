@@ -1,6 +1,6 @@
 # Config
 
-Agent Skill Auditor accepts an explicit YAML config file for compatibility profile selection, exact fail-on severity matching, and documented suppressions.
+Agent Skill Auditor accepts an explicit YAML config file for compatibility profile selection, exact fail-on severity matching, supply-chain policy, and documented suppressions.
 
 `.agent-audit.yaml` is the preferred filename for checked-in project config. The CLI does not require that name: `agent-audit scan --config PATH` accepts any explicit file path, reads it, parses it, and validates it before scanning.
 
@@ -19,17 +19,21 @@ fail_on:
   - low
   - medium
 
+supply_chain:
+  policy: default
+
 ignore:
   - rule: SKILL050
     path: .github/skills/reviewer/SKILL.md
     reason: Accepted risk: reviewed Copilot metadata exception for this package.
 ```
 
-All sections are optional. Missing sections, empty files, `{}`, and explicitly empty sections default to empty collections:
+All sections are optional. Missing sections, empty files, `{}`, and explicitly empty sections default to empty collections and default supply-chain policy:
 
 ```yaml
 profiles:
 fail_on:
+supply_chain:
 ignore:
 ```
 
@@ -45,6 +49,9 @@ profiles:
 fail_on:
   - low
   - medium
+
+supply_chain:
+  policy: strict
 
 ignore:
   - rule: SKILL050
@@ -87,6 +94,74 @@ agent-audit scan --config .agent-audit.yaml --profile all
 
 `--profile all` expands to all supported profiles in registry order. If any CLI `--profile` value is `all`, the effective selection is all supported profiles.
 
+## Supply-Chain Policy
+
+The `supply_chain` section controls local supply-chain policy. It does not enable network access and does not create a separate scanner pipeline; supply-chain inventory and active supply-chain rules run during normal scans.
+
+Supported values:
+
+- `default`: inventory local evidence and emit risk findings for observed issues, but do not report missing optional trust manifest or license metadata.
+- `strict`: require local trust manifest and license evidence and emit missing-metadata findings when that evidence is absent.
+
+```yaml
+supply_chain:
+  policy: strict
+```
+
+`supply_chain: {}`, omitted `policy`, and blank `policy` all use `default`.
+
+Unknown policy values are rejected before scanning:
+
+```yaml
+supply_chain:
+  policy: required
+```
+
+The CLI flag `--strict-supply-chain` overrides config policy to `strict` for that scan. The CLI flag `--supply-chain` is a compatibility no-op: supply-chain inventory and rules already run by default.
+
+Strict policy currently affects missing local metadata rules such as repository license evidence, skill-local license evidence, and trust manifest evidence. It does not verify remote identity, repository ownership, registry state, signatures, or package publisher identity.
+
+## Trust Manifest
+
+A trust manifest is optional local supply-chain metadata stored next to a skill package. The scanner looks for the first supported file in deterministic order:
+
+```text
+agent-audit.trust.yaml
+.agent-audit.trust.yaml
+agent-audit.yaml
+```
+
+`agent-audit.yaml` is treated as a trust manifest only when it has trust-manifest-shaped content; the project audit config remains explicit and is loaded only through `--config PATH`.
+
+Supported trust manifest shape:
+
+```yaml
+skill:
+  name: postgres-migration
+  version: 0.2.1
+
+provenance:
+  source: github.com/org/repo
+  commit: 0123456789abcdef0123456789abcdef01234567
+  signed: false
+
+permissions:
+  network: false
+  filesystem_write: repo-only
+  secrets:
+    - DATABASE_URL
+
+declared_dependencies:
+  commands:
+    - psql
+  packages:
+    - ecosystem: npm
+      name: prettier
+      version: 3.2.5
+```
+
+The trust manifest is evidence supplied by the package. The scanner parses it, reports malformed YAML or unknown fields, inventories declared permissions and dependencies, and compares selected declarations with observed static evidence. It does not prove that the declared source is owned by the package author, that a commit exists remotely, or that `signed: true` has been cryptographically verified.
+
 ## Fail-On Severities
 
 `fail_on` lists finding severities that should make the scan fail after the report is rendered. Values are exact lowercase severities:
@@ -99,7 +174,7 @@ agent-audit scan --config .agent-audit.yaml --profile all
 
 Matching is exact, not threshold-based. For example, `fail_on: [medium]` fails only when an unsuppressed `medium` finding is present. It does not fail on `high` or `critical` unless those severities are also listed.
 
-Compatibility findings participate in `fail_on` the same way structural findings do. A low-severity compatibility finding such as `SKILL050` triggers `fail_on: [low]` when it is active and unsuppressed.
+Compatibility and supply-chain findings participate in `fail_on` the same way structural findings do. A low-severity compatibility finding such as `SKILL050` or a strict-policy supply-chain finding such as `SUPPLY001` triggers `fail_on: [low]` when it is active and unsuppressed.
 
 Suppressed findings do not trigger `fail_on`. Suppression is applied before fail-on matching.
 
@@ -116,7 +191,7 @@ ignore:
     reason: False positive: the docs link is resolved by the packaging step that vendors references/api.md before distribution.
 ```
 
-The rule ID must be active. Reserved rule IDs and unknown rule IDs are rejected. Active compatibility rules, including `SKILL040` and `SKILL050`, can be suppressed with the same shape as structural rules.
+The rule ID must be active. Reserved rule IDs and unknown rule IDs are rejected. Active compatibility and supply-chain rules, including `SKILL040`, `SKILL050`, and active `SUPPLY` rules, can be suppressed with the same shape as structural rules.
 
 Suppression paths are relative to the scanned project and are normalized to forward slashes. They must stay inside the scanned project. Absolute paths and `..` parent traversal are rejected.
 
@@ -157,6 +232,25 @@ Report behavior is format-specific:
 - SARIF output contains active findings only.
 
 Suppressed findings do not trigger `fail_on` in any format.
+
+## Supply-Chain Strict Policy Example
+
+This config evaluates every default compatibility profile, enables strict supply-chain metadata requirements, fails CI on any unsuppressed low, medium, or high finding, and suppresses one reviewed missing trust manifest for an internal fixture:
+
+```yaml
+supply_chain:
+  policy: strict
+
+fail_on:
+  - low
+  - medium
+  - high
+
+ignore:
+  - rule: SUPPLY011
+    path: skills/internal-fixture/SKILL.md
+    reason: Accepted risk: internal fixture has a separate reviewed local provenance record in SEC-241, revisit before publication.
+```
 
 ## Accepted Risk Examples
 

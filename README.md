@@ -16,9 +16,11 @@ It is not a generic Markdown or YAML linter. It is intended for maintainers, sec
 
 Agent Skill Auditor currently provides a local CLI scanner for skill packages.
 
-The implemented CLI can discover `SKILL.md` manifests, parse frontmatter and Markdown content, extract normalized package metadata, evaluate metadata-backed deterministic rules, evaluate local host compatibility profiles, load explicit audit config, apply documented suppressions, and render summary, JSON, SARIF, and HTML reports. It runs offline and does not execute skill scripts.
+The implemented CLI can discover `SKILL.md` manifests, parse frontmatter and Markdown content, extract normalized package metadata, evaluate metadata-backed deterministic rules, evaluate local host compatibility profiles, inventory local supply-chain evidence, load explicit audit config, apply documented suppressions, and render summary, JSON, SARIF, and HTML reports. It runs offline and does not execute skill scripts.
 
-Static script security analysis, policy packs, and broader ecosystem reporting are planned work.
+The v0.5.0 supply-chain capability reports local evidence for licenses, trust manifests, external URLs, remote dependencies, package manager files, lockfiles, executable and binary artifacts, checksums, observed permissions, and offline readiness. It does not contact repositories or registries, verify repository ownership, or prove that a remote source is trustworthy.
+
+Policy packs and broader ecosystem reporting are planned work.
 
 ## Quick Start
 
@@ -38,7 +40,7 @@ cargo run -q -p agent-audit-cli -- scan fixtures/spec/basic
 ## CLI Usage
 
 ```text
-agent-audit scan [PATH] [--format FORMAT] [--config PATH] [--fail-on SEVERITY] [--profile PROFILE]
+agent-audit scan [PATH] [--format FORMAT] [--config PATH] [--fail-on SEVERITY] [--profile PROFILE] [--supply-chain] [--strict-supply-chain]
 ```
 
 - `PATH` defaults to `.`.
@@ -48,6 +50,8 @@ agent-audit scan [PATH] [--format FORMAT] [--config PATH] [--fail-on SEVERITY] [
 - `--fail-on SEVERITY` fails after rendering the report when any unsuppressed finding exactly matches that severity. Repeat it to match more than one severity.
 - Supported severities are `info`, `low`, `medium`, `high`, and `critical`.
 - `--profile PROFILE` selects compatibility profiles. Repeat it or use comma-separated values. Use `--profile all` for every supported profile.
+- `--supply-chain` is accepted for compatibility with supply-chain-focused workflows; inventory and supply-chain rules already run by default.
+- `--strict-supply-chain` requires local trust manifest and license evidence, adding missing-metadata findings that default scans intentionally avoid.
 
 Examples:
 
@@ -60,6 +64,8 @@ agent-audit scan fixtures/compatibility/host/mixed-profile-metadata --profile co
 agent-audit scan fixtures/spec/basic --format json
 agent-audit scan fixtures/spec/basic --format sarif
 agent-audit scan fixtures/spec/basic --format html
+agent-audit scan fixtures/supply-chain/trust-manifest-valid --format json
+agent-audit scan fixtures/spec/basic --strict-supply-chain
 agent-audit scan fixtures/spec/basic --config .agent-audit.yaml
 agent-audit scan fixtures/spec/basic --fail-on medium --fail-on high
 agent-audit scan fixtures/spec/basic --config .agent-audit.yaml --fail-on high
@@ -143,6 +149,26 @@ JSON reports include stable compatibility matrix data:
 }
 ```
 
+JSON reports also include a stable `supply_chain` section. The section is an inventory of local evidence, not a trust assertion:
+
+```json
+"supply_chain": {
+  "licenses": [],
+  "trust_manifests": [],
+  "external_urls": [],
+  "remote_dependencies": [],
+  "package_managers": [],
+  "lockfiles": [],
+  "executables": [],
+  "binaries": [],
+  "checksums": [],
+  "permissions": [],
+  "offline_readiness": []
+}
+```
+
+Summary output includes concise supply-chain counts and offline readiness status. SARIF includes supply-chain rule findings as normal results; the full inventory remains in JSON.
+
 SARIF output is intended for code scanning integrations that accept SARIF:
 
 ```bash
@@ -169,6 +195,7 @@ The current scanner supports:
 - Markdown heading, link, inline code, and fenced code block extraction.
 - Relative file reference extraction.
 - Skill artifact inventory for `scripts/`, `references/`, and `assets/`.
+- Supply-chain evidence inventory for local licenses, trust manifests, external URLs, package managers, lockfiles, executables, binary artifacts, checksums, observed permissions, and offline readiness.
 - A metadata-backed deterministic rule engine for initial structural, spec, and compatibility checks.
 - An offline deterministic compatibility matrix for `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, and `generic`.
 - Deterministic findings for:
@@ -180,6 +207,7 @@ The current scanner supports:
   - `SKILL040`: unknown frontmatter field.
   - `SKILL041`: malformed frontmatter.
   - `SKILL050`: invalid host-specific metadata.
+  - Active `SUPPLY` rules: selected v0.5.0 supply-chain and provenance checks documented in the rule registry.
 
 Rule metadata defines each rule's ID, status, severity, category, explanation, remediation, and safe suppression guidance. Rule status is explicit: `active` rules may emit findings and may be suppressed, while `reserved` rules document planned rule IDs and are not emitted or accepted in suppression config. See [Rule Documentation](./docs/rules/README.md) for the generated rule registry.
 
@@ -190,7 +218,9 @@ Configuration is documented in [Config](./docs/config.md). Important current beh
 - Config loading is explicit with `--config PATH`; `.agent-audit.yaml` is the preferred filename, but it is not auto-discovered.
 - `fail_on` uses exact severity matching, not threshold matching. For example, `fail_on: [medium]` fails on unsuppressed `medium` findings only, not `high` or `critical`.
 - `profiles` values select compatibility evaluation and matrix rendering. Omitted or empty `profiles` evaluates all supported profiles.
+- `supply_chain.policy: strict` requires local trust manifest and license evidence. The default policy records evidence without turning missing optional metadata into findings.
 - CLI `--profile` values override config `profiles`.
+- CLI `--strict-supply-chain` overrides config supply-chain policy to strict for that scan.
 - Suppressions require active rule IDs and exact normalized paths, including for compatibility findings.
 
 ## Security Model
@@ -204,12 +234,10 @@ The current CLI:
 - Does not require a hosted backend.
 - Does not require an AI API.
 - Does not execute untrusted skill code.
-- Produces deterministic, explainable structural findings.
+- Produces deterministic, explainable structural, compatibility, security, and supply-chain findings.
 - Is suitable for local review and CI smoke checks.
 
-Static analysis cannot prove that a skill is safe. Some risky behavior may be intentional, and some unsafe behavior may be missed. Findings should be treated as review evidence, not as a complete security guarantee.
-
-Offline static script security analysis is planned but not yet implemented.
+Static analysis cannot prove that a skill is safe. Supply-chain checks use local files and declarations only; they do not verify remote identity, repository ownership, registry state, signatures, or whether a referenced URL currently serves the same bytes. Findings should be treated as review evidence, not as a complete security guarantee.
 
 ## Supported Skill Content
 
@@ -252,9 +280,10 @@ Matrix cells use `pass`, `warn`, `fail`, or `unknown`. Compatibility findings ex
 | SARIF and HTML output | Implemented initial report formats. |
 | Fixture and snapshot-style tests | Implemented for current scanner and report behavior. |
 | Host compatibility profiles | Implemented initial offline matrix. |
-| Static script security analyzers | Planned. |
+| Static script security analyzers | Implemented initial offline checks for selected script and artifact risks. |
+| Supply-chain inventory and rules | Implemented initial v0.5.0 local evidence pipeline. |
 | Rule documentation generation | Implemented from rule metadata. |
-| Policy and suppression configuration | Implemented for explicit config loading, exact fail-on severity matching, and path-scoped suppressions. |
+| Policy and suppression configuration | Implemented for explicit config loading, exact fail-on severity matching, strict supply-chain policy, and path-scoped suppressions. |
 
 ## License
 

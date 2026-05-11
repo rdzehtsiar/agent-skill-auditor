@@ -1,17 +1,78 @@
 # Architecture
 
-Agent Skill Auditor is planned as an offline Rust CLI with deterministic scanning, rule evaluation, and report rendering.
+Agent Skill Auditor is an offline Rust CLI with deterministic scanning, rule evaluation, and report rendering.
 
-Initial flow:
+High-level flow:
 
 ```text
 filesystem scan
 -> SKILL.md discovery
 -> manifest parsing
--> relative reference validation
--> normalized package model
--> summary or JSON output
+-> artifact and supply-chain inventory
+-> security signal extraction
+-> normalized package model and rule facts
+-> deterministic rule evaluation
+-> suppression and compatibility matrix
+-> summary, JSON, SARIF, or HTML rendering
 ```
+
+The scanner does not execute skill scripts, install packages, call remote registries, or contact hosts while building this model.
+
+## Crate Ownership
+
+The workspace keeps responsibilities separated:
+
+- `agent-audit-cli` owns command-line parsing, explicit config loading, CLI override behavior, report rendering selection, and `fail_on` exit behavior.
+- `agent-audit-core` owns filesystem discovery, manifest parsing, artifact inventory, config validation, supply-chain inventory collection, security signal orchestration, suppression application, compatibility matrix construction, and the public `ScanReport` model.
+- `agent-audit-rules` owns rule metadata, active/reserved rule status, deterministic rule evaluation, and generated rule documentation inputs.
+- `agent-audit-hosts` owns host profile definitions and compatibility assumptions.
+- `agent-audit-security` owns static security analyzers for local skill artifacts.
+- `agent-audit-report` owns summary, JSON, SARIF, and HTML rendering.
+- `agent-audit-test` owns fixture and schema regression tests that span crate boundaries.
+
+## Supply-Chain Pipeline
+
+The v0.5.0 supply-chain pipeline is part of the normal scan path. It is not a second scanner.
+
+Inventory collection lives in `agent-audit-core`:
+
+- Trust manifest parsing reads `agent-audit.trust.yaml`, `.agent-audit.trust.yaml`, or trust-shaped `agent-audit.yaml` files next to each skill.
+- License inventory records repository-level and skill-local license evidence.
+- URL and remote dependency inventory extracts external references from manifests, Markdown, scripts, and package files.
+- Package inventory records package managers, lockfiles, install commands, and version pinning evidence.
+- Artifact inventory records executable scripts, executable-looking binaries, opaque assets, and checksums.
+- Permission reconciliation merges trust manifest declarations with observed static security evidence.
+- Offline readiness calculation derives a transparent status, score, and reason list from the local evidence.
+
+`agent-audit-core` converts the inventory into rule facts with relative portable paths and stable ordering. `agent-audit-rules` evaluates active `SUPPLY` rules from those facts. Default policy avoids missing optional metadata findings; strict policy requires local trust manifest and license evidence.
+
+Rendering lives in `agent-audit-report`:
+
+- JSON serializes the full `supply_chain` inventory from `ScanReport`.
+- Summary output renders compact supply-chain counts and offline readiness status.
+- SARIF renders supply-chain findings as normal rule results.
+- HTML renders findings and report context without introducing remote dependencies.
+
+## Trust Manifest Boundary
+
+Trust manifests are local declarations, not remote attestations. The parser accepts supported fields for skill identity, provenance, permissions, and declared dependencies. Invalid YAML, unsupported schema shapes, and unknown fields become deterministic diagnostics and rule findings.
+
+The scanner can report that `provenance.source`, `provenance.commit`, or `provenance.signed` were declared locally. It does not verify repository ownership, commit existence, remote signatures, package registry state, or publisher identity.
+
+## Report Contracts
+
+`ScanReport` is the shared model between scanning and rendering. Default output uses relative paths and deterministic ordering. JSON reports include:
+
+```text
+packages
+findings
+suppressed_findings
+summary
+supply_chain
+compatibility
+```
+
+The JSON schema in `docs/report.schema.json` documents the supply-chain inventory shape. SARIF intentionally carries supply-chain findings as normal rule results rather than embedding the full inventory.
 
 ## Security Risk Model
 
