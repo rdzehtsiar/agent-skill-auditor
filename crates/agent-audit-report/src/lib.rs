@@ -6,8 +6,8 @@ use std::fmt;
 use std::str::FromStr;
 
 use agent_audit_core::{
-    CompatibilityMatrix, FindingCategory, ScanReport, Severity, SkillCompatibilityRow,
-    SkillFinding, SkillPackage,
+    CompatibilityMatrix, FindingCategory, OfflineReadinessStatus, ScanReport, Severity,
+    SkillCompatibilityRow, SkillFinding, SkillPackage, SupplyChainInventory,
 };
 use agent_audit_rules::{active_rule_metadata, RuleMetadata, RuleSeverity};
 use serde_json::{json, Value};
@@ -104,6 +104,7 @@ pub fn render_summary(report: &ScanReport) -> String {
         ),
     ];
 
+    extend_supply_chain_summary(&mut lines, report);
     extend_compatibility_summary(&mut lines, &report.compatibility);
 
     let findings = sorted_findings(&report.findings);
@@ -127,6 +128,118 @@ pub fn render_summary(report: &ScanReport) -> String {
     }
 
     lines.join("\n")
+}
+
+fn extend_supply_chain_summary(lines: &mut Vec<String>, report: &ScanReport) {
+    let supply_chain = &report.supply_chain;
+    let finding_counts = supply_chain_finding_counts(&report.findings);
+    let readiness_counts = offline_readiness_counts(supply_chain);
+
+    lines.push(String::new());
+    lines.push("Supply chain:".to_owned());
+    lines.push(format!(
+        "Licenses: {} evidence",
+        supply_chain.licenses.len()
+    ));
+    lines.push(format!(
+        "Trust manifests: {} total, {} invalid",
+        supply_chain.trust_manifests.len(),
+        supply_chain
+            .trust_manifests
+            .iter()
+            .filter(|manifest| manifest.valid == Some(false))
+            .count()
+    ));
+    lines.push(format!(
+        "External URLs: {} total, {} mutable",
+        supply_chain.external_urls.len(),
+        supply_chain
+            .external_urls
+            .iter()
+            .filter(|url| url.pinned == Some(false))
+            .count()
+    ));
+    lines.push(format!(
+        "Dependencies: {} observed, {} unpinned",
+        supply_chain.remote_dependencies.len(),
+        supply_chain
+            .remote_dependencies
+            .iter()
+            .filter(|dependency| dependency.pinned == Some(false))
+            .count()
+    ));
+    lines.push(format!(
+        "Lockfiles: {} evidence, {} install commands without lockfile",
+        supply_chain.lockfiles.len(),
+        finding_counts.install_without_lockfile
+    ));
+    lines.push(format!(
+        "Executables: {} evidence",
+        supply_chain.executables.len()
+    ));
+    lines.push(format!(
+        "Binaries: {} evidence",
+        supply_chain.binaries.len()
+    ));
+    lines.push(format!(
+        "Checksums: {} evidence",
+        supply_chain.checksums.len()
+    ));
+    lines.push(format!(
+        "Permissions: {} evidence, {} conflicts",
+        supply_chain.permissions.len(),
+        finding_counts.permission_conflicts
+    ));
+    lines.push(format!(
+        "Offline readiness: ready={} partial={} not-ready={} unknown={}",
+        readiness_counts.ready,
+        readiness_counts.partial,
+        readiness_counts.not_ready,
+        readiness_counts.unknown
+    ));
+}
+
+#[derive(Default)]
+struct SupplyChainFindingCounts {
+    install_without_lockfile: usize,
+    permission_conflicts: usize,
+}
+
+fn supply_chain_finding_counts(findings: &[SkillFinding]) -> SupplyChainFindingCounts {
+    let mut counts = SupplyChainFindingCounts::default();
+
+    for finding in findings {
+        match finding.rule_id.as_str() {
+            "SUPPLY003" => counts.install_without_lockfile += 1,
+            "SUPPLY009" => counts.permission_conflicts += 1,
+            _ => {}
+        }
+    }
+
+    counts
+}
+
+#[derive(Default)]
+struct OfflineReadinessCounts {
+    ready: usize,
+    partial: usize,
+    not_ready: usize,
+    unknown: usize,
+}
+
+fn offline_readiness_counts(supply_chain: &SupplyChainInventory) -> OfflineReadinessCounts {
+    let mut counts = OfflineReadinessCounts::default();
+
+    for readiness in &supply_chain.offline_readiness {
+        match readiness.status {
+            OfflineReadinessStatus::Ready => counts.ready += 1,
+            OfflineReadinessStatus::Partial => counts.partial += 1,
+            OfflineReadinessStatus::NotReady => counts.not_ready += 1,
+            OfflineReadinessStatus::Unknown => counts.unknown += 1,
+        }
+    }
+
+    counts
 }
 
 fn extend_compatibility_summary(lines: &mut Vec<String>, compatibility: &CompatibilityMatrix) {
@@ -931,7 +1044,297 @@ mod tests {
 
         assert_eq!(
             summary,
-            "Agent Skill Auditor scan summary\nPackages: 2\nFindings: 0\nSuppressed findings: 4\nInvalid manifests: 1\nBroken references: 0\n\nNo findings."
+            "Agent Skill Auditor scan summary\nPackages: 2\nFindings: 0\nSuppressed findings: 4\nInvalid manifests: 1\nBroken references: 0\n\nSupply chain:\nLicenses: 0 evidence\nTrust manifests: 0 total, 0 invalid\nExternal URLs: 0 total, 0 mutable\nDependencies: 0 observed, 0 unpinned\nLockfiles: 0 evidence, 0 install commands without lockfile\nExecutables: 0 evidence\nBinaries: 0 evidence\nChecksums: 0 evidence\nPermissions: 0 evidence, 0 conflicts\nOffline readiness: ready=0 partial=0 not-ready=0 unknown=0\n\nNo findings."
+        );
+    }
+
+    #[test]
+    fn json_output_includes_full_supply_chain_inventory_with_stable_keys() {
+        let mut report = report_with_summary(0, 0, 0, 0, 0);
+        report.supply_chain = supply_chain_inventory(json!({
+            "licenses": [
+                {
+                    "path": "LICENSE",
+                    "line": null,
+                    "source": "filesystem",
+                    "scope": "repository",
+                    "normalized": "LICENSE",
+                    "raw": null,
+                    "confidence": "high"
+                }
+            ],
+            "trust_manifests": [],
+            "external_urls": [],
+            "remote_dependencies": [],
+            "package_managers": [],
+            "lockfiles": [],
+            "executables": [],
+            "binaries": [],
+            "checksums": [],
+            "permissions": [],
+            "offline_readiness": [
+                {
+                    "path": "SKILL.md",
+                    "status": "ready",
+                    "score": 100,
+                    "reasons": ["all referenced local files are present"]
+                }
+            ]
+        }));
+
+        let rendered = render_json(&report).expect("render JSON report");
+        let value: Value = serde_json::from_str(&rendered).expect("parse JSON report");
+        let supply_chain = value["supply_chain"].as_object().expect("supply_chain");
+        let mut keys = supply_chain.keys().cloned().collect::<Vec<_>>();
+        keys.sort();
+
+        assert_eq!(
+            keys,
+            vec![
+                "binaries",
+                "checksums",
+                "executables",
+                "external_urls",
+                "licenses",
+                "lockfiles",
+                "offline_readiness",
+                "package_managers",
+                "permissions",
+                "remote_dependencies",
+                "trust_manifests",
+            ]
+        );
+        assert_eq!(value["supply_chain"]["licenses"][0]["path"], "LICENSE");
+        assert_eq!(
+            value["supply_chain"]["offline_readiness"][0]["status"],
+            "ready"
+        );
+    }
+
+    #[test]
+    fn summary_output_includes_clean_supply_chain_counts() {
+        let mut report = report_with_summary(1, 0, 0, 0, 0);
+        report.supply_chain = supply_chain_inventory(json!({
+            "licenses": [
+                {
+                    "path": "LICENSE",
+                    "line": null,
+                    "source": "filesystem",
+                    "scope": "repository",
+                    "normalized": "LICENSE",
+                    "raw": null,
+                    "confidence": "high"
+                }
+            ],
+            "trust_manifests": [],
+            "external_urls": [],
+            "remote_dependencies": [],
+            "package_managers": [],
+            "lockfiles": [
+                {
+                    "path": "package-lock.json",
+                    "line": null,
+                    "source": "lockfile",
+                    "manager": "npm",
+                    "normalized": "package-lock.json",
+                    "raw": null,
+                    "confidence": "high"
+                }
+            ],
+            "executables": [],
+            "binaries": [],
+            "checksums": [],
+            "permissions": [],
+            "offline_readiness": [
+                {
+                    "path": "SKILL.md",
+                    "status": "ready",
+                    "score": 100,
+                    "reasons": ["all referenced local files are present"]
+                }
+            ]
+        }));
+
+        let summary = render_summary(&report);
+
+        assert_in_order(
+            &summary,
+            &[
+                "Supply chain:",
+                "Licenses: 1 evidence",
+                "Trust manifests: 0 total, 0 invalid",
+                "External URLs: 0 total, 0 mutable",
+                "Dependencies: 0 observed, 0 unpinned",
+                "Lockfiles: 1 evidence, 0 install commands without lockfile",
+                "Executables: 0 evidence",
+                "Binaries: 0 evidence",
+                "Checksums: 0 evidence",
+                "Permissions: 0 evidence, 0 conflicts",
+                "Offline readiness: ready=1 partial=0 not-ready=0 unknown=0",
+                "No findings.",
+            ],
+        );
+    }
+
+    #[test]
+    fn summary_output_includes_finding_heavy_supply_chain_counts() {
+        let mut report = report_with_findings(vec![
+            finding(
+                "SUPPLY003",
+                Severity::Medium,
+                FindingCategory::Reproducibility,
+                "Install command without matching lockfile",
+                "npm install is not paired with a lockfile.",
+                "scripts/install.sh",
+                Some(2),
+            ),
+            finding(
+                "SUPPLY009",
+                Severity::Medium,
+                FindingCategory::Security,
+                "Observed permission conflicts with trust manifest",
+                "Network access conflicts with declared permissions.",
+                "scripts/upload.sh",
+                Some(4),
+            ),
+        ]);
+        report.supply_chain = supply_chain_inventory(json!({
+            "licenses": [],
+            "trust_manifests": [
+                {
+                    "path": "agent-audit.trust.yaml",
+                    "line": null,
+                    "source": "trust-manifest",
+                    "format": "agent-audit",
+                    "normalized": "agent-audit.trust.yaml",
+                    "raw": null,
+                    "confidence": "high",
+                    "valid": false,
+                    "diagnostics": [],
+                    "skill": null,
+                    "provenance": null,
+                    "permissions": null,
+                    "declared_dependencies": {
+                        "commands": [],
+                        "packages": []
+                    }
+                }
+            ],
+            "external_urls": [
+                {
+                    "path": "SKILL.md",
+                    "line": 8,
+                    "source": "markdown-link",
+                    "kind": "github-raw",
+                    "normalized": "https://raw.githubusercontent.com/org/repo/main/install.sh",
+                    "raw": "https://raw.githubusercontent.com/org/repo/main/install.sh",
+                    "confidence": "high",
+                    "pinned": false
+                }
+            ],
+            "remote_dependencies": [
+                {
+                    "path": "package.json",
+                    "line": 4,
+                    "source": "package-manifest",
+                    "kind": "package",
+                    "package_manager": "npm",
+                    "name": "left-pad",
+                    "version": "^1.3.0",
+                    "normalized": "left-pad@^1.3.0",
+                    "raw": "\"left-pad\": \"^1.3.0\"",
+                    "confidence": "high",
+                    "pinned": false
+                }
+            ],
+            "package_managers": [
+                {
+                    "path": "scripts/install.sh",
+                    "line": 2,
+                    "source": "script",
+                    "manager": "npm",
+                    "manifest_path": null,
+                    "normalized": "npm install",
+                    "raw": "npm install left-pad",
+                    "confidence": "high"
+                }
+            ],
+            "lockfiles": [],
+            "executables": [
+                {
+                    "path": "scripts/install.sh",
+                    "line": null,
+                    "source": "filesystem",
+                    "kind": "script",
+                    "language": "shell",
+                    "reason": "shell script",
+                    "referenced": true,
+                    "normalized": "scripts/install.sh",
+                    "raw": null,
+                    "confidence": "high"
+                }
+            ],
+            "binaries": [
+                {
+                    "path": "bin/helper.exe",
+                    "line": null,
+                    "source": "filesystem",
+                    "kind": "executable",
+                    "size_bytes": 4,
+                    "referenced": true,
+                    "normalized": "bin/helper.exe",
+                    "raw": null,
+                    "confidence": "high"
+                }
+            ],
+            "checksums": [],
+            "permissions": [
+                {
+                    "path": "scripts/upload.sh",
+                    "line": 4,
+                    "source": "script",
+                    "kind": "network",
+                    "evidence": "observed",
+                    "normalized": "curl",
+                    "raw": "curl https://example.com",
+                    "confidence": "high"
+                }
+            ],
+            "offline_readiness": [
+                {
+                    "path": "SKILL.md",
+                    "status": "partial",
+                    "score": 55,
+                    "reasons": ["1 unpinned remote URL"]
+                },
+                {
+                    "path": "nested/SKILL.md",
+                    "status": "not-ready",
+                    "score": 0,
+                    "reasons": ["downloaded executable has no checksum"]
+                }
+            ]
+        }));
+
+        let summary = render_summary(&report);
+
+        assert_in_order(
+            &summary,
+            &[
+                "Supply chain:",
+                "Licenses: 0 evidence",
+                "Trust manifests: 1 total, 1 invalid",
+                "External URLs: 1 total, 1 mutable",
+                "Dependencies: 1 observed, 1 unpinned",
+                "Lockfiles: 0 evidence, 1 install commands without lockfile",
+                "Executables: 1 evidence",
+                "Binaries: 1 evidence",
+                "Checksums: 0 evidence",
+                "Permissions: 1 evidence, 1 conflicts",
+                "Offline readiness: ready=0 partial=1 not-ready=1 unknown=0",
+                "SUPPLY003 [medium/reproducibility] scripts/install.sh:2: npm install is not paired with a lockfile.",
+                "SUPPLY009 [medium/security] scripts/upload.sh:4: Network access conflicts with declared permissions.",
+            ],
         );
     }
 
@@ -1979,6 +2382,33 @@ mod tests {
     }
 
     #[test]
+    fn sarif_output_includes_supply_findings_as_normal_rule_results() {
+        let report = report_with_findings(vec![finding(
+            "SUPPLY005",
+            Severity::Medium,
+            FindingCategory::Security,
+            "Mutable GitHub raw URL reference",
+            "The skill references a mutable GitHub raw URL.",
+            "SKILL.md",
+            Some(8),
+        )]);
+
+        let value = render_sarif_value(&report);
+        let rule = &value["runs"][0]["tool"]["driver"]["rules"][0];
+        let result = &value["runs"][0]["results"][0];
+
+        assert_eq!(sarif_rule_ids(&value), vec!["SUPPLY005"]);
+        assert_eq!(rule["id"], "SUPPLY005");
+        assert_eq!(rule["properties"]["category"], "security");
+        assert_eq!(rule["properties"]["agentAuditSeverity"], "medium");
+        assert_eq!(result["ruleId"], "SUPPLY005");
+        assert_eq!(result["level"], "warning");
+        assert_eq!(result["properties"]["category"], "security");
+        assert_eq!(result["properties"]["agentAuditSeverity"], "medium");
+        assert!(value["runs"][0].get("supply_chain").is_none());
+    }
+
+    #[test]
     fn sarif_compatibility_results_include_profile_context_from_matrix() {
         let mut report = report_with_findings(vec![
             finding(
@@ -2503,6 +2933,10 @@ mod tests {
             Some("review-skill"),
             Some("Reviews agent skills."),
         )
+    }
+
+    fn supply_chain_inventory(value: Value) -> SupplyChainInventory {
+        serde_json::from_value(value).expect("supply-chain inventory fixture")
     }
 
     fn package(
