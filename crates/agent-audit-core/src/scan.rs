@@ -16,10 +16,19 @@ use agent_audit_hosts::{
     profile_by_id, CompatibilityStatus, ProfileCompatibilityResult, HOST_PROFILES,
 };
 use agent_audit_rules::{
-    active_rule_metadata, evaluate_structural_rules, rule_counts_as_broken_reference,
-    rule_counts_as_invalid_manifest, EvaluatedRuleFinding, RuleCategory as RegistryCategory,
-    RuleFrontmatterFieldFact, RuleMalformedFrontmatterFact, RuleManifestFacts, RulePackageFacts,
-    RuleParsedManifestFacts, RuleReferenceFact, RuleSeverity as RegistrySeverity,
+    active_rule_metadata, evaluate_security_signal_rules, evaluate_structural_rules,
+    rule_counts_as_broken_reference, rule_counts_as_invalid_manifest, EvaluatedRuleFinding,
+    RuleCategory as RegistryCategory, RuleFrontmatterFieldFact, RuleMalformedFrontmatterFact,
+    RuleManifestFacts, RulePackageFacts, RuleParsedManifestFacts, RuleReferenceFact,
+    RuleSeverity as RegistrySeverity,
+};
+use agent_audit_security::{
+    analyze_instruction_security_text, classify_security_artifact, javascript_security_analyzer,
+    python_security_analyzer, read_security_artifact_bytes, shell_security_analyzer,
+    SecurityAnalyzer, SecurityAnalyzerArtifactInput, SecurityAnalyzerContent,
+    SecurityAnalyzerInput, SecurityAnalyzerPackageContext,
+    SecurityArtifactKind as SecurityScanArtifactKind, SecurityArtifactReadError,
+    SecurityArtifactReadPolicy, SecurityDeclaredPermission, SecurityDeclaredTool, SecurityLanguage,
 };
 
 const UTF8_BOM: &str = "\u{feff}";
@@ -48,6 +57,7 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
     let profiles = selected_profiles(options.config.as_ref());
     let mut packages = Vec::new();
     let mut package_facts = Vec::new();
+    let mut security_signals = Vec::new();
 
     for manifest_path in manifests {
         let metadata =
@@ -77,6 +87,10 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
                 path: manifest_path.clone(),
                 source,
             })?;
+        security_signals.extend(analyze_instruction_security_text(
+            &manifest_display,
+            &content,
+        ));
         let manifest = match parse_skill_manifest(&manifest_path, &content) {
             Ok(manifest) => manifest,
             Err(AuditError::Frontmatter { source, .. }) => {
@@ -126,6 +140,13 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         graph
             .references
             .sort_by(|left, right| left.target.cmp(&right.target));
+        security_signals.extend(analyze_package_security_artifacts(
+            root,
+            skill_root,
+            &manifest_display,
+            &manifest,
+            &graph,
+        )?);
 
         let frontmatter_fields = manifest
             .frontmatter
@@ -168,6 +189,11 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         .into_iter()
         .map(skill_finding_from_evaluated_rule)
         .collect::<Vec<_>>();
+    findings.extend(
+        evaluate_security_signal_rules(&security_signals)
+            .into_iter()
+            .map(skill_finding_from_evaluated_rule),
+    );
     findings.extend(evaluate_compatibility_findings(
         &packages,
         options.config.as_ref(),
@@ -1005,6 +1031,119 @@ fn file_kind(metadata: &std::fs::Metadata) -> SkillFileKind {
         SkillFileKind::Directory
     } else {
         SkillFileKind::Other
+    }
+}
+
+fn analyze_package_security_artifacts(
+    scan_root: &Path,
+    skill_root: &Path,
+    manifest_path: &str,
+    manifest: &SkillManifest,
+    graph: &SkillGraph,
+) -> AuditResult<Vec<agent_audit_security::SecuritySignal>> {
+    let package_root = display_path(scan_root, skill_root);
+    let declared_tools = manifest
+        .declared_tools
+        .iter()
+        .map(|name| SecurityDeclaredTool { name: name.clone() })
+        .collect::<Vec<_>>();
+    let declared_permissions = manifest
+        .declared_permissions
+        .iter()
+        .map(|name| SecurityDeclaredPermission { name: name.clone() })
+        .collect::<Vec<_>>();
+    let package = SecurityAnalyzerPackageContext {
+        package_root: &package_root,
+        manifest_path,
+        declared_tools: &declared_tools,
+        declared_permissions: &declared_permissions,
+    };
+    let mut signals = Vec::new();
+
+    for file in graph
+        .files
+        .iter()
+        .filter(|file| file.kind == SkillFileKind::File)
+    {
+        let artifact_path = skill_root.join(&file.path);
+        let display = display_path(scan_root, &artifact_path);
+        let read = read_security_artifact_bytes(
+            &artifact_path,
+            &display,
+            SecurityArtifactReadPolicy::default(),
+        )
+        .map_err(|error| security_read_error(&artifact_path, error))?;
+        let Some(classification) = classify_security_artifact(&display, &read.bytes, false) else {
+            continue;
+        };
+        let Some(output) = analyze_classified_security_artifact(
+            &package,
+            &read,
+            &classification,
+            security_artifact_kind(file.artifact),
+        ) else {
+            continue;
+        };
+        signals.extend(output.signals);
+    }
+
+    signals.sort();
+    signals.dedup();
+    Ok(signals)
+}
+
+fn analyze_classified_security_artifact(
+    package: &SecurityAnalyzerPackageContext<'_>,
+    read: &agent_audit_security::SecurityArtifactRead,
+    classification: &agent_audit_security::SecurityArtifactClassification,
+    kind: SecurityScanArtifactKind,
+) -> Option<agent_audit_security::SecurityAnalyzerOutput> {
+    let input = SecurityAnalyzerInput {
+        artifact: SecurityAnalyzerArtifactInput {
+            path: &classification.path,
+            kind,
+            language: classification.language,
+            classification_method: classification.method,
+            classification_signals: &classification.signals,
+            executable: classification.executable,
+            size_bytes: read.metadata_size_bytes.unwrap_or(read.observed_size_bytes),
+            content: SecurityAnalyzerContent::from_bytes(
+                &read.bytes,
+                read.status,
+                SecurityArtifactReadPolicy::default().max_bytes,
+            ),
+        },
+        package: *package,
+    };
+
+    match classification.language {
+        SecurityLanguage::Shell => Some(shell_security_analyzer().analyze(&input)),
+        SecurityLanguage::Python => Some(python_security_analyzer().analyze(&input)),
+        SecurityLanguage::JavaScript | SecurityLanguage::TypeScript => {
+            Some(javascript_security_analyzer().analyze(&input))
+        }
+        _ => None,
+    }
+}
+
+fn security_artifact_kind(kind: SkillArtifactKind) -> SecurityScanArtifactKind {
+    match kind {
+        SkillArtifactKind::Scripts => SecurityScanArtifactKind::Script,
+        SkillArtifactKind::References => SecurityScanArtifactKind::Reference,
+        SkillArtifactKind::Assets => SecurityScanArtifactKind::Asset,
+    }
+}
+
+fn security_read_error(path: &Path, error: SecurityArtifactReadError) -> AuditError {
+    let kind = match &error {
+        SecurityArtifactReadError::OpenFailed { kind, .. }
+        | SecurityArtifactReadError::ReadFailed { kind, .. } => *kind,
+        SecurityArtifactReadError::InvalidDisplayPath { .. }
+        | SecurityArtifactReadError::NotFile { .. } => std::io::ErrorKind::InvalidData,
+    };
+    AuditError::Read {
+        path: path.to_path_buf(),
+        source: std::io::Error::new(kind, error),
     }
 }
 
@@ -3622,6 +3761,40 @@ Read [parent](../outside.md), [absolute](/outside.md), and [windows](C:/outside.
     }
 
     #[test]
+    fn scan_security_prompt_injection_fixture_emits_sec011() {
+        let report = scan_security_fixture("prompt-injection");
+
+        assert_security_finding(&report, "SEC011", "SKILL.md", Some(8));
+    }
+
+    #[test]
+    fn scan_security_hidden_instruction_fixtures_emit_sec012() {
+        for fixture in [
+            "hidden-instruction-comments",
+            "hidden-instruction-code-block",
+            "hidden-instruction-multiline-comment",
+        ] {
+            let report = scan_security_fixture(fixture);
+
+            assert_security_finding(&report, "SEC012", "SKILL.md", None);
+        }
+    }
+
+    #[test]
+    fn scan_security_normal_instructions_fixture_stays_clean_for_sec011_and_sec012() {
+        let report = scan_security_fixture("normal-instructions");
+
+        assert!(
+            report
+                .findings
+                .iter()
+                .all(|finding| !matches!(finding.rule_id.as_str(), "SEC011" | "SEC012")),
+            "normal fixture emitted instruction security findings: {:#?}",
+            report.findings
+        );
+    }
+
+    #[test]
     fn reports_skill001_missing_name_with_complete_finding_metadata() {
         let workspace = TestWorkspace::new("scan-skill001");
         workspace.write_file(
@@ -5948,5 +6121,32 @@ Read [guidance](references/guidance.md).
             .and_then(|value| value.strip_suffix('"'))
             .unwrap_or(&escaped)
             .to_owned()
+    }
+
+    fn scan_security_fixture(relative_path: &str) -> ScanReport {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("fixtures/security")
+            .join(relative_path);
+        scan_path(&path, &ScanOptions::default())
+            .unwrap_or_else(|error| panic!("scan security fixture {relative_path}: {error}"))
+    }
+
+    fn assert_security_finding(
+        report: &ScanReport,
+        rule_id: &str,
+        path: &str,
+        line: Option<usize>,
+    ) {
+        assert!(
+            report.findings.iter().any(|finding| {
+                finding.rule_id == rule_id
+                    && finding.category == FindingCategory::Security
+                    && finding.location.path == path
+                    && line.is_none_or(|expected| finding.location.line == Some(expected))
+            }),
+            "missing {rule_id} finding in report: {:#?}",
+            report.findings
+        );
     }
 }

@@ -20,6 +20,7 @@ version = "0.1.0"
 dependencies = [
  "agent-audit-hosts",
  "agent-audit-rules",
+ "agent-audit-security",
  "ignore",
  "pulldown-cmark",
  "serde",

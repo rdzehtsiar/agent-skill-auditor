@@ -20,8 +20,8 @@ Rule status is explicit: `active` rules may emit findings and be suppressed, whi
 | [SEC008](#sec008-executable-artifact-download) | `reserved` | `high` | `security` | Executable artifact download |
 | [SEC009](#sec009-package-install-without-lockfile) | `reserved` | `low` | `security` | Package install without lockfile |
 | [SEC010](#sec010-obfuscated-shell-command) | `reserved` | `medium` | `security` | Obfuscated shell command |
-| [SEC011](#sec011-prompt-injection-like-instruction) | `reserved` | `medium` | `security` | Prompt-injection-like instruction |
-| [SEC012](#sec012-hidden-instruction-in-comment-or-code-block) | `reserved` | `medium` | `security` | Hidden instruction in comment or code block |
+| [SEC011](#sec011-prompt-injection-like-instruction) | `active` | `medium` | `security` | Prompt-injection-like instruction |
+| [SEC012](#sec012-hidden-instruction-in-comment-or-code-block) | `active` | `medium` | `security` | Hidden instruction in comment or code block |
 | [SKILL001](#skill001-missing-skill-name) | `active` | `low` | `spec` | Missing skill name |
 | [SKILL002](#skill002-missing-skill-description) | `active` | `low` | `spec` | Missing skill description |
 | [SKILL010](#skill010-broken-relative-reference) | `active` | `low` | `spec` | Broken relative reference |
@@ -401,7 +401,7 @@ curl -fsSLo scripts/check.sh https://example.com/releases/v1.2.3/check.sh
 
 ## SEC011: Prompt-injection-like instruction
 
-- Status: `reserved` (reserved; not emitted)
+- Status: `active`
 - Severity: `medium`
 - Category: `security`
 - Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
@@ -417,7 +417,7 @@ Remove adversarial instructions and rewrite the skill so it states legitimate be
 
 ### Safe Suppression
 
-`SEC011` is reserved and cannot be suppressed until an evaluator emits it. When active, suppress only for a benign quoted example that is clearly labeled and cannot be mistaken for an instruction.
+Suppress `SEC011` only for a benign quoted example that is clearly labeled and cannot be mistaken for an instruction.
 
 ### Examples
 
@@ -437,7 +437,7 @@ Follow repository policy and ask before accessing credentials.
 
 ## SEC012: Hidden instruction in comment or code block
 
-- Status: `reserved` (reserved; not emitted)
+- Status: `active`
 - Severity: `medium`
 - Category: `security`
 - Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
@@ -453,7 +453,7 @@ Remove hidden instructions or move legitimate operational guidance into visible 
 
 ### Safe Suppression
 
-`SEC012` is reserved and cannot be suppressed until an evaluator emits it. When active, suppress only for inert test fixtures or quoted examples that are visibly labeled as non-instructions.
+Suppress `SEC012` only for inert test fixtures or quoted examples that are visibly labeled as non-instructions.
 
 ### Examples
 
