@@ -519,53 +519,110 @@ fn next_shape(shape: KnownTrustManifestShape, key: &str) -> Option<KnownTrustMan
 }
 
 fn yaml_key_lines(content: &str) -> BTreeMap<String, usize> {
-    let mut lines = BTreeMap::new();
-    let mut stack: Vec<(usize, String)> = Vec::new();
+    let mut collector = YamlKeyLineCollector::default();
 
     for (index, line) in content.lines().enumerate() {
-        let trimmed = line.trim_start();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
+        collector.record_line(index + 1, line);
+    }
 
-        let indent = line.len() - trimmed.len();
-        while stack
-            .last()
-            .is_some_and(|(stack_indent, _)| *stack_indent >= indent)
-        {
-            stack.pop();
-        }
+    collector.lines
+}
 
-        if let Some(item) = trimmed.strip_prefix("- ") {
-            if let Some((_, parent)) = stack.last() {
-                lines.entry(format!("{parent}[]")).or_insert(index + 1);
-            }
-            if !item.contains(':') {
-                continue;
-            }
-        }
+#[derive(Default)]
+struct YamlKeyLineCollector {
+    lines: BTreeMap<String, usize>,
+    stack: Vec<(usize, String)>,
+}
 
-        let mapping_text = trimmed.strip_prefix("- ").unwrap_or(trimmed);
-        let Some((key, value)) = mapping_text.split_once(':') else {
-            continue;
+impl YamlKeyLineCollector {
+    fn record_line(&mut self, number: usize, line: &str) {
+        let Some(entry) = YamlLineEntry::new(number, line) else {
+            return;
         };
-        let key = key.trim().trim_matches(['"', '\'']);
-        if key.is_empty() {
-            continue;
-        }
 
-        let path = match stack.last() {
-            Some((_, parent)) => format!("{parent}.{key}"),
-            None => key.to_owned(),
+        self.pop_to_indent(entry.indent);
+        self.record_sequence_parent(&entry);
+
+        let Some(key) = entry.mapping_key() else {
+            return;
         };
-        lines.insert(path.clone(), index + 1);
 
-        if value.trim().is_empty() && !trimmed.starts_with("- ") {
-            stack.push((indent, path));
+        let path = self.child_path(key);
+        self.lines.insert(path.clone(), entry.number);
+
+        if entry.opens_nested_mapping() {
+            self.stack.push((entry.indent, path));
         }
     }
 
-    lines
+    fn pop_to_indent(&mut self, indent: usize) {
+        while self
+            .stack
+            .last()
+            .is_some_and(|(stack_indent, _)| *stack_indent >= indent)
+        {
+            self.stack.pop();
+        }
+    }
+
+    fn record_sequence_parent(&mut self, entry: &YamlLineEntry<'_>) {
+        if entry.sequence_item().is_some() {
+            if let Some((_, parent)) = self.stack.last() {
+                self.lines
+                    .entry(format!("{parent}[]"))
+                    .or_insert(entry.number);
+            }
+        }
+    }
+
+    fn child_path(&self, key: &str) -> String {
+        match self.stack.last() {
+            Some((_, parent)) => format!("{parent}.{key}"),
+            None => key.to_owned(),
+        }
+    }
+}
+
+struct YamlLineEntry<'a> {
+    number: usize,
+    indent: usize,
+    trimmed: &'a str,
+}
+
+impl<'a> YamlLineEntry<'a> {
+    fn new(number: usize, line: &'a str) -> Option<Self> {
+        let trimmed = line.trim_start();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            return None;
+        }
+
+        Some(Self {
+            number,
+            indent: line.len() - trimmed.len(),
+            trimmed,
+        })
+    }
+
+    fn sequence_item(&self) -> Option<&'a str> {
+        self.trimmed.strip_prefix("- ")
+    }
+
+    fn mapping_text(&self) -> &'a str {
+        self.sequence_item().unwrap_or(self.trimmed)
+    }
+
+    fn mapping_key(&self) -> Option<&'a str> {
+        let (key, _) = self.mapping_text().split_once(':')?;
+        let key = key.trim().trim_matches(['"', '\'']);
+        (!key.is_empty()).then_some(key)
+    }
+
+    fn opens_nested_mapping(&self) -> bool {
+        let Some((_, value)) = self.mapping_text().split_once(':') else {
+            return false;
+        };
+        value.trim().is_empty() && self.sequence_item().is_none()
+    }
 }
 
 fn sorted_strings(values: Vec<String>) -> Vec<String> {
@@ -788,6 +845,39 @@ x-extra: value
             ]
         );
         assert_eq!(report.supply_chain.trust_manifests[0].valid, Some(true));
+    }
+
+    #[test]
+    fn yaml_key_lines_preserves_sequence_and_quoted_key_locations() {
+        let lines = yaml_key_lines(
+            r#"
+"skill":
+  'name': quoted
+permissions:
+  secrets:
+    - API_TOKEN
+declared_dependencies:
+  packages:
+    - ecosystem: npm
+      name: prettier
+      version: 3.2.5
+"#,
+        );
+
+        assert_eq!(lines.get("skill"), Some(&2));
+        assert_eq!(lines.get("skill.name"), Some(&3));
+        assert_eq!(lines.get("permissions.secrets"), Some(&5));
+        assert_eq!(lines.get("permissions.secrets[]"), Some(&6));
+        assert_eq!(lines.get("declared_dependencies.packages[]"), Some(&9));
+        assert_eq!(
+            lines.get("declared_dependencies.packages.ecosystem"),
+            Some(&9)
+        );
+        assert_eq!(lines.get("declared_dependencies.packages.name"), Some(&10));
+        assert_eq!(
+            lines.get("declared_dependencies.packages.version"),
+            Some(&11)
+        );
     }
 
     #[test]
