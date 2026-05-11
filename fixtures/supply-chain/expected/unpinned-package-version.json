@@ -95,5 +95,21 @@
       }
     ]
   },
-  "expected_findings": []
+  "expected_findings": [
+    {
+      "rule_id": "SUPPLY004",
+      "path": "unpinned-package-version/package.json",
+      "message": "The package dependency `npm:prettier@^3.2.5` is not pinned to an exact version, so future installs may resolve different code."
+    },
+    {
+      "rule_id": "SUPPLY004",
+      "path": "unpinned-package-version/requirements.txt",
+      "message": "The package dependency `pip:requests@>=2.0` is not pinned to an exact version, so future installs may resolve different code."
+    },
+    {
+      "rule_id": "SUPPLY004",
+      "path": "unpinned-package-version/requirements.txt",
+      "message": "The package dependency `pip:click` is not pinned to an exact version, so future installs may resolve different code."
+    }
+  ]
 }

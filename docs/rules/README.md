@@ -30,6 +30,14 @@ Rule status is explicit: `active` rules may emit findings and be suppressed, whi
 | [SKILL040](#skill040-unknown-frontmatter-field) | `active` | `low` | `compatibility` | Unknown frontmatter field |
 | [SKILL041](#skill041-malformed-frontmatter) | `active` | `low` | `spec` | Malformed frontmatter |
 | [SKILL050](#skill050-ignored-host-specific-metadata) | `active` | `low` | `compatibility` | Ignored host-specific metadata |
+| [SUPPLY002](#supply002-unknown-skill-local-license-evidence) | `active` | `low` | `reproducibility` | Unknown skill-local license evidence |
+| [SUPPLY003](#supply003-install-command-without-matching-lockfile) | `active` | `medium` | `reproducibility` | Install command without matching lockfile |
+| [SUPPLY004](#supply004-unpinned-package-dependency) | `active` | `medium` | `reproducibility` | Unpinned package dependency |
+| [SUPPLY005](#supply005-unpinned-remote-url-reference) | `active` | `medium` | `security` | Unpinned remote URL reference |
+| [SUPPLY006](#supply006-downloaded-executable-without-checksum) | `active` | `high` | `security` | Downloaded executable without checksum |
+| [SUPPLY007](#supply007-binary-executable-without-provenance-evidence) | `active` | `medium` | `security` | Binary executable without provenance evidence |
+| [SUPPLY009](#supply009-observed-permission-conflicts-with-trust-manifest) | `active` | `medium` | `security` | Observed permission conflicts with trust manifest |
+| [SUPPLY012](#supply012-invalid-trust-manifest-diagnostic) | `active` | `low` | `reproducibility` | Invalid trust manifest diagnostic |
 
 ## SEC001: Remote content piped into shell
 
@@ -789,4 +797,299 @@ description: Reviews changes.
 tools:
   - shell
 ---
+```
+
+## SUPPLY002: Unknown skill-local license evidence
+
+- Status: `active`
+- Severity: `low`
+- Category: `reproducibility`
+- Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
+- Input nodes: `supply-chain-inventory`
+
+### Why It Matters
+
+Unknown skill-local license evidence makes offline review and redistribution decisions harder, even when the package may otherwise be safe to run.
+
+### How To Fix
+
+Declare a recognizable SPDX license in `SKILL.md`, or replace unknown license text with clear license evidence.
+
+### Safe Suppression
+
+Suppress `SUPPLY002` only when license evidence has been reviewed elsewhere and the suppression reason identifies that reviewed source.
+
+### Examples
+
+Keep reviewable license evidence recognizable.
+
+Non-compliant:
+
+```text
+skills/review/LICENSE.txt contains unrecognized placeholder license text.
+```
+
+Compliant:
+
+```text
+skills/review/SKILL.md declares `license: Apache-2.0` or ships a recognizable `skills/review/LICENSE.txt`.
+```
+
+## SUPPLY003: Install command without matching lockfile
+
+- Status: `active`
+- Severity: `medium`
+- Category: `reproducibility`
+- Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
+- Input nodes: `supply-chain-inventory`
+
+### Why It Matters
+
+Package installation without a matching lockfile can resolve different dependency graphs over time and weakens reproducible offline review.
+
+### How To Fix
+
+Commit the package manager lockfile for the install command, switch to a lockfile-backed install mode, or remove package installation from the skill workflow.
+
+### Safe Suppression
+
+Suppress `SUPPLY003` only for a reviewed install path whose dependency set is pinned or controlled by another documented local mechanism.
+
+### Examples
+
+Back package installation commands with a matching lockfile.
+
+Non-compliant:
+
+```text
+npm install left-pad@1.3.0
+```
+
+Compliant:
+
+```text
+npm ci
+# package-lock.json is present in the skill package.
+```
+
+## SUPPLY004: Unpinned package dependency
+
+- Status: `active`
+- Severity: `medium`
+- Category: `reproducibility`
+- Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
+- Input nodes: `supply-chain-inventory`
+
+### Why It Matters
+
+Unpinned package versions can change without a skill package change, making audits less reproducible and increasing supply-chain risk.
+
+### How To Fix
+
+Use exact package versions and commit the relevant lockfile when the package manager supports one.
+
+### Safe Suppression
+
+Suppress `SUPPLY004` only when a reviewed local policy intentionally allows version ranges and documents the update and review process.
+
+### Examples
+
+Pin package dependencies to exact versions.
+
+Non-compliant:
+
+```text
+"prettier": "^3.2.5"
+```
+
+Compliant:
+
+```text
+"prettier": "3.2.5"
+```
+
+## SUPPLY005: Unpinned remote URL reference
+
+- Status: `active`
+- Severity: `medium`
+- Category: `security`
+- Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
+- Input nodes: `supply-chain-inventory`
+
+### Why It Matters
+
+Mutable remote URLs can serve different content over time, which prevents deterministic review and can introduce unreviewed behavior.
+
+### How To Fix
+
+Pin GitHub raw URLs to full commit SHAs, use immutable release assets with checksum evidence, or vendor reviewed content locally.
+
+### Safe Suppression
+
+Suppress `SUPPLY005` only for a reviewed remote reference whose mutability is intentional and whose update process is documented.
+
+### Examples
+
+Pin remote scripts and artifact URLs to immutable versions.
+
+Non-compliant:
+
+```text
+https://raw.githubusercontent.com/example/skill/main/setup.sh
+```
+
+Compliant:
+
+```text
+https://raw.githubusercontent.com/example/skill/0123456789abcdef0123456789abcdef01234567/setup.sh
+```
+
+## SUPPLY006: Downloaded executable without checksum
+
+- Status: `active`
+- Severity: `high`
+- Category: `security`
+- Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
+- Input nodes: `supply-chain-inventory`
+
+### Why It Matters
+
+Downloaded executables can affect local execution directly, and missing checksum evidence prevents offline integrity review.
+
+### How To Fix
+
+Pin the download source and add local SHA-256 checksum evidence for the downloaded executable, or ship a reviewed local artifact instead.
+
+### Safe Suppression
+
+Suppress `SUPPLY006` only for a reviewed download whose integrity is verified by another documented local control.
+
+### Examples
+
+Verify downloaded executable artifacts before use.
+
+Non-compliant:
+
+```text
+curl -L https://downloads.example/tool.exe -o tool.exe
+```
+
+Compliant:
+
+```text
+curl -L https://downloads.example/tool-v1.2.3.exe -o tool.exe
+sha256sum -c checksums.txt
+```
+
+## SUPPLY007: Binary executable without provenance evidence
+
+- Status: `active`
+- Severity: `medium`
+- Category: `security`
+- Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
+- Input nodes: `supply-chain-inventory`
+
+### Why It Matters
+
+Local binary executables are opaque to static source review unless checksum or provenance evidence ties them to reviewed source or release material.
+
+### How To Fix
+
+Add checksum evidence for the binary, document provenance in a trust manifest with a pinned source commit, or remove the binary artifact.
+
+### Safe Suppression
+
+Suppress `SUPPLY007` only when the binary was reviewed through a documented local provenance process and the suppression reason references that review.
+
+### Examples
+
+Provide provenance or checksum evidence for local executable binaries.
+
+Non-compliant:
+
+```text
+bin/helper.exe is shipped without checksum or provenance evidence.
+```
+
+Compliant:
+
+```text
+bin/helper.exe is listed in checksums.txt or covered by a trust manifest with pinned source commit.
+```
+
+## SUPPLY009: Observed permission conflicts with trust manifest
+
+- Status: `active`
+- Severity: `medium`
+- Category: `security`
+- Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
+- Input nodes: `supply-chain-inventory`
+
+### Why It Matters
+
+A trust manifest that declares network access disabled while static evidence observes network access can mislead reviewers about the skill's behavior.
+
+### How To Fix
+
+Update the trust manifest to declare the observed permission, or remove the behavior that conflicts with the declaration.
+
+### Safe Suppression
+
+Suppress `SUPPLY009` only when the observed behavior is unreachable in the reviewed deployment path and that condition is documented.
+
+### Examples
+
+Keep declared trust-manifest permissions aligned with observed behavior.
+
+Non-compliant:
+
+```text
+permissions.network: false
+# scripts/upload.sh runs curl https://api.example/upload
+```
+
+Compliant:
+
+```text
+permissions.network: true
+# or remove the network call.
+```
+
+## SUPPLY012: Invalid trust manifest diagnostic
+
+- Status: `active`
+- Severity: `low`
+- Category: `reproducibility`
+- Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
+- Input nodes: `supply-chain-inventory`
+
+### Why It Matters
+
+Invalid or unknown trust manifest content cannot be relied on as deterministic provenance, permission, or dependency evidence.
+
+### How To Fix
+
+Fix trust manifest YAML and supported field names, or remove unsupported fields until the schema intentionally accepts them.
+
+### Safe Suppression
+
+Suppress `SUPPLY012` only when the diagnostic is understood and a local policy intentionally retains the unsupported trust manifest content.
+
+### Examples
+
+Keep trust manifests parseable and within the supported schema.
+
+Non-compliant:
+
+```text
+skill:
+  name: [broken
+```
+
+Compliant:
+
+```text
+skill:
+  name: review
+  version: 1.0.0
 ```

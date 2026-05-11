@@ -164,7 +164,13 @@ mod tests {
         );
         assert_eq!(
             invalid_projection["expected_findings"],
-            serde_json::json!([])
+            serde_json::json!([
+                {
+                    "rule_id": "SUPPLY012",
+                    "path": "trust-manifest-invalid/agent-audit.trust.yaml",
+                    "message": "The trust manifest has a parse error: Invalid trust manifest YAML: did not find expected ',' or ']' at line 4 column 1, while parsing a flow sequence at line 3 column 14. Fix the YAML syntax or remove the manifest until it can be parsed."
+                }
+            ])
         );
         assert_eq!(
             invalid_projection["expected_trust_manifest_diagnostics"][0]["kind"],
@@ -637,7 +643,7 @@ mod tests {
         let value: serde_json::Value =
             serde_json::from_str(&first_json).expect("parse security corpus JSON");
         assert_eq!(value["summary"]["package_count"], 16);
-        assert_eq!(value["summary"]["finding_count"], 24);
+        assert_eq!(value["summary"]["finding_count"], 38);
         assert_eq!(value["summary"]["suppressed_finding_count"], 0);
 
         let finding_keys = json_finding_order_keys(&value);
@@ -694,11 +700,20 @@ mod tests {
 
         let value: serde_json::Value =
             serde_json::from_str(&first_json).expect("parse security suppression JSON");
-        assert_eq!(value["summary"]["finding_count"], 0);
+        assert_eq!(value["summary"]["finding_count"], 2);
         assert_eq!(value["summary"]["suppressed_finding_count"], 1);
         assert_eq!(
             value["suppressed_findings"][0]["finding"]["rule_id"],
             "SEC009"
+        );
+        assert_eq!(
+            value["findings"]
+                .as_array()
+                .expect("findings array")
+                .iter()
+                .map(|finding| finding["rule_id"].as_str().expect("finding rule"))
+                .collect::<Vec<_>>(),
+            vec!["SUPPLY003", "SUPPLY004"]
         );
         assert_eq!(
             value["suppressed_findings"][0]["suppression"]["reason"],

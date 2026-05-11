@@ -51,7 +51,13 @@
       }
     ]
   },
-  "expected_findings": [],
+  "expected_findings": [
+    {
+      "rule_id": "SUPPLY012",
+      "path": "trust-manifest-invalid/agent-audit.trust.yaml",
+      "message": "The trust manifest has a parse error: Invalid trust manifest YAML: did not find expected ',' or ']' at line 4 column 1, while parsing a flow sequence at line 3 column 14. Fix the YAML syntax or remove the manifest until it can be parsed."
+    }
+  ],
   "expected_trust_manifest_diagnostics": [
     {
       "path": "trust-manifest-invalid/agent-audit.trust.yaml",

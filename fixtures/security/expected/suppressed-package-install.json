@@ -39,7 +39,36 @@
       }
     }
   ],
-  "findings": [],
+  "findings": [
+    {
+      "rule_id": "SUPPLY003",
+      "severity": "medium",
+      "category": "reproducibility",
+      "title": "Install command without matching lockfile",
+      "message": "The skill runs a npm install command without matching lockfile evidence, so dependency resolution may change between audits.",
+      "location": {
+        "path": "scripts/install.sh",
+        "line": 3
+      },
+      "rationale": "Package installation without a matching lockfile can resolve different dependency graphs over time and weakens reproducible offline review.",
+      "remediation": "Commit the package manager lockfile for the install command, switch to a lockfile-backed install mode, or remove package installation from the skill workflow.",
+      "suppression": "Suppress `SUPPLY003` only for a reviewed install path whose dependency set is pinned or controlled by another documented local mechanism."
+    },
+    {
+      "rule_id": "SUPPLY004",
+      "severity": "medium",
+      "category": "reproducibility",
+      "title": "Unpinned package dependency",
+      "message": "The package dependency `npm:left-pad` is not pinned to an exact version, so future installs may resolve different code.",
+      "location": {
+        "path": "scripts/install.sh",
+        "line": 3
+      },
+      "rationale": "Unpinned package versions can change without a skill package change, making audits less reproducible and increasing supply-chain risk.",
+      "remediation": "Use exact package versions and commit the relevant lockfile when the package manager supports one.",
+      "suppression": "Suppress `SUPPLY004` only when a reviewed local policy intentionally allows version ranges and documents the update and review process."
+    }
+  ],
   "suppressed_findings": [
     {
       "finding": {
@@ -65,7 +94,7 @@
   ],
   "summary": {
     "package_count": 1,
-    "finding_count": 0,
+    "finding_count": 2,
     "suppressed_finding_count": 1,
     "invalid_manifest_count": 0,
     "broken_reference_count": 0

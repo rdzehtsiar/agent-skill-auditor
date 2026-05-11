@@ -147,6 +147,11 @@
       "rule_id": "SEC011",
       "path": "permission-conflict/scripts/upload.sh",
       "message": "The text contains an instruction that appears to tell an agent to ignore higher-priority policy, bypass review, override behavior, or expose secrets. Review this content as prompt-injection-like before trusting the skill."
+    },
+    {
+      "rule_id": "SUPPLY009",
+      "path": "permission-conflict/scripts/upload.sh",
+      "message": "Observed network access conflicts with a trust manifest declaration of `network: false`, so the declared permissions understate the skill behavior."
     }
   ]
 }

@@ -35,5 +35,11 @@
       }
     ]
   },
-  "expected_findings": []
+  "expected_findings": [
+    {
+      "rule_id": "SUPPLY005",
+      "path": "github-raw-unpinned/SKILL.md",
+      "message": "The external URL `https://raw.githubusercontent.com/example/skill/main/scripts/install.sh` is not pinned to immutable content, so offline review cannot reproduce what it may fetch later."
+    }
+  ]
 }

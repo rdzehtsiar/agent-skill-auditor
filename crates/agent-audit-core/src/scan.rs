@@ -9,9 +9,11 @@ use crate::discovery::discover_skill_manifests;
 use crate::error::{AuditError, AuditResult};
 use crate::license_inventory::{inventory_license_files, inventory_manifest_license};
 use crate::model::{
-    CompatibilityMatrix, ScanReport, ScanSummary, SkillArtifactKind, SkillCompatibilityRow,
-    SkillFile, SkillFileKind, SkillFinding, SkillGraph, SkillManifest, SkillPackage,
-    SkillReference, SupplyChainInventory, SuppressedFinding, SuppressionMatch,
+    BinaryArtifactKind, CompatibilityMatrix, ExternalUrlKind, LicenseScope, PackageManagerKind,
+    PermissionEvidenceKind, PermissionKind, RemoteDependencyKind, ScanReport, ScanSummary,
+    SkillArtifactKind, SkillCompatibilityRow, SkillFile, SkillFileKind, SkillFinding, SkillGraph,
+    SkillManifest, SkillPackage, SkillReference, SupplyChainInventory, SupplyChainSourceKind,
+    SuppressedFinding, SuppressionMatch, TrustManifestDiagnosticKind,
 };
 use crate::offline_readiness::populate_offline_readiness;
 use crate::package_inventory::{
@@ -29,11 +31,19 @@ use agent_audit_hosts::{
 };
 use agent_audit_rules::{
     active_rule_metadata, evaluate_package_install_rules, evaluate_security_signal_rules,
-    evaluate_structural_rules, rule_counts_as_broken_reference, rule_counts_as_invalid_manifest,
-    EvaluatedRuleFinding, RuleCategory as RegistryCategory, RuleFrontmatterFieldFact,
-    RuleMalformedFrontmatterFact, RuleManifestFacts, RulePackageFacts, RulePackageFileFact,
-    RulePackageInstallContext, RuleParsedManifestFacts, RuleReferenceFact,
-    RuleSeverity as RegistrySeverity,
+    evaluate_structural_rules, evaluate_supply_chain_rules, rule_counts_as_broken_reference,
+    rule_counts_as_invalid_manifest, EvaluatedRuleFinding, RuleCategory as RegistryCategory,
+    RuleFrontmatterFieldFact, RuleMalformedFrontmatterFact, RuleManifestFacts, RulePackageFacts,
+    RulePackageFileFact, RulePackageInstallContext, RuleParsedManifestFacts, RuleReferenceFact,
+    RuleSeverity as RegistrySeverity, RuleSupplyChainBinaryFact, RuleSupplyChainBinaryKind,
+    RuleSupplyChainChecksumFact, RuleSupplyChainFacts, RuleSupplyChainLicenseFact,
+    RuleSupplyChainLicenseScope, RuleSupplyChainLockfileFact, RuleSupplyChainPackageFact,
+    RuleSupplyChainPackageManagerFact, RuleSupplyChainPackageManagerKind,
+    RuleSupplyChainPermissionEvidenceKind, RuleSupplyChainPermissionFact,
+    RuleSupplyChainPermissionKind, RuleSupplyChainRemoteDependencyFact,
+    RuleSupplyChainRemoteDependencyKind, RuleSupplyChainSourceKind,
+    RuleSupplyChainTrustManifestDiagnosticFact, RuleSupplyChainTrustManifestDiagnosticKind,
+    RuleSupplyChainTrustManifestFact, RuleSupplyChainUrlFact, RuleSupplyChainUrlKind,
 };
 use agent_audit_security::{
     analyze_instruction_security_text, classify_security_artifact, javascript_security_analyzer,
@@ -265,6 +275,11 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
     );
     reconcile_observed_permissions(&mut supply_chain, &security_signals);
     populate_offline_readiness(&mut supply_chain, &packages);
+    findings.extend(
+        evaluate_supply_chain_rules(&supply_chain_rule_facts(&packages, &supply_chain))
+            .into_iter()
+            .map(skill_finding_from_evaluated_rule),
+    );
     findings.extend(evaluate_compatibility_findings(
         &packages,
         options.config.as_ref(),
@@ -336,6 +351,186 @@ fn dedup_supply_chain_inventory(inventory: &mut SupplyChainInventory) {
     inventory.checksums.dedup();
     inventory.permissions.dedup();
     inventory.offline_readiness.dedup();
+}
+
+fn supply_chain_rule_facts(
+    packages: &[SkillPackage],
+    inventory: &SupplyChainInventory,
+) -> RuleSupplyChainFacts {
+    RuleSupplyChainFacts {
+        packages: packages
+            .iter()
+            .map(|package| RuleSupplyChainPackageFact {
+                root: package.root.clone(),
+                manifest_path: package.manifest_path.clone(),
+            })
+            .collect(),
+        licenses: inventory
+            .licenses
+            .iter()
+            .map(|license| RuleSupplyChainLicenseFact {
+                path: license.path.clone(),
+                line: license.line,
+                scope: match license.scope {
+                    LicenseScope::Repository => RuleSupplyChainLicenseScope::Repository,
+                    LicenseScope::Skill => RuleSupplyChainLicenseScope::Skill,
+                },
+                normalized: license.normalized.clone(),
+            })
+            .collect(),
+        trust_manifests: inventory
+            .trust_manifests
+            .iter()
+            .map(|manifest| RuleSupplyChainTrustManifestFact {
+                path: manifest.path.clone(),
+                line: manifest.line,
+                valid: manifest.valid,
+                has_pinned_provenance: manifest.provenance.as_ref().is_some_and(|provenance| {
+                    provenance
+                        .commit
+                        .as_deref()
+                        .is_some_and(|commit| commit.len() == 40)
+                }),
+                diagnostics: manifest
+                    .diagnostics
+                    .iter()
+                    .map(|diagnostic| RuleSupplyChainTrustManifestDiagnosticFact {
+                        path: diagnostic.path.clone(),
+                        line: diagnostic.line,
+                        kind: match diagnostic.kind {
+                            TrustManifestDiagnosticKind::ParseError => {
+                                RuleSupplyChainTrustManifestDiagnosticKind::ParseError
+                            }
+                            TrustManifestDiagnosticKind::SchemaError => {
+                                RuleSupplyChainTrustManifestDiagnosticKind::SchemaError
+                            }
+                            TrustManifestDiagnosticKind::UnknownField => {
+                                RuleSupplyChainTrustManifestDiagnosticKind::UnknownField
+                            }
+                        },
+                        message: diagnostic.message.clone(),
+                        field: diagnostic.field.clone(),
+                    })
+                    .collect(),
+            })
+            .collect(),
+        external_urls: inventory
+            .external_urls
+            .iter()
+            .map(|url| RuleSupplyChainUrlFact {
+                path: url.path.clone(),
+                line: url.line,
+                kind: match url.kind {
+                    ExternalUrlKind::GithubRaw => RuleSupplyChainUrlKind::GithubRaw,
+                    ExternalUrlKind::RemoteScript => RuleSupplyChainUrlKind::RemoteScript,
+                    ExternalUrlKind::DownloadedArtifact => {
+                        RuleSupplyChainUrlKind::DownloadedArtifact
+                    }
+                    _ => RuleSupplyChainUrlKind::Other,
+                },
+                normalized: url.normalized.clone(),
+                pinned: url.pinned,
+            })
+            .collect(),
+        remote_dependencies: inventory
+            .remote_dependencies
+            .iter()
+            .map(|dependency| RuleSupplyChainRemoteDependencyFact {
+                path: dependency.path.clone(),
+                line: dependency.line,
+                kind: match dependency.kind {
+                    RemoteDependencyKind::Package => RuleSupplyChainRemoteDependencyKind::Package,
+                    RemoteDependencyKind::Script => RuleSupplyChainRemoteDependencyKind::Script,
+                    RemoteDependencyKind::Artifact => RuleSupplyChainRemoteDependencyKind::Artifact,
+                    _ => RuleSupplyChainRemoteDependencyKind::Other,
+                },
+                package_manager: dependency.package_manager.map(rule_package_manager_kind),
+                name: dependency.name.clone(),
+                version: dependency.version.clone(),
+                normalized: dependency.normalized.clone(),
+                pinned: dependency.pinned,
+            })
+            .collect(),
+        package_managers: inventory
+            .package_managers
+            .iter()
+            .map(|manager| RuleSupplyChainPackageManagerFact {
+                path: manager.path.clone(),
+                line: manager.line,
+                source: match manager.source {
+                    SupplyChainSourceKind::Script => RuleSupplyChainSourceKind::Script,
+                    _ => RuleSupplyChainSourceKind::Other,
+                },
+                manager: rule_package_manager_kind(manager.manager),
+            })
+            .collect(),
+        lockfiles: inventory
+            .lockfiles
+            .iter()
+            .map(|lockfile| RuleSupplyChainLockfileFact {
+                path: lockfile.path.clone(),
+                manager: rule_package_manager_kind(lockfile.manager),
+            })
+            .collect(),
+        binaries: inventory
+            .binaries
+            .iter()
+            .map(|binary| RuleSupplyChainBinaryFact {
+                path: binary.path.clone(),
+                line: binary.line,
+                kind: match binary.kind {
+                    BinaryArtifactKind::Executable => RuleSupplyChainBinaryKind::Executable,
+                    _ => RuleSupplyChainBinaryKind::Other,
+                },
+                raw: binary.raw.clone(),
+            })
+            .collect(),
+        checksums: inventory
+            .checksums
+            .iter()
+            .map(|checksum| RuleSupplyChainChecksumFact {
+                path: checksum.path.clone(),
+                target_path: checksum.target_path.clone(),
+            })
+            .collect(),
+        permissions: inventory
+            .permissions
+            .iter()
+            .map(|permission| RuleSupplyChainPermissionFact {
+                path: permission.path.clone(),
+                line: permission.line,
+                kind: match permission.kind {
+                    PermissionKind::Network => RuleSupplyChainPermissionKind::Network,
+                    _ => RuleSupplyChainPermissionKind::Other,
+                },
+                evidence: match permission.evidence {
+                    PermissionEvidenceKind::Declared => {
+                        RuleSupplyChainPermissionEvidenceKind::Declared
+                    }
+                    PermissionEvidenceKind::Observed => {
+                        RuleSupplyChainPermissionEvidenceKind::Observed
+                    }
+                },
+                normalized: permission.normalized.clone(),
+            })
+            .collect(),
+    }
+}
+
+fn rule_package_manager_kind(manager: PackageManagerKind) -> RuleSupplyChainPackageManagerKind {
+    match manager {
+        PackageManagerKind::Npm => RuleSupplyChainPackageManagerKind::Npm,
+        PackageManagerKind::Yarn => RuleSupplyChainPackageManagerKind::Yarn,
+        PackageManagerKind::Pnpm => RuleSupplyChainPackageManagerKind::Pnpm,
+        PackageManagerKind::Pip => RuleSupplyChainPackageManagerKind::Pip,
+        PackageManagerKind::Poetry => RuleSupplyChainPackageManagerKind::Poetry,
+        PackageManagerKind::Uv => RuleSupplyChainPackageManagerKind::Uv,
+        PackageManagerKind::Cargo => RuleSupplyChainPackageManagerKind::Cargo,
+        PackageManagerKind::Go => RuleSupplyChainPackageManagerKind::Go,
+        PackageManagerKind::Gem => RuleSupplyChainPackageManagerKind::Gem,
+        PackageManagerKind::Composer => RuleSupplyChainPackageManagerKind::Composer,
+        PackageManagerKind::Unknown => RuleSupplyChainPackageManagerKind::Unknown,
+    }
 }
 
 fn compatibility_matrix_for_packages(
@@ -4141,7 +4336,7 @@ Read [parent](../outside.md), [absolute](/outside.md), and [windows](C:/outside.
             &report,
             &[Severity::Low]
         ));
-        assert!(!crate::fail::report_matches_fail_on(
+        assert!(crate::fail::report_matches_fail_on(
             &report,
             &[Severity::Medium]
         ));
@@ -4161,6 +4356,12 @@ ignore:
   - rule: SEC009
     path: scripts/install.sh
     reason: Package install command is reviewed in this fixture.
+  - rule: SUPPLY003
+    path: scripts/install.sh
+    reason: Package install command is reviewed in this fixture.
+  - rule: SUPPLY004
+    path: scripts/install.sh
+    reason: Package install command is reviewed in this fixture.
 "#,
         )
         .expect("valid config");
@@ -4175,10 +4376,14 @@ ignore:
         .expect("scan path");
 
         assert_eq!(report.summary.finding_count, 0);
-        assert_eq!(report.summary.suppressed_finding_count, 1);
+        assert_eq!(report.summary.suppressed_finding_count, 3);
         assert_eq!(
             suppressed_finding_projection(&report.suppressed_findings),
-            vec![("scripts/install.sh", "SEC009")]
+            vec![
+                ("scripts/install.sh", "SEC009"),
+                ("scripts/install.sh", "SUPPLY003"),
+                ("scripts/install.sh", "SUPPLY004")
+            ]
         );
         assert_eq!(
             report.suppressed_findings[0].finding.category,

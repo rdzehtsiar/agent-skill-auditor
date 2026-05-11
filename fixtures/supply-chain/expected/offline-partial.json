@@ -101,9 +101,24 @@
   },
   "expected_findings": [
     {
+      "rule_id": "SUPPLY005",
+      "path": "offline-partial/SKILL.md",
+      "message": "The remote dependency `github-raw:example/skill@setup.sh` is not pinned to immutable content, so reviewed behavior can change without a skill package change."
+    },
+    {
       "rule_id": "SEC009",
       "path": "offline-partial/scripts/install.sh",
       "message": "The artifact runs a JavaScript package install without nearby lockfile or exact version pinning evidence. This can make installs resolve different packages over time and increases reproducibility and supply-chain risk."
+    },
+    {
+      "rule_id": "SUPPLY003",
+      "path": "offline-partial/scripts/install.sh",
+      "message": "The skill runs a npm install command without matching lockfile evidence, so dependency resolution may change between audits."
+    },
+    {
+      "rule_id": "SUPPLY004",
+      "path": "offline-partial/scripts/install.sh",
+      "message": "The package dependency `npm:prettier@latest` is not pinned to an exact version, so future installs may resolve different code."
     }
   ]
 }

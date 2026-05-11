@@ -83,5 +83,11 @@
       }
     ]
   },
-  "expected_findings": []
+  "expected_findings": [
+    {
+      "rule_id": "SUPPLY006",
+      "path": "downloaded-executable-no-checksum/scripts/install.sh",
+      "message": "The skill downloads executable artifact `helper.exe` without matching checksum evidence, so reviewers cannot verify the downloaded bytes offline."
+    }
+  ]
 }

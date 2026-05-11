@@ -1069,17 +1069,23 @@ ignore:
             "# SPDX-License-Identifier: Apache-2.0\n\nnpm install left-pad\n",
         );
 
-        let output = run_scan_output(failing_scan_command(
+        let (output, result) = run_scan_attempt(failing_scan_command(
             &workspace,
             ReportFormat::Json,
             vec![Severity::Medium],
-        ))
-        .expect("medium fail_on should not match low security finding");
+        ));
+        let error = result.expect_err("medium fail_on should match supply-chain findings");
         let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
 
         assert_eq!(value["findings"][0]["rule_id"], "SEC009");
         assert_eq!(value["findings"][0]["severity"], "low");
         assert_eq!(value["findings"][0]["category"], "security");
+        assert_eq!(value["findings"][1]["rule_id"], "SUPPLY003");
+        assert_eq!(value["findings"][1]["severity"], "medium");
+        assert_eq!(value["findings"][1]["category"], "reproducibility");
+        assert!(error
+            .to_string()
+            .contains("fail_on matched an unsuppressed finding severity"));
     }
 
     #[test]
@@ -1110,8 +1116,10 @@ ignore:
         .expect("suppressed security finding should not trigger fail_on");
         let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
 
-        assert_eq!(value["summary"]["finding_count"], 0);
+        assert_eq!(value["summary"]["finding_count"], 2);
         assert_eq!(value["summary"]["suppressed_finding_count"], 1);
+        assert_eq!(value["findings"][0]["rule_id"], "SUPPLY003");
+        assert_eq!(value["findings"][1]["rule_id"], "SUPPLY004");
         assert_eq!(
             value["suppressed_findings"][0]["finding"]["rule_id"],
             "SEC009"

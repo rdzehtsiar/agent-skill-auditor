@@ -71,5 +71,11 @@
       }
     ]
   },
-  "expected_findings": []
+  "expected_findings": [
+    {
+      "rule_id": "SUPPLY007",
+      "path": "binary-artifact/bin/helper.exe",
+      "message": "The skill includes a binary executable without local checksum or pinned provenance evidence, so reviewers cannot tie it to reviewed source or release material."
+    }
+  ]
 }

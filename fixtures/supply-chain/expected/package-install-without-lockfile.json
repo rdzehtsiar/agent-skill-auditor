@@ -83,5 +83,11 @@
       }
     ]
   },
-  "expected_findings": []
+  "expected_findings": [
+    {
+      "rule_id": "SUPPLY003",
+      "path": "package-install-without-lockfile/scripts/install.sh",
+      "message": "The skill runs a npm install command without matching lockfile evidence, so dependency resolution may change between audits."
+    }
+  ]
 }

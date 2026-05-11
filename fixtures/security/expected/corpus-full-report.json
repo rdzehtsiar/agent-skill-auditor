@@ -581,6 +581,20 @@
       "suppression": "Suppress `SEC001` only for a reviewed bootstrap path that pins the source, verifies integrity, and documents why direct execution is still required."
     },
     {
+      "rule_id": "SUPPLY005",
+      "severity": "medium",
+      "category": "security",
+      "title": "Unpinned remote URL reference",
+      "message": "The remote dependency `script:install.sh` is not pinned to immutable content, so reviewed behavior can change without a skill package change.",
+      "location": {
+        "path": "curl-bash/scripts/install.sh",
+        "line": 3
+      },
+      "rationale": "Mutable remote URLs can serve different content over time, which prevents deterministic review and can introduce unreviewed behavior.",
+      "remediation": "Pin GitHub raw URLs to full commit SHAs, use immutable release assets with checksum evidence, or vendor reviewed content locally.",
+      "suppression": "Suppress `SUPPLY005` only for a reviewed remote reference whose mutability is intentional and whose update process is documented."
+    },
+    {
       "rule_id": "SEC002",
       "severity": "medium",
       "category": "security",
@@ -707,6 +721,76 @@
       "suppression": "Suppress `SEC002` only for a reviewed credential access path with least-privilege scope, documented handling, and no logging or unintended disclosure."
     },
     {
+      "rule_id": "SUPPLY004",
+      "severity": "medium",
+      "category": "reproducibility",
+      "title": "Unpinned package dependency",
+      "message": "The package dependency `npm:left-pad` is not pinned to an exact version, so future installs may resolve different code.",
+      "location": {
+        "path": "package-install-lockfile-backed/scripts/install.sh",
+        "line": 3
+      },
+      "rationale": "Unpinned package versions can change without a skill package change, making audits less reproducible and increasing supply-chain risk.",
+      "remediation": "Use exact package versions and commit the relevant lockfile when the package manager supports one.",
+      "suppression": "Suppress `SUPPLY004` only when a reviewed local policy intentionally allows version ranges and documents the update and review process."
+    },
+    {
+      "rule_id": "SUPPLY003",
+      "severity": "medium",
+      "category": "reproducibility",
+      "title": "Install command without matching lockfile",
+      "message": "The skill runs a npm install command without matching lockfile evidence, so dependency resolution may change between audits.",
+      "location": {
+        "path": "package-install-pinned/scripts/install.sh",
+        "line": 3
+      },
+      "rationale": "Package installation without a matching lockfile can resolve different dependency graphs over time and weakens reproducible offline review.",
+      "remediation": "Commit the package manager lockfile for the install command, switch to a lockfile-backed install mode, or remove package installation from the skill workflow.",
+      "suppression": "Suppress `SUPPLY003` only for a reviewed install path whose dependency set is pinned or controlled by another documented local mechanism."
+    },
+    {
+      "rule_id": "SUPPLY003",
+      "severity": "medium",
+      "category": "reproducibility",
+      "title": "Install command without matching lockfile",
+      "message": "The skill runs a pip install command without matching lockfile evidence, so dependency resolution may change between audits.",
+      "location": {
+        "path": "package-install-pinned/scripts/install.sh",
+        "line": 4
+      },
+      "rationale": "Package installation without a matching lockfile can resolve different dependency graphs over time and weakens reproducible offline review.",
+      "remediation": "Commit the package manager lockfile for the install command, switch to a lockfile-backed install mode, or remove package installation from the skill workflow.",
+      "suppression": "Suppress `SUPPLY003` only for a reviewed install path whose dependency set is pinned or controlled by another documented local mechanism."
+    },
+    {
+      "rule_id": "SUPPLY003",
+      "severity": "medium",
+      "category": "reproducibility",
+      "title": "Install command without matching lockfile",
+      "message": "The skill runs a cargo install command without matching lockfile evidence, so dependency resolution may change between audits.",
+      "location": {
+        "path": "package-install-pinned/scripts/install.sh",
+        "line": 5
+      },
+      "rationale": "Package installation without a matching lockfile can resolve different dependency graphs over time and weakens reproducible offline review.",
+      "remediation": "Commit the package manager lockfile for the install command, switch to a lockfile-backed install mode, or remove package installation from the skill workflow.",
+      "suppression": "Suppress `SUPPLY003` only for a reviewed install path whose dependency set is pinned or controlled by another documented local mechanism."
+    },
+    {
+      "rule_id": "SUPPLY003",
+      "severity": "medium",
+      "category": "reproducibility",
+      "title": "Install command without matching lockfile",
+      "message": "The skill runs a gem install command without matching lockfile evidence, so dependency resolution may change between audits.",
+      "location": {
+        "path": "package-install-pinned/scripts/install.sh",
+        "line": 6
+      },
+      "rationale": "Package installation without a matching lockfile can resolve different dependency graphs over time and weakens reproducible offline review.",
+      "remediation": "Commit the package manager lockfile for the install command, switch to a lockfile-backed install mode, or remove package installation from the skill workflow.",
+      "suppression": "Suppress `SUPPLY003` only for a reviewed install path whose dependency set is pinned or controlled by another documented local mechanism."
+    },
+    {
       "rule_id": "SEC009",
       "severity": "low",
       "category": "security",
@@ -719,6 +803,20 @@
       "rationale": "Package installs without a lockfile or equivalent pinning can resolve different dependency versions across machines and over time.",
       "remediation": "Use lockfile-backed install commands, root-level or same-subtree ecosystem lockfiles, or complete exact package pins. The initial policy treats npm/pnpm/yarn/bun, pip, cargo, gem, and system package installs without those offline-verifiable signals as `SEC009`.",
       "suppression": "Suppress `SEC009` only when another reviewed, offline-verifiable mechanism pins the package set and preserves reproducible installation behavior."
+    },
+    {
+      "rule_id": "SUPPLY003",
+      "severity": "medium",
+      "category": "reproducibility",
+      "title": "Install command without matching lockfile",
+      "message": "The skill runs a npm install command without matching lockfile evidence, so dependency resolution may change between audits.",
+      "location": {
+        "path": "package-install-unpinned/scripts/install.sh",
+        "line": 3
+      },
+      "rationale": "Package installation without a matching lockfile can resolve different dependency graphs over time and weakens reproducible offline review.",
+      "remediation": "Commit the package manager lockfile for the install command, switch to a lockfile-backed install mode, or remove package installation from the skill workflow.",
+      "suppression": "Suppress `SUPPLY003` only for a reviewed install path whose dependency set is pinned or controlled by another documented local mechanism."
     },
     {
       "rule_id": "SEC009",
@@ -735,6 +833,34 @@
       "suppression": "Suppress `SEC009` only when another reviewed, offline-verifiable mechanism pins the package set and preserves reproducible installation behavior."
     },
     {
+      "rule_id": "SUPPLY003",
+      "severity": "medium",
+      "category": "reproducibility",
+      "title": "Install command without matching lockfile",
+      "message": "The skill runs a pip install command without matching lockfile evidence, so dependency resolution may change between audits.",
+      "location": {
+        "path": "package-install-unpinned/scripts/install.sh",
+        "line": 4
+      },
+      "rationale": "Package installation without a matching lockfile can resolve different dependency graphs over time and weakens reproducible offline review.",
+      "remediation": "Commit the package manager lockfile for the install command, switch to a lockfile-backed install mode, or remove package installation from the skill workflow.",
+      "suppression": "Suppress `SUPPLY003` only for a reviewed install path whose dependency set is pinned or controlled by another documented local mechanism."
+    },
+    {
+      "rule_id": "SUPPLY004",
+      "severity": "medium",
+      "category": "reproducibility",
+      "title": "Unpinned package dependency",
+      "message": "The package dependency `pip:demo` is not pinned to an exact version, so future installs may resolve different code.",
+      "location": {
+        "path": "package-install-unpinned/scripts/install.sh",
+        "line": 4
+      },
+      "rationale": "Unpinned package versions can change without a skill package change, making audits less reproducible and increasing supply-chain risk.",
+      "remediation": "Use exact package versions and commit the relevant lockfile when the package manager supports one.",
+      "suppression": "Suppress `SUPPLY004` only when a reviewed local policy intentionally allows version ranges and documents the update and review process."
+    },
+    {
       "rule_id": "SEC009",
       "severity": "low",
       "category": "security",
@@ -749,6 +875,34 @@
       "suppression": "Suppress `SEC009` only when another reviewed, offline-verifiable mechanism pins the package set and preserves reproducible installation behavior."
     },
     {
+      "rule_id": "SUPPLY003",
+      "severity": "medium",
+      "category": "reproducibility",
+      "title": "Install command without matching lockfile",
+      "message": "The skill runs a cargo install command without matching lockfile evidence, so dependency resolution may change between audits.",
+      "location": {
+        "path": "package-install-unpinned/scripts/install.sh",
+        "line": 5
+      },
+      "rationale": "Package installation without a matching lockfile can resolve different dependency graphs over time and weakens reproducible offline review.",
+      "remediation": "Commit the package manager lockfile for the install command, switch to a lockfile-backed install mode, or remove package installation from the skill workflow.",
+      "suppression": "Suppress `SUPPLY003` only for a reviewed install path whose dependency set is pinned or controlled by another documented local mechanism."
+    },
+    {
+      "rule_id": "SUPPLY004",
+      "severity": "medium",
+      "category": "reproducibility",
+      "title": "Unpinned package dependency",
+      "message": "The package dependency `cargo:ripgrep` is not pinned to an exact version, so future installs may resolve different code.",
+      "location": {
+        "path": "package-install-unpinned/scripts/install.sh",
+        "line": 5
+      },
+      "rationale": "Unpinned package versions can change without a skill package change, making audits less reproducible and increasing supply-chain risk.",
+      "remediation": "Use exact package versions and commit the relevant lockfile when the package manager supports one.",
+      "suppression": "Suppress `SUPPLY004` only when a reviewed local policy intentionally allows version ranges and documents the update and review process."
+    },
+    {
       "rule_id": "SEC009",
       "severity": "low",
       "category": "security",
@@ -761,6 +915,34 @@
       "rationale": "Package installs without a lockfile or equivalent pinning can resolve different dependency versions across machines and over time.",
       "remediation": "Use lockfile-backed install commands, root-level or same-subtree ecosystem lockfiles, or complete exact package pins. The initial policy treats npm/pnpm/yarn/bun, pip, cargo, gem, and system package installs without those offline-verifiable signals as `SEC009`.",
       "suppression": "Suppress `SEC009` only when another reviewed, offline-verifiable mechanism pins the package set and preserves reproducible installation behavior."
+    },
+    {
+      "rule_id": "SUPPLY003",
+      "severity": "medium",
+      "category": "reproducibility",
+      "title": "Install command without matching lockfile",
+      "message": "The skill runs a gem install command without matching lockfile evidence, so dependency resolution may change between audits.",
+      "location": {
+        "path": "package-install-unpinned/scripts/install.sh",
+        "line": 6
+      },
+      "rationale": "Package installation without a matching lockfile can resolve different dependency graphs over time and weakens reproducible offline review.",
+      "remediation": "Commit the package manager lockfile for the install command, switch to a lockfile-backed install mode, or remove package installation from the skill workflow.",
+      "suppression": "Suppress `SUPPLY003` only for a reviewed install path whose dependency set is pinned or controlled by another documented local mechanism."
+    },
+    {
+      "rule_id": "SUPPLY004",
+      "severity": "medium",
+      "category": "reproducibility",
+      "title": "Unpinned package dependency",
+      "message": "The package dependency `gem:rake` is not pinned to an exact version, so future installs may resolve different code.",
+      "location": {
+        "path": "package-install-unpinned/scripts/install.sh",
+        "line": 6
+      },
+      "rationale": "Unpinned package versions can change without a skill package change, making audits less reproducible and increasing supply-chain risk.",
+      "remediation": "Use exact package versions and commit the relevant lockfile when the package manager supports one.",
+      "suppression": "Suppress `SUPPLY004` only when a reviewed local policy intentionally allows version ranges and documents the update and review process."
     },
     {
       "rule_id": "SEC009",
@@ -817,6 +999,20 @@
       "rationale": "Package installs without a lockfile or equivalent pinning can resolve different dependency versions across machines and over time.",
       "remediation": "Use lockfile-backed install commands, root-level or same-subtree ecosystem lockfiles, or complete exact package pins. The initial policy treats npm/pnpm/yarn/bun, pip, cargo, gem, and system package installs without those offline-verifiable signals as `SEC009`.",
       "suppression": "Suppress `SEC009` only when another reviewed, offline-verifiable mechanism pins the package set and preserves reproducible installation behavior."
+    },
+    {
+      "rule_id": "SUPPLY003",
+      "severity": "medium",
+      "category": "reproducibility",
+      "title": "Install command without matching lockfile",
+      "message": "The skill runs a npm install command without matching lockfile evidence, so dependency resolution may change between audits.",
+      "location": {
+        "path": "suppressed-package-install/scripts/install.sh",
+        "line": 3
+      },
+      "rationale": "Package installation without a matching lockfile can resolve different dependency graphs over time and weakens reproducible offline review.",
+      "remediation": "Commit the package manager lockfile for the install command, switch to a lockfile-backed install mode, or remove package installation from the skill workflow.",
+      "suppression": "Suppress `SUPPLY003` only for a reviewed install path whose dependency set is pinned or controlled by another documented local mechanism."
     },
     {
       "rule_id": "SEC007",
@@ -906,7 +1102,7 @@
   "suppressed_findings": [],
   "summary": {
     "package_count": 16,
-    "finding_count": 24,
+    "finding_count": 38,
     "suppressed_finding_count": 0,
     "invalid_manifest_count": 0,
     "broken_reference_count": 0

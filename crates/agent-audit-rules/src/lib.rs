@@ -31,6 +31,14 @@ pub enum RuleId {
     Skill040,
     Skill041,
     Skill050,
+    Supply002,
+    Supply003,
+    Supply004,
+    Supply005,
+    Supply006,
+    Supply007,
+    Supply009,
+    Supply012,
 }
 
 impl RuleId {
@@ -56,6 +64,14 @@ impl RuleId {
             Self::Skill040 => "SKILL040",
             Self::Skill041 => "SKILL041",
             Self::Skill050 => "SKILL050",
+            Self::Supply002 => "SUPPLY002",
+            Self::Supply003 => "SUPPLY003",
+            Self::Supply004 => "SUPPLY004",
+            Self::Supply005 => "SUPPLY005",
+            Self::Supply006 => "SUPPLY006",
+            Self::Supply007 => "SUPPLY007",
+            Self::Supply009 => "SUPPLY009",
+            Self::Supply012 => "SUPPLY012",
         }
     }
 
@@ -81,6 +97,14 @@ impl RuleId {
             b"SKILL040" => Some(Self::Skill040),
             b"SKILL041" => Some(Self::Skill041),
             b"SKILL050" => Some(Self::Skill050),
+            b"SUPPLY002" => Some(Self::Supply002),
+            b"SUPPLY003" => Some(Self::Supply003),
+            b"SUPPLY004" => Some(Self::Supply004),
+            b"SUPPLY005" => Some(Self::Supply005),
+            b"SUPPLY006" => Some(Self::Supply006),
+            b"SUPPLY007" => Some(Self::Supply007),
+            b"SUPPLY009" => Some(Self::Supply009),
+            b"SUPPLY012" => Some(Self::Supply012),
             _ => None,
         }
     }
@@ -180,6 +204,7 @@ pub enum RuleInputNodeType {
     RelativeReference,
     SecurityArtifact,
     SkillPackage,
+    SupplyChainInventory,
 }
 
 impl RuleInputNodeType {
@@ -190,6 +215,7 @@ impl RuleInputNodeType {
             Self::RelativeReference => "relative-reference",
             Self::SecurityArtifact => "security-artifact",
             Self::SkillPackage => "skill-package",
+            Self::SupplyChainInventory => "supply-chain-inventory",
         }
     }
 }
@@ -249,8 +275,29 @@ pub const STRUCTURAL_RULE_IDS: &[&str] = &[
 ];
 
 pub const ACTIVE_RULE_IDS: &[&str] = &[
-    "SEC001", "SEC002", "SEC003", "SEC007", "SEC009", "SEC011", "SEC012", "SKILL001", "SKILL002",
-    "SKILL010", "SKILL020", "SKILL030", "SKILL040", "SKILL041", "SKILL050",
+    "SEC001",
+    "SEC002",
+    "SEC003",
+    "SEC007",
+    "SEC009",
+    "SEC011",
+    "SEC012",
+    "SKILL001",
+    "SKILL002",
+    "SKILL010",
+    "SKILL020",
+    "SKILL030",
+    "SKILL040",
+    "SKILL041",
+    "SKILL050",
+    "SUPPLY002",
+    "SUPPLY003",
+    "SUPPLY004",
+    "SUPPLY005",
+    "SUPPLY006",
+    "SUPPLY007",
+    "SUPPLY009",
+    "SUPPLY012",
 ];
 
 pub const RESERVED_RULE_IDS: &[&str] = &["SEC004", "SEC005", "SEC006", "SEC008", "SEC010"];
@@ -266,6 +313,7 @@ const SECURITY_TEXT_INPUT: &[RuleInputNodeType] = &[
     RuleInputNodeType::SecurityArtifact,
 ];
 const SKILL_PACKAGE_INPUT: &[RuleInputNodeType] = &[RuleInputNodeType::SkillPackage];
+const SUPPLY_CHAIN_INPUT: &[RuleInputNodeType] = &[RuleInputNodeType::SupplyChainInventory];
 
 const SEC001_EXAMPLES: &[RuleExample] = &[RuleExample {
     summary: "Download remote content before reviewing and executing it.",
@@ -387,6 +435,56 @@ const SKILL050_EXAMPLES: &[RuleExample] = &[RuleExample {
     non_compliant:
         "---\nname: reviewer\ndescription: Reviews changes.\nallowed-tools:\n  - Bash\n---\n",
     compliant: "---\nname: reviewer\ndescription: Reviews changes.\ntools:\n  - shell\n---\n",
+}];
+
+const SUPPLY002_EXAMPLES: &[RuleExample] = &[RuleExample {
+    summary: "Keep reviewable license evidence recognizable.",
+    non_compliant: "skills/review/LICENSE.txt contains unrecognized placeholder license text.",
+    compliant: "skills/review/SKILL.md declares `license: Apache-2.0` or ships a recognizable `skills/review/LICENSE.txt`.",
+}];
+
+const SUPPLY003_EXAMPLES: &[RuleExample] = &[RuleExample {
+    summary: "Back package installation commands with a matching lockfile.",
+    non_compliant: "npm install left-pad@1.3.0",
+    compliant: "npm ci\n# package-lock.json is present in the skill package.",
+}];
+
+const SUPPLY004_EXAMPLES: &[RuleExample] = &[RuleExample {
+    summary: "Pin package dependencies to exact versions.",
+    non_compliant: "\"prettier\": \"^3.2.5\"",
+    compliant: "\"prettier\": \"3.2.5\"",
+}];
+
+const SUPPLY005_EXAMPLES: &[RuleExample] = &[RuleExample {
+    summary: "Pin remote scripts and artifact URLs to immutable versions.",
+    non_compliant: "https://raw.githubusercontent.com/example/skill/main/setup.sh",
+    compliant: "https://raw.githubusercontent.com/example/skill/0123456789abcdef0123456789abcdef01234567/setup.sh",
+}];
+
+const SUPPLY006_EXAMPLES: &[RuleExample] = &[RuleExample {
+    summary: "Verify downloaded executable artifacts before use.",
+    non_compliant: "curl -L https://downloads.example/tool.exe -o tool.exe",
+    compliant:
+        "curl -L https://downloads.example/tool-v1.2.3.exe -o tool.exe\nsha256sum -c checksums.txt",
+}];
+
+const SUPPLY007_EXAMPLES: &[RuleExample] = &[RuleExample {
+    summary: "Provide provenance or checksum evidence for local executable binaries.",
+    non_compliant: "bin/helper.exe is shipped without checksum or provenance evidence.",
+    compliant: "bin/helper.exe is listed in checksums.txt or covered by a trust manifest with pinned source commit.",
+}];
+
+const SUPPLY009_EXAMPLES: &[RuleExample] = &[RuleExample {
+    summary: "Keep declared trust-manifest permissions aligned with observed behavior.",
+    non_compliant:
+        "permissions.network: false\n# scripts/upload.sh runs curl https://api.example/upload",
+    compliant: "permissions.network: true\n# or remove the network call.",
+}];
+
+const SUPPLY012_EXAMPLES: &[RuleExample] = &[RuleExample {
+    summary: "Keep trust manifests parseable and within the supported schema.",
+    non_compliant: "skill:\n  name: [broken",
+    compliant: "skill:\n  name: review\n  version: 1.0.0",
 }];
 
 pub const RULE_METADATA: &[RuleMetadata] = &[
@@ -673,6 +771,118 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
             "Suppress `SKILL050` only when a documented wrapper, host version, or project policy intentionally accepts the ignored metadata, and include that context in the reason.",
         examples: SKILL050_EXAMPLES,
     },
+    RuleMetadata {
+        id: RuleId::Supply002,
+        status: RuleStatus::Active,
+        title: "Unknown skill-local license evidence",
+        severity: RuleSeverity::Low,
+        category: RuleCategory::Reproducibility,
+        applicable_profiles: ALL_HOST_PROFILES,
+        input_node_types: SUPPLY_CHAIN_INPUT,
+        rationale: "Unknown skill-local license evidence makes offline review and redistribution decisions harder, even when the package may otherwise be safe to run.",
+        remediation: "Declare a recognizable SPDX license in `SKILL.md`, or replace unknown license text with clear license evidence.",
+        suppression_guidance:
+            "Suppress `SUPPLY002` only when license evidence has been reviewed elsewhere and the suppression reason identifies that reviewed source.",
+        examples: SUPPLY002_EXAMPLES,
+    },
+    RuleMetadata {
+        id: RuleId::Supply003,
+        status: RuleStatus::Active,
+        title: "Install command without matching lockfile",
+        severity: RuleSeverity::Medium,
+        category: RuleCategory::Reproducibility,
+        applicable_profiles: ALL_HOST_PROFILES,
+        input_node_types: SUPPLY_CHAIN_INPUT,
+        rationale: "Package installation without a matching lockfile can resolve different dependency graphs over time and weakens reproducible offline review.",
+        remediation: "Commit the package manager lockfile for the install command, switch to a lockfile-backed install mode, or remove package installation from the skill workflow.",
+        suppression_guidance:
+            "Suppress `SUPPLY003` only for a reviewed install path whose dependency set is pinned or controlled by another documented local mechanism.",
+        examples: SUPPLY003_EXAMPLES,
+    },
+    RuleMetadata {
+        id: RuleId::Supply004,
+        status: RuleStatus::Active,
+        title: "Unpinned package dependency",
+        severity: RuleSeverity::Medium,
+        category: RuleCategory::Reproducibility,
+        applicable_profiles: ALL_HOST_PROFILES,
+        input_node_types: SUPPLY_CHAIN_INPUT,
+        rationale: "Unpinned package versions can change without a skill package change, making audits less reproducible and increasing supply-chain risk.",
+        remediation: "Use exact package versions and commit the relevant lockfile when the package manager supports one.",
+        suppression_guidance:
+            "Suppress `SUPPLY004` only when a reviewed local policy intentionally allows version ranges and documents the update and review process.",
+        examples: SUPPLY004_EXAMPLES,
+    },
+    RuleMetadata {
+        id: RuleId::Supply005,
+        status: RuleStatus::Active,
+        title: "Unpinned remote URL reference",
+        severity: RuleSeverity::Medium,
+        category: RuleCategory::Security,
+        applicable_profiles: ALL_HOST_PROFILES,
+        input_node_types: SUPPLY_CHAIN_INPUT,
+        rationale: "Mutable remote URLs can serve different content over time, which prevents deterministic review and can introduce unreviewed behavior.",
+        remediation: "Pin GitHub raw URLs to full commit SHAs, use immutable release assets with checksum evidence, or vendor reviewed content locally.",
+        suppression_guidance:
+            "Suppress `SUPPLY005` only for a reviewed remote reference whose mutability is intentional and whose update process is documented.",
+        examples: SUPPLY005_EXAMPLES,
+    },
+    RuleMetadata {
+        id: RuleId::Supply006,
+        status: RuleStatus::Active,
+        title: "Downloaded executable without checksum",
+        severity: RuleSeverity::High,
+        category: RuleCategory::Security,
+        applicable_profiles: ALL_HOST_PROFILES,
+        input_node_types: SUPPLY_CHAIN_INPUT,
+        rationale: "Downloaded executables can affect local execution directly, and missing checksum evidence prevents offline integrity review.",
+        remediation: "Pin the download source and add local SHA-256 checksum evidence for the downloaded executable, or ship a reviewed local artifact instead.",
+        suppression_guidance:
+            "Suppress `SUPPLY006` only for a reviewed download whose integrity is verified by another documented local control.",
+        examples: SUPPLY006_EXAMPLES,
+    },
+    RuleMetadata {
+        id: RuleId::Supply007,
+        status: RuleStatus::Active,
+        title: "Binary executable without provenance evidence",
+        severity: RuleSeverity::Medium,
+        category: RuleCategory::Security,
+        applicable_profiles: ALL_HOST_PROFILES,
+        input_node_types: SUPPLY_CHAIN_INPUT,
+        rationale: "Local binary executables are opaque to static source review unless checksum or provenance evidence ties them to reviewed source or release material.",
+        remediation: "Add checksum evidence for the binary, document provenance in a trust manifest with a pinned source commit, or remove the binary artifact.",
+        suppression_guidance:
+            "Suppress `SUPPLY007` only when the binary was reviewed through a documented local provenance process and the suppression reason references that review.",
+        examples: SUPPLY007_EXAMPLES,
+    },
+    RuleMetadata {
+        id: RuleId::Supply009,
+        status: RuleStatus::Active,
+        title: "Observed permission conflicts with trust manifest",
+        severity: RuleSeverity::Medium,
+        category: RuleCategory::Security,
+        applicable_profiles: ALL_HOST_PROFILES,
+        input_node_types: SUPPLY_CHAIN_INPUT,
+        rationale: "A trust manifest that declares network access disabled while static evidence observes network access can mislead reviewers about the skill's behavior.",
+        remediation: "Update the trust manifest to declare the observed permission, or remove the behavior that conflicts with the declaration.",
+        suppression_guidance:
+            "Suppress `SUPPLY009` only when the observed behavior is unreachable in the reviewed deployment path and that condition is documented.",
+        examples: SUPPLY009_EXAMPLES,
+    },
+    RuleMetadata {
+        id: RuleId::Supply012,
+        status: RuleStatus::Active,
+        title: "Invalid trust manifest diagnostic",
+        severity: RuleSeverity::Low,
+        category: RuleCategory::Reproducibility,
+        applicable_profiles: ALL_HOST_PROFILES,
+        input_node_types: SUPPLY_CHAIN_INPUT,
+        rationale: "Invalid or unknown trust manifest content cannot be relied on as deterministic provenance, permission, or dependency evidence.",
+        remediation: "Fix trust manifest YAML and supported field names, or remove unsupported fields until the schema intentionally accepts them.",
+        suppression_guidance:
+            "Suppress `SUPPLY012` only when the diagnostic is understood and a local policy intentionally retains the unsupported trust manifest content.",
+        examples: SUPPLY012_EXAMPLES,
+    },
 ];
 
 pub const RULE_REGISTRY: RuleRegistry = RuleRegistry::new(RULE_METADATA);
@@ -718,6 +928,178 @@ pub struct RulePackageInstallContext {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RulePackageFileFact {
     pub path: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RuleSupplyChainFacts {
+    pub packages: Vec<RuleSupplyChainPackageFact>,
+    pub licenses: Vec<RuleSupplyChainLicenseFact>,
+    pub trust_manifests: Vec<RuleSupplyChainTrustManifestFact>,
+    pub external_urls: Vec<RuleSupplyChainUrlFact>,
+    pub remote_dependencies: Vec<RuleSupplyChainRemoteDependencyFact>,
+    pub package_managers: Vec<RuleSupplyChainPackageManagerFact>,
+    pub lockfiles: Vec<RuleSupplyChainLockfileFact>,
+    pub binaries: Vec<RuleSupplyChainBinaryFact>,
+    pub checksums: Vec<RuleSupplyChainChecksumFact>,
+    pub permissions: Vec<RuleSupplyChainPermissionFact>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleSupplyChainPackageFact {
+    pub root: String,
+    pub manifest_path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleSupplyChainLicenseFact {
+    pub path: String,
+    pub line: Option<usize>,
+    pub scope: RuleSupplyChainLicenseScope,
+    pub normalized: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuleSupplyChainLicenseScope {
+    Repository,
+    Skill,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleSupplyChainTrustManifestFact {
+    pub path: String,
+    pub line: Option<usize>,
+    pub valid: Option<bool>,
+    pub has_pinned_provenance: bool,
+    pub diagnostics: Vec<RuleSupplyChainTrustManifestDiagnosticFact>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleSupplyChainTrustManifestDiagnosticFact {
+    pub path: String,
+    pub line: Option<usize>,
+    pub kind: RuleSupplyChainTrustManifestDiagnosticKind,
+    pub message: String,
+    pub field: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuleSupplyChainTrustManifestDiagnosticKind {
+    ParseError,
+    SchemaError,
+    UnknownField,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleSupplyChainUrlFact {
+    pub path: String,
+    pub line: Option<usize>,
+    pub kind: RuleSupplyChainUrlKind,
+    pub normalized: String,
+    pub pinned: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuleSupplyChainUrlKind {
+    GithubRaw,
+    RemoteScript,
+    DownloadedArtifact,
+    Other,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleSupplyChainRemoteDependencyFact {
+    pub path: String,
+    pub line: Option<usize>,
+    pub kind: RuleSupplyChainRemoteDependencyKind,
+    pub package_manager: Option<RuleSupplyChainPackageManagerKind>,
+    pub name: Option<String>,
+    pub version: Option<String>,
+    pub normalized: String,
+    pub pinned: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuleSupplyChainRemoteDependencyKind {
+    Package,
+    Script,
+    Artifact,
+    Other,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleSupplyChainPackageManagerFact {
+    pub path: String,
+    pub line: Option<usize>,
+    pub source: RuleSupplyChainSourceKind,
+    pub manager: RuleSupplyChainPackageManagerKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleSupplyChainLockfileFact {
+    pub path: String,
+    pub manager: RuleSupplyChainPackageManagerKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuleSupplyChainPackageManagerKind {
+    Npm,
+    Yarn,
+    Pnpm,
+    Pip,
+    Poetry,
+    Uv,
+    Cargo,
+    Go,
+    Gem,
+    Composer,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuleSupplyChainSourceKind {
+    Script,
+    Other,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleSupplyChainBinaryFact {
+    pub path: String,
+    pub line: Option<usize>,
+    pub kind: RuleSupplyChainBinaryKind,
+    pub raw: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuleSupplyChainBinaryKind {
+    Executable,
+    Other,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleSupplyChainChecksumFact {
+    pub path: String,
+    pub target_path: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleSupplyChainPermissionFact {
+    pub path: String,
+    pub line: Option<usize>,
+    pub kind: RuleSupplyChainPermissionKind,
+    pub evidence: RuleSupplyChainPermissionEvidenceKind,
+    pub normalized: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuleSupplyChainPermissionKind {
+    Network,
+    Other,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuleSupplyChainPermissionEvidenceKind {
+    Declared,
+    Observed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -849,6 +1231,494 @@ pub fn evaluate_package_install_rules(
     let mut findings = findings.into_values().collect::<Vec<_>>();
     sort_evaluated_findings(&mut findings);
     findings
+}
+
+pub fn evaluate_supply_chain_rules(facts: &RuleSupplyChainFacts) -> Vec<EvaluatedRuleFinding> {
+    let mut findings = BTreeMap::new();
+
+    for package in &facts.packages {
+        let scope = SupplyPackageScope::new(package, &facts.packages);
+        for license in facts
+            .licenses
+            .iter()
+            .filter(|license| scope.contains(&license.path))
+            .filter(|license| license.scope == RuleSupplyChainLicenseScope::Skill)
+            .filter(|license| license.normalized == "unknown")
+        {
+            findings.insert(
+                supply_dedup_key(
+                    RuleId::Supply002,
+                    &license.path,
+                    license.line,
+                    &license.normalized,
+                ),
+                unknown_skill_license_finding(license),
+            );
+        }
+        for manager in facts
+            .package_managers
+            .iter()
+            .filter(|manager| scope.contains(&manager.path))
+            .filter(|manager| manager.source == RuleSupplyChainSourceKind::Script)
+            .filter(|manager| !has_matching_lockfile(facts, &scope, manager.manager))
+        {
+            findings.insert(
+                supply_dedup_key(RuleId::Supply003, &manager.path, manager.line, ""),
+                install_without_lockfile_supply_finding(manager),
+            );
+        }
+        for dependency in facts
+            .remote_dependencies
+            .iter()
+            .filter(|dependency| scope.contains(&dependency.path))
+        {
+            if dependency.kind == RuleSupplyChainRemoteDependencyKind::Package
+                && dependency.pinned == Some(false)
+            {
+                findings.insert(
+                    supply_dedup_key(
+                        RuleId::Supply004,
+                        &dependency.path,
+                        dependency.line,
+                        &dependency.normalized,
+                    ),
+                    unpinned_package_dependency_finding(dependency),
+                );
+            } else if matches!(
+                dependency.kind,
+                RuleSupplyChainRemoteDependencyKind::Script
+                    | RuleSupplyChainRemoteDependencyKind::Artifact
+            ) && dependency.pinned == Some(false)
+                && !is_downloaded_executable_without_checksum(facts, &scope, dependency)
+            {
+                findings.insert(
+                    supply_dedup_key(
+                        RuleId::Supply005,
+                        &dependency.path,
+                        dependency.line,
+                        &dependency.normalized,
+                    ),
+                    unpinned_remote_dependency_finding(dependency),
+                );
+            }
+            if is_downloaded_executable_without_checksum(facts, &scope, dependency) {
+                findings.insert(
+                    supply_dedup_key(
+                        RuleId::Supply006,
+                        &dependency.path,
+                        dependency.line,
+                        &dependency.normalized,
+                    ),
+                    downloaded_executable_without_checksum_finding(dependency),
+                );
+            }
+        }
+        for url in facts
+            .external_urls
+            .iter()
+            .filter(|url| scope.contains(&url.path))
+            .filter(|url| url.pinned == Some(false))
+            .filter(|url| {
+                matches!(
+                    url.kind,
+                    RuleSupplyChainUrlKind::GithubRaw
+                        | RuleSupplyChainUrlKind::RemoteScript
+                        | RuleSupplyChainUrlKind::DownloadedArtifact
+                )
+            })
+            .filter(|url| !has_matching_remote_dependency_for_url(facts, &scope, url))
+        {
+            findings.insert(
+                supply_dedup_key(RuleId::Supply005, &url.path, url.line, &url.normalized),
+                unpinned_external_url_finding(url),
+            );
+        }
+        for binary in facts
+            .binaries
+            .iter()
+            .filter(|binary| scope.contains(&binary.path))
+            .filter(|binary| binary.kind == RuleSupplyChainBinaryKind::Executable)
+            .filter(|binary| !has_binary_provenance(facts, &scope, binary))
+        {
+            findings.insert(
+                supply_dedup_key(RuleId::Supply007, &binary.path, binary.line, ""),
+                binary_without_provenance_finding(binary),
+            );
+        }
+        if declares_network_false(facts, &scope) {
+            for permission in facts
+                .permissions
+                .iter()
+                .filter(|permission| scope.contains(&permission.path))
+                .filter(|permission| permission.kind == RuleSupplyChainPermissionKind::Network)
+                .filter(|permission| {
+                    permission.evidence == RuleSupplyChainPermissionEvidenceKind::Observed
+                })
+            {
+                findings.insert(
+                    supply_dedup_key(
+                        RuleId::Supply009,
+                        &permission.path,
+                        permission.line,
+                        &permission.normalized,
+                    ),
+                    permission_conflict_finding(permission),
+                );
+            }
+        }
+        for diagnostic in facts
+            .trust_manifests
+            .iter()
+            .filter(|manifest| scope.contains(&manifest.path))
+            .flat_map(|manifest| manifest.diagnostics.iter())
+        {
+            findings.insert(
+                supply_dedup_key(
+                    RuleId::Supply012,
+                    &diagnostic.path,
+                    diagnostic.line,
+                    &diagnostic.message,
+                ),
+                trust_manifest_diagnostic_finding(diagnostic),
+            );
+        }
+    }
+
+    let mut findings = findings.into_values().collect::<Vec<_>>();
+    sort_evaluated_findings(&mut findings);
+    findings
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct SupplyFindingKey {
+    rule_id: RuleId,
+    path: String,
+    line: Option<usize>,
+    detail: String,
+}
+
+fn supply_dedup_key(
+    rule_id: RuleId,
+    path: &str,
+    line: Option<usize>,
+    detail: &str,
+) -> SupplyFindingKey {
+    SupplyFindingKey {
+        rule_id,
+        path: path.to_owned(),
+        line,
+        detail: detail.to_owned(),
+    }
+}
+
+struct SupplyPackageScope<'a> {
+    root: &'a str,
+    manifest_path: &'a str,
+    nested_roots: Vec<&'a str>,
+}
+
+impl<'a> SupplyPackageScope<'a> {
+    fn new(
+        package: &'a RuleSupplyChainPackageFact,
+        packages: &'a [RuleSupplyChainPackageFact],
+    ) -> Self {
+        let root = package.root.trim_matches('/');
+        let mut nested_roots = packages
+            .iter()
+            .filter(|candidate| candidate.manifest_path != package.manifest_path)
+            .map(|candidate| candidate.root.trim_matches('/'))
+            .filter(|candidate_root| !candidate_root.is_empty())
+            .filter(|candidate_root| supply_path_is_inside_root(candidate_root, root))
+            .collect::<Vec<_>>();
+        nested_roots.sort();
+        nested_roots.dedup();
+
+        Self {
+            root,
+            manifest_path: &package.manifest_path,
+            nested_roots,
+        }
+    }
+
+    fn contains(&self, path: &str) -> bool {
+        (path == self.manifest_path
+            || self.root.is_empty()
+            || path == self.root
+            || path
+                .strip_prefix(self.root)
+                .is_some_and(|remainder| remainder.starts_with('/')))
+            && !self
+                .nested_roots
+                .iter()
+                .any(|nested_root| supply_path_is_inside_root(path, nested_root))
+    }
+}
+
+fn supply_path_is_inside_root(path: &str, root: &str) -> bool {
+    root.is_empty()
+        || path == root
+        || path
+            .strip_prefix(root)
+            .is_some_and(|remainder| remainder.starts_with('/'))
+}
+
+fn has_matching_lockfile(
+    facts: &RuleSupplyChainFacts,
+    scope: &SupplyPackageScope<'_>,
+    manager: RuleSupplyChainPackageManagerKind,
+) -> bool {
+    facts
+        .lockfiles
+        .iter()
+        .any(|lockfile| scope.contains(&lockfile.path) && lockfile.manager == manager)
+}
+
+fn is_downloaded_executable_without_checksum(
+    facts: &RuleSupplyChainFacts,
+    scope: &SupplyPackageScope<'_>,
+    dependency: &RuleSupplyChainRemoteDependencyFact,
+) -> bool {
+    dependency.kind == RuleSupplyChainRemoteDependencyKind::Artifact
+        && downloaded_executable_name(dependency.name.as_deref())
+        && !has_checksum_for_name(facts, scope, dependency.name.as_deref())
+}
+
+fn has_matching_remote_dependency_for_url(
+    facts: &RuleSupplyChainFacts,
+    scope: &SupplyPackageScope<'_>,
+    url: &RuleSupplyChainUrlFact,
+) -> bool {
+    facts.remote_dependencies.iter().any(|dependency| {
+        scope.contains(&dependency.path)
+            && dependency.path == url.path
+            && dependency.line == url.line
+            && matches!(
+                (dependency.kind, url.kind),
+                (
+                    RuleSupplyChainRemoteDependencyKind::Script,
+                    RuleSupplyChainUrlKind::GithubRaw | RuleSupplyChainUrlKind::RemoteScript
+                ) | (
+                    RuleSupplyChainRemoteDependencyKind::Artifact,
+                    RuleSupplyChainUrlKind::DownloadedArtifact
+                )
+            )
+    })
+}
+
+fn has_binary_provenance(
+    facts: &RuleSupplyChainFacts,
+    scope: &SupplyPackageScope<'_>,
+    binary: &RuleSupplyChainBinaryFact,
+) -> bool {
+    has_checksum_for_path(facts, scope, &binary.path, binary.raw.as_deref())
+        || facts.trust_manifests.iter().any(|manifest| {
+            scope.contains(&manifest.path)
+                && manifest.valid == Some(true)
+                && manifest.has_pinned_provenance
+        })
+}
+
+fn has_checksum_for_name(
+    facts: &RuleSupplyChainFacts,
+    scope: &SupplyPackageScope<'_>,
+    name: Option<&str>,
+) -> bool {
+    name.is_some_and(|name| {
+        facts.checksums.iter().any(|checksum| {
+            scope.contains(&checksum.path)
+                && checksum
+                    .target_path
+                    .as_deref()
+                    .is_some_and(|target| target.ends_with(name))
+        })
+    })
+}
+
+fn has_checksum_for_path(
+    facts: &RuleSupplyChainFacts,
+    scope: &SupplyPackageScope<'_>,
+    path: &str,
+    raw: Option<&str>,
+) -> bool {
+    facts.checksums.iter().any(|checksum| {
+        scope.contains(&checksum.path)
+            && checksum.target_path.as_deref().is_some_and(|target| {
+                target == path || raw.is_some_and(|raw| target.ends_with(raw))
+            })
+    })
+}
+
+fn downloaded_executable_name(name: Option<&str>) -> bool {
+    name.and_then(|name| name.rsplit('.').next())
+        .is_some_and(|extension| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "exe" | "dll" | "so" | "dylib" | "bin" | "msi" | "appimage"
+            )
+        })
+}
+
+fn declares_network_false(facts: &RuleSupplyChainFacts, scope: &SupplyPackageScope<'_>) -> bool {
+    facts.permissions.iter().any(|permission| {
+        scope.contains(&permission.path)
+            && permission.kind == RuleSupplyChainPermissionKind::Network
+            && permission.evidence == RuleSupplyChainPermissionEvidenceKind::Declared
+            && permission.normalized == "network=false"
+    })
+}
+
+fn unknown_skill_license_finding(license: &RuleSupplyChainLicenseFact) -> EvaluatedRuleFinding {
+    EvaluatedRuleFinding {
+        rule_id: RuleId::Supply002,
+        message: "The skill package has license evidence, but the license could not be recognized as a clear SPDX-like declaration or known license text.".to_owned(),
+        location: RuleFindingLocation {
+            path: license.path.clone(),
+            line: license.line,
+        },
+    }
+}
+
+fn install_without_lockfile_supply_finding(
+    manager: &RuleSupplyChainPackageManagerFact,
+) -> EvaluatedRuleFinding {
+    EvaluatedRuleFinding {
+        rule_id: RuleId::Supply003,
+        message: format!(
+            "The skill runs a {} install command without matching lockfile evidence, so dependency resolution may change between audits.",
+            package_manager_label(manager.manager)
+        ),
+        location: RuleFindingLocation {
+            path: manager.path.clone(),
+            line: manager.line,
+        },
+    }
+}
+
+fn unpinned_package_dependency_finding(
+    dependency: &RuleSupplyChainRemoteDependencyFact,
+) -> EvaluatedRuleFinding {
+    let package = dependency.normalized.as_str();
+    EvaluatedRuleFinding {
+        rule_id: RuleId::Supply004,
+        message: format!(
+            "The package dependency `{package}` is not pinned to an exact version, so future installs may resolve different code."
+        ),
+        location: RuleFindingLocation {
+            path: dependency.path.clone(),
+            line: dependency.line,
+        },
+    }
+}
+
+fn unpinned_remote_dependency_finding(
+    dependency: &RuleSupplyChainRemoteDependencyFact,
+) -> EvaluatedRuleFinding {
+    EvaluatedRuleFinding {
+        rule_id: RuleId::Supply005,
+        message: format!(
+            "The remote dependency `{}` is not pinned to immutable content, so reviewed behavior can change without a skill package change.",
+            dependency.normalized
+        ),
+        location: RuleFindingLocation {
+            path: dependency.path.clone(),
+            line: dependency.line,
+        },
+    }
+}
+
+fn unpinned_external_url_finding(url: &RuleSupplyChainUrlFact) -> EvaluatedRuleFinding {
+    EvaluatedRuleFinding {
+        rule_id: RuleId::Supply005,
+        message: format!(
+            "The external URL `{}` is not pinned to immutable content, so offline review cannot reproduce what it may fetch later.",
+            url.normalized
+        ),
+        location: RuleFindingLocation {
+            path: url.path.clone(),
+            line: url.line,
+        },
+    }
+}
+
+fn downloaded_executable_without_checksum_finding(
+    dependency: &RuleSupplyChainRemoteDependencyFact,
+) -> EvaluatedRuleFinding {
+    let name = dependency.name.as_deref().unwrap_or("executable artifact");
+    EvaluatedRuleFinding {
+        rule_id: RuleId::Supply006,
+        message: format!(
+            "The skill downloads executable artifact `{name}` without matching checksum evidence, so reviewers cannot verify the downloaded bytes offline."
+        ),
+        location: RuleFindingLocation {
+            path: dependency.path.clone(),
+            line: dependency.line,
+        },
+    }
+}
+
+fn binary_without_provenance_finding(binary: &RuleSupplyChainBinaryFact) -> EvaluatedRuleFinding {
+    EvaluatedRuleFinding {
+        rule_id: RuleId::Supply007,
+        message: "The skill includes a binary executable without local checksum or pinned provenance evidence, so reviewers cannot tie it to reviewed source or release material.".to_owned(),
+        location: RuleFindingLocation {
+            path: binary.path.clone(),
+            line: binary.line,
+        },
+    }
+}
+
+fn permission_conflict_finding(permission: &RuleSupplyChainPermissionFact) -> EvaluatedRuleFinding {
+    EvaluatedRuleFinding {
+        rule_id: RuleId::Supply009,
+        message: "Observed network access conflicts with a trust manifest declaration of `network: false`, so the declared permissions understate the skill behavior.".to_owned(),
+        location: RuleFindingLocation {
+            path: permission.path.clone(),
+            line: permission.line,
+        },
+    }
+}
+
+fn trust_manifest_diagnostic_finding(
+    diagnostic: &RuleSupplyChainTrustManifestDiagnosticFact,
+) -> EvaluatedRuleFinding {
+    let diagnostic_kind = match diagnostic.kind {
+        RuleSupplyChainTrustManifestDiagnosticKind::ParseError => "parse error",
+        RuleSupplyChainTrustManifestDiagnosticKind::SchemaError => "schema error",
+        RuleSupplyChainTrustManifestDiagnosticKind::UnknownField => "unknown field",
+    };
+    let field = diagnostic
+        .field
+        .as_deref()
+        .map(|field| format!(" for `{field}`"))
+        .unwrap_or_default();
+
+    EvaluatedRuleFinding {
+        rule_id: RuleId::Supply012,
+        message: format!(
+            "The trust manifest has a {diagnostic_kind}{field}: {}",
+            diagnostic.message
+        ),
+        location: RuleFindingLocation {
+            path: diagnostic.path.clone(),
+            line: diagnostic.line,
+        },
+    }
+}
+
+fn package_manager_label(manager: RuleSupplyChainPackageManagerKind) -> &'static str {
+    match manager {
+        RuleSupplyChainPackageManagerKind::Npm => "npm",
+        RuleSupplyChainPackageManagerKind::Yarn => "yarn",
+        RuleSupplyChainPackageManagerKind::Pnpm => "pnpm",
+        RuleSupplyChainPackageManagerKind::Pip => "pip",
+        RuleSupplyChainPackageManagerKind::Poetry => "poetry",
+        RuleSupplyChainPackageManagerKind::Uv => "uv",
+        RuleSupplyChainPackageManagerKind::Cargo => "cargo",
+        RuleSupplyChainPackageManagerKind::Go => "go",
+        RuleSupplyChainPackageManagerKind::Gem => "gem",
+        RuleSupplyChainPackageManagerKind::Composer => "composer",
+        RuleSupplyChainPackageManagerKind::Unknown => "package manager",
+    }
 }
 
 fn package_install_signal(signal: &SecuritySignal) -> Option<(&SecuritySignal, PackageInstall)> {
@@ -2008,6 +2878,14 @@ mod tests {
                 RuleId::Skill040.as_str(),
                 RuleId::Skill041.as_str(),
                 RuleId::Skill050.as_str(),
+                RuleId::Supply002.as_str(),
+                RuleId::Supply003.as_str(),
+                RuleId::Supply004.as_str(),
+                RuleId::Supply005.as_str(),
+                RuleId::Supply006.as_str(),
+                RuleId::Supply007.as_str(),
+                RuleId::Supply009.as_str(),
+                RuleId::Supply012.as_str(),
             ]
         );
         assert!(
@@ -3839,6 +4717,205 @@ mod tests {
         assert_eq!(
             findings[0].message,
             "The skill manifest frontmatter could not be parsed: invalid YAML at line 3."
+        );
+    }
+
+    #[test]
+    fn supply_chain_rules_report_license_package_url_binary_permission_and_trust_findings() {
+        let facts = RuleSupplyChainFacts {
+            packages: vec![RuleSupplyChainPackageFact {
+                root: "skill".to_owned(),
+                manifest_path: "skill/SKILL.md".to_owned(),
+            }],
+            licenses: vec![RuleSupplyChainLicenseFact {
+                path: "skill/LICENSE.txt".to_owned(),
+                line: None,
+                scope: RuleSupplyChainLicenseScope::Skill,
+                normalized: "unknown".to_owned(),
+            }],
+            trust_manifests: vec![RuleSupplyChainTrustManifestFact {
+                path: "skill/agent-audit.trust.yaml".to_owned(),
+                line: Some(1),
+                valid: Some(false),
+                has_pinned_provenance: false,
+                diagnostics: vec![RuleSupplyChainTrustManifestDiagnosticFact {
+                    path: "skill/agent-audit.trust.yaml".to_owned(),
+                    line: Some(2),
+                    kind: RuleSupplyChainTrustManifestDiagnosticKind::ParseError,
+                    message: "Invalid trust manifest YAML.".to_owned(),
+                    field: None,
+                }],
+            }],
+            external_urls: vec![RuleSupplyChainUrlFact {
+                path: "skill/SKILL.md".to_owned(),
+                line: Some(8),
+                kind: RuleSupplyChainUrlKind::GithubRaw,
+                normalized: "https://raw.githubusercontent.com/example/repo/main/setup.sh"
+                    .to_owned(),
+                pinned: Some(false),
+            }],
+            remote_dependencies: vec![
+                RuleSupplyChainRemoteDependencyFact {
+                    path: "skill/package.json".to_owned(),
+                    line: Some(4),
+                    kind: RuleSupplyChainRemoteDependencyKind::Package,
+                    package_manager: Some(RuleSupplyChainPackageManagerKind::Npm),
+                    name: Some("prettier".to_owned()),
+                    version: Some("^3.2.5".to_owned()),
+                    normalized: "npm:prettier@^3.2.5".to_owned(),
+                    pinned: Some(false),
+                },
+                RuleSupplyChainRemoteDependencyFact {
+                    path: "skill/scripts/install.sh".to_owned(),
+                    line: Some(3),
+                    kind: RuleSupplyChainRemoteDependencyKind::Artifact,
+                    package_manager: None,
+                    name: Some("helper.exe".to_owned()),
+                    version: None,
+                    normalized: "download:helper.exe".to_owned(),
+                    pinned: Some(true),
+                },
+            ],
+            package_managers: vec![RuleSupplyChainPackageManagerFact {
+                path: "skill/scripts/install.sh".to_owned(),
+                line: Some(2),
+                source: RuleSupplyChainSourceKind::Script,
+                manager: RuleSupplyChainPackageManagerKind::Npm,
+            }],
+            binaries: vec![RuleSupplyChainBinaryFact {
+                path: "skill/bin/helper.exe".to_owned(),
+                line: None,
+                kind: RuleSupplyChainBinaryKind::Executable,
+                raw: Some("bin/helper.exe".to_owned()),
+            }],
+            permissions: vec![
+                RuleSupplyChainPermissionFact {
+                    path: "skill/agent-audit.trust.yaml".to_owned(),
+                    line: Some(5),
+                    kind: RuleSupplyChainPermissionKind::Network,
+                    evidence: RuleSupplyChainPermissionEvidenceKind::Declared,
+                    normalized: "network=false".to_owned(),
+                },
+                RuleSupplyChainPermissionFact {
+                    path: "skill/scripts/upload.sh".to_owned(),
+                    line: Some(4),
+                    kind: RuleSupplyChainPermissionKind::Network,
+                    evidence: RuleSupplyChainPermissionEvidenceKind::Observed,
+                    normalized: "network=https://api.example.invalid/upload".to_owned(),
+                },
+            ],
+            ..RuleSupplyChainFacts::default()
+        };
+
+        let findings = evaluate_supply_chain_rules(&facts);
+
+        assert_eq!(
+            finding_projection(&findings),
+            vec![
+                (RuleId::Supply002, "skill/LICENSE.txt", None),
+                (RuleId::Supply005, "skill/SKILL.md", Some(8)),
+                (RuleId::Supply012, "skill/agent-audit.trust.yaml", Some(2)),
+                (RuleId::Supply007, "skill/bin/helper.exe", None),
+                (RuleId::Supply004, "skill/package.json", Some(4)),
+                (RuleId::Supply003, "skill/scripts/install.sh", Some(2)),
+                (RuleId::Supply006, "skill/scripts/install.sh", Some(3)),
+                (RuleId::Supply009, "skill/scripts/upload.sh", Some(4)),
+            ]
+        );
+    }
+
+    #[test]
+    fn supply_chain_rules_accept_lockfiles_pins_checksums_provenance_and_matching_permissions() {
+        let facts = RuleSupplyChainFacts {
+            packages: vec![RuleSupplyChainPackageFact {
+                root: "skill".to_owned(),
+                manifest_path: "skill/SKILL.md".to_owned(),
+            }],
+            licenses: vec![RuleSupplyChainLicenseFact {
+                path: "skill/SKILL.md".to_owned(),
+                line: Some(4),
+                scope: RuleSupplyChainLicenseScope::Skill,
+                normalized: "Apache-2.0".to_owned(),
+            }],
+            trust_manifests: vec![RuleSupplyChainTrustManifestFact {
+                path: "skill/agent-audit.trust.yaml".to_owned(),
+                line: Some(1),
+                valid: Some(true),
+                has_pinned_provenance: true,
+                diagnostics: Vec::new(),
+            }],
+            external_urls: vec![RuleSupplyChainUrlFact {
+                path: "skill/SKILL.md".to_owned(),
+                line: Some(8),
+                kind: RuleSupplyChainUrlKind::GithubRaw,
+                normalized:
+                    "https://raw.githubusercontent.com/example/repo/0123456789abcdef0123456789abcdef01234567/setup.sh"
+                        .to_owned(),
+                pinned: Some(true),
+            }],
+            remote_dependencies: vec![
+                RuleSupplyChainRemoteDependencyFact {
+                    path: "skill/package.json".to_owned(),
+                    line: Some(4),
+                    kind: RuleSupplyChainRemoteDependencyKind::Package,
+                    package_manager: Some(RuleSupplyChainPackageManagerKind::Npm),
+                    name: Some("prettier".to_owned()),
+                    version: Some("3.2.5".to_owned()),
+                    normalized: "npm:prettier@3.2.5".to_owned(),
+                    pinned: Some(true),
+                },
+                RuleSupplyChainRemoteDependencyFact {
+                    path: "skill/scripts/install.sh".to_owned(),
+                    line: Some(3),
+                    kind: RuleSupplyChainRemoteDependencyKind::Artifact,
+                    package_manager: None,
+                    name: Some("helper.exe".to_owned()),
+                    version: None,
+                    normalized: "download:helper.exe".to_owned(),
+                    pinned: Some(true),
+                },
+            ],
+            package_managers: vec![RuleSupplyChainPackageManagerFact {
+                path: "skill/scripts/install.sh".to_owned(),
+                line: Some(2),
+                source: RuleSupplyChainSourceKind::Script,
+                manager: RuleSupplyChainPackageManagerKind::Npm,
+            }],
+            lockfiles: vec![RuleSupplyChainLockfileFact {
+                path: "skill/package-lock.json".to_owned(),
+                manager: RuleSupplyChainPackageManagerKind::Npm,
+            }],
+            binaries: vec![RuleSupplyChainBinaryFact {
+                path: "skill/bin/helper.exe".to_owned(),
+                line: None,
+                kind: RuleSupplyChainBinaryKind::Executable,
+                raw: Some("bin/helper.exe".to_owned()),
+            }],
+            checksums: vec![RuleSupplyChainChecksumFact {
+                path: "skill/checksums.txt".to_owned(),
+                target_path: Some("skill/downloads/helper.exe".to_owned()),
+            }],
+            permissions: vec![
+                RuleSupplyChainPermissionFact {
+                    path: "skill/agent-audit.trust.yaml".to_owned(),
+                    line: Some(5),
+                    kind: RuleSupplyChainPermissionKind::Network,
+                    evidence: RuleSupplyChainPermissionEvidenceKind::Declared,
+                    normalized: "network=true".to_owned(),
+                },
+                RuleSupplyChainPermissionFact {
+                    path: "skill/scripts/upload.sh".to_owned(),
+                    line: Some(4),
+                    kind: RuleSupplyChainPermissionKind::Network,
+                    evidence: RuleSupplyChainPermissionEvidenceKind::Observed,
+                    normalized: "network=https://api.example.invalid/upload".to_owned(),
+                },
+            ],
+        };
+
+        assert_eq!(
+            finding_projection(&evaluate_supply_chain_rules(&facts)),
+            Vec::<(RuleId, &str, Option<usize>)>::new()
         );
     }
 
