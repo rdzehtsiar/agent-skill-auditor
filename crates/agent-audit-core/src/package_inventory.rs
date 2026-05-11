@@ -495,47 +495,93 @@ struct CommandPackage {
     pinned: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct InstallCommandStart {
+    manager: PackageManagerKind,
+    command_len: usize,
+}
+
 fn install_command_start(tokens: &[String]) -> Option<(usize, PackageManagerKind, usize)> {
-    for (index, token) in tokens.iter().enumerate() {
-        let token = shell_command_name(token);
-        let rest = &tokens[index + 1..];
-        if matches!(token.as_str(), "npm" | "pnpm" | "yarn")
-            && rest
-                .first()
-                .is_some_and(|next| matches!(next.as_str(), "install" | "i" | "add" | "ci"))
-        {
-            let manager = match token.as_str() {
-                "pnpm" => PackageManagerKind::Pnpm,
-                "yarn" => PackageManagerKind::Yarn,
-                _ => PackageManagerKind::Npm,
-            };
-            return Some((index, manager, 2));
-        }
-        if matches!(token.as_str(), "pip" | "pip3")
-            && rest.first().is_some_and(|next| next == "install")
-        {
-            return Some((index, PackageManagerKind::Pip, 2));
-        }
-        if matches!(token.as_str(), "python" | "python3")
-            && rest.len() >= 3
-            && rest[0] == "-m"
-            && shell_command_name(&rest[1]) == "pip"
-            && rest[2] == "install"
-        {
-            return Some((index, PackageManagerKind::Pip, 4));
-        }
-        if token == "cargo" && rest.first().is_some_and(|next| next == "install") {
-            return Some((index, PackageManagerKind::Cargo, 2));
-        }
-        if token == "gem" && rest.first().is_some_and(|next| next == "install") {
-            return Some((index, PackageManagerKind::Gem, 2));
-        }
-        if token == "go" && rest.first().is_some_and(|next| next == "install") {
-            return Some((index, PackageManagerKind::Go, 2));
-        }
+    tokens.iter().enumerate().find_map(|(index, token)| {
+        install_command_at(&shell_command_name(token), &tokens[index + 1..])
+            .map(|start| (index, start.manager, start.command_len))
+    })
+}
+
+fn install_command_at(token: &str, rest: &[String]) -> Option<InstallCommandStart> {
+    javascript_install_command(token, rest)
+        .or_else(|| pip_install_command(token, rest))
+        .or_else(|| python_pip_install_command(token, rest))
+        .or_else(|| simple_install_command(token, rest))
+}
+
+fn javascript_install_command(token: &str, rest: &[String]) -> Option<InstallCommandStart> {
+    let manager = javascript_install_manager(token)?;
+    install_subcommand(rest).map(|command_len| InstallCommandStart {
+        manager,
+        command_len,
+    })
+}
+
+fn javascript_install_manager(token: &str) -> Option<PackageManagerKind> {
+    match token {
+        "npm" => Some(PackageManagerKind::Npm),
+        "pnpm" => Some(PackageManagerKind::Pnpm),
+        "yarn" => Some(PackageManagerKind::Yarn),
+        _ => None,
+    }
+}
+
+fn install_subcommand(rest: &[String]) -> Option<usize> {
+    rest.first()
+        .is_some_and(|next| matches!(next.as_str(), "install" | "i" | "add" | "ci"))
+        .then_some(2)
+}
+
+fn pip_install_command(token: &str, rest: &[String]) -> Option<InstallCommandStart> {
+    matches!(token, "pip" | "pip3")
+        .then(|| install_literal_command(rest, PackageManagerKind::Pip))
+        .flatten()
+}
+
+fn python_pip_install_command(token: &str, rest: &[String]) -> Option<InstallCommandStart> {
+    if !matches!(token, "python" | "python3") || !is_python_pip_install(rest) {
+        return None;
     }
 
-    None
+    Some(InstallCommandStart {
+        manager: PackageManagerKind::Pip,
+        command_len: 4,
+    })
+}
+
+fn is_python_pip_install(rest: &[String]) -> bool {
+    rest.len() >= 3
+        && rest[0] == "-m"
+        && shell_command_name(&rest[1]) == "pip"
+        && rest[2] == "install"
+}
+
+fn simple_install_command(token: &str, rest: &[String]) -> Option<InstallCommandStart> {
+    let manager = match token {
+        "cargo" => PackageManagerKind::Cargo,
+        "gem" => PackageManagerKind::Gem,
+        "go" => PackageManagerKind::Go,
+        _ => return None,
+    };
+    install_literal_command(rest, manager)
+}
+
+fn install_literal_command(
+    rest: &[String],
+    manager: PackageManagerKind,
+) -> Option<InstallCommandStart> {
+    rest.first()
+        .is_some_and(|next| next == "install")
+        .then_some(InstallCommandStart {
+            manager,
+            command_len: 2,
+        })
 }
 
 fn command_packages(manager: PackageManagerKind, tokens: &[String]) -> Vec<CommandPackage> {
@@ -897,6 +943,9 @@ fn dependency_line(_path: &str, content: &str, name: &str) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
+    use super::{install_command_start, shellish_tokens};
+
+    use crate::model::PackageManagerKind;
     use crate::scan::{scan_path, ScanOptions};
     use crate::test_support::TestWorkspace;
 
@@ -997,6 +1046,44 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    #[test]
+    fn detects_install_command_start_variants() {
+        let cases = [
+            (
+                "sudo npm install left-pad",
+                Some((1, PackageManagerKind::Npm, 2)),
+            ),
+            ("pnpm add zod", Some((0, PackageManagerKind::Pnpm, 2))),
+            ("yarn ci", Some((0, PackageManagerKind::Yarn, 2))),
+            (
+                "pip3 install requests",
+                Some((0, PackageManagerKind::Pip, 2)),
+            ),
+            (
+                "python -m pip install requests",
+                Some((0, PackageManagerKind::Pip, 4)),
+            ),
+            (
+                "/usr/bin/cargo install ripgrep",
+                Some((0, PackageManagerKind::Cargo, 2)),
+            ),
+            ("gem install rails", Some((0, PackageManagerKind::Gem, 2))),
+            (
+                "go install golang.org/x/tools/cmd/stringer@latest",
+                Some((0, PackageManagerKind::Go, 2)),
+            ),
+            ("npm run install", None),
+        ];
+
+        for (line, expected) in cases {
+            assert_eq!(
+                install_command_start(&shellish_tokens(line)),
+                expected,
+                "{line}"
+            );
+        }
     }
 
     #[test]
