@@ -1839,54 +1839,13 @@ impl SecurityAnalyzer for ShellSecurityAnalyzer {
     }
 
     fn analyze(&self, input: &SecurityAnalyzerInput<'_>) -> SecurityAnalyzerOutput {
-        let mut output = SecurityAnalyzerOutput::default();
-
-        if input.artifact.language != SecurityLanguage::Shell {
-            output.diagnostics.push(regex_analyzer_diagnostic(
-                self.id(),
-                SecurityAnalyzerDiagnosticSeverity::Warning,
-                SecurityAnalyzerDiagnosticKind::UnsupportedLanguage,
-                format!(
-                    "shell security analyzer does not support {:?} artifacts",
-                    input.artifact.language
-                ),
-                input.artifact.path,
-            ));
-            return output;
-        }
-
-        if input.artifact.content.is_truncated() {
-            output.diagnostics.push(regex_analyzer_diagnostic(
-                self.id(),
-                SecurityAnalyzerDiagnosticSeverity::Warning,
-                SecurityAnalyzerDiagnosticKind::ContentTruncated,
-                "artifact content was truncated; shell security signals may be incomplete"
-                    .to_owned(),
-                input.artifact.path,
-            ));
-        }
-
-        let Some(text) = input.artifact.content.text else {
-            output.diagnostics.push(regex_analyzer_diagnostic(
-                self.id(),
-                SecurityAnalyzerDiagnosticSeverity::Warning,
-                SecurityAnalyzerDiagnosticKind::TextUnavailable,
-                "artifact text is unavailable for shell security analysis".to_owned(),
-                input.artifact.path,
-            ));
-            output.sort_deterministically();
-            return output;
-        };
-
-        output
-            .signals
-            .extend(analyze_instruction_security_text(input.artifact.path, text));
-        output
-            .signals
-            .extend(analyze_shell_security_text(input.artifact.path, text));
-        output.sort_deterministically();
-        output.signals.dedup();
-        output
+        analyze_regex_security_artifact(
+            input,
+            self.id(),
+            "shell",
+            |language| language == SecurityLanguage::Shell,
+            analyze_shell_security_text,
+        )
     }
 }
 
@@ -1900,54 +1859,13 @@ impl SecurityAnalyzer for PythonSecurityAnalyzer {
     }
 
     fn analyze(&self, input: &SecurityAnalyzerInput<'_>) -> SecurityAnalyzerOutput {
-        let mut output = SecurityAnalyzerOutput::default();
-
-        if input.artifact.language != SecurityLanguage::Python {
-            output.diagnostics.push(regex_analyzer_diagnostic(
-                self.id(),
-                SecurityAnalyzerDiagnosticSeverity::Warning,
-                SecurityAnalyzerDiagnosticKind::UnsupportedLanguage,
-                format!(
-                    "python security analyzer does not support {:?} artifacts",
-                    input.artifact.language
-                ),
-                input.artifact.path,
-            ));
-            return output;
-        }
-
-        if input.artifact.content.is_truncated() {
-            output.diagnostics.push(regex_analyzer_diagnostic(
-                self.id(),
-                SecurityAnalyzerDiagnosticSeverity::Warning,
-                SecurityAnalyzerDiagnosticKind::ContentTruncated,
-                "artifact content was truncated; python security signals may be incomplete"
-                    .to_owned(),
-                input.artifact.path,
-            ));
-        }
-
-        let Some(text) = input.artifact.content.text else {
-            output.diagnostics.push(regex_analyzer_diagnostic(
-                self.id(),
-                SecurityAnalyzerDiagnosticSeverity::Warning,
-                SecurityAnalyzerDiagnosticKind::TextUnavailable,
-                "artifact text is unavailable for python security analysis".to_owned(),
-                input.artifact.path,
-            ));
-            output.sort_deterministically();
-            return output;
-        };
-
-        output
-            .signals
-            .extend(analyze_instruction_security_text(input.artifact.path, text));
-        output
-            .signals
-            .extend(analyze_python_security_text(input.artifact.path, text));
-        output.sort_deterministically();
-        output.signals.dedup();
-        output
+        analyze_regex_security_artifact(
+            input,
+            self.id(),
+            "python",
+            |language| language == SecurityLanguage::Python,
+            analyze_python_security_text,
+        )
     }
 }
 
@@ -1961,58 +1879,77 @@ impl SecurityAnalyzer for JavaScriptSecurityAnalyzer {
     }
 
     fn analyze(&self, input: &SecurityAnalyzerInput<'_>) -> SecurityAnalyzerOutput {
-        let mut output = SecurityAnalyzerOutput::default();
-
-        if !matches!(
-            input.artifact.language,
-            SecurityLanguage::JavaScript | SecurityLanguage::TypeScript
-        ) {
-            output.diagnostics.push(regex_analyzer_diagnostic(
-                self.id(),
-                SecurityAnalyzerDiagnosticSeverity::Warning,
-                SecurityAnalyzerDiagnosticKind::UnsupportedLanguage,
-                format!(
-                    "javascript security analyzer does not support {:?} artifacts",
-                    input.artifact.language
-                ),
-                input.artifact.path,
-            ));
-            return output;
-        }
-
-        if input.artifact.content.is_truncated() {
-            output.diagnostics.push(regex_analyzer_diagnostic(
-                self.id(),
-                SecurityAnalyzerDiagnosticSeverity::Warning,
-                SecurityAnalyzerDiagnosticKind::ContentTruncated,
-                "artifact content was truncated; javascript security signals may be incomplete"
-                    .to_owned(),
-                input.artifact.path,
-            ));
-        }
-
-        let Some(text) = input.artifact.content.text else {
-            output.diagnostics.push(regex_analyzer_diagnostic(
-                self.id(),
-                SecurityAnalyzerDiagnosticSeverity::Warning,
-                SecurityAnalyzerDiagnosticKind::TextUnavailable,
-                "artifact text is unavailable for javascript security analysis".to_owned(),
-                input.artifact.path,
-            ));
-            output.sort_deterministically();
-            return output;
-        };
-
-        output
-            .signals
-            .extend(analyze_instruction_security_text(input.artifact.path, text));
-        output
-            .signals
-            .extend(analyze_javascript_security_text(input.artifact.path, text));
-        output.sort_deterministically();
-        output.signals.dedup();
-        output
+        analyze_regex_security_artifact(
+            input,
+            self.id(),
+            "javascript",
+            |language| {
+                matches!(
+                    language,
+                    SecurityLanguage::JavaScript | SecurityLanguage::TypeScript
+                )
+            },
+            analyze_javascript_security_text,
+        )
     }
+}
+
+fn analyze_regex_security_artifact(
+    input: &SecurityAnalyzerInput<'_>,
+    analyzer_id: &str,
+    language_name: &str,
+    supports_language: impl Fn(SecurityLanguage) -> bool,
+    analyze_language_text: fn(&str, &str) -> Vec<SecuritySignal>,
+) -> SecurityAnalyzerOutput {
+    let mut output = SecurityAnalyzerOutput::default();
+
+    if !supports_language(input.artifact.language) {
+        output.diagnostics.push(regex_analyzer_diagnostic(
+            analyzer_id,
+            SecurityAnalyzerDiagnosticSeverity::Warning,
+            SecurityAnalyzerDiagnosticKind::UnsupportedLanguage,
+            format!(
+                "{language_name} security analyzer does not support {:?} artifacts",
+                input.artifact.language
+            ),
+            input.artifact.path,
+        ));
+        return output;
+    }
+
+    if input.artifact.content.is_truncated() {
+        output.diagnostics.push(regex_analyzer_diagnostic(
+            analyzer_id,
+            SecurityAnalyzerDiagnosticSeverity::Warning,
+            SecurityAnalyzerDiagnosticKind::ContentTruncated,
+            format!(
+                "artifact content was truncated; {language_name} security signals may be incomplete"
+            ),
+            input.artifact.path,
+        ));
+    }
+
+    let Some(text) = input.artifact.content.text else {
+        output.diagnostics.push(regex_analyzer_diagnostic(
+            analyzer_id,
+            SecurityAnalyzerDiagnosticSeverity::Warning,
+            SecurityAnalyzerDiagnosticKind::TextUnavailable,
+            format!("artifact text is unavailable for {language_name} security analysis"),
+            input.artifact.path,
+        ));
+        output.sort_deterministically();
+        return output;
+    };
+
+    output
+        .signals
+        .extend(analyze_instruction_security_text(input.artifact.path, text));
+    output
+        .signals
+        .extend(analyze_language_text(input.artifact.path, text));
+    output.sort_deterministically();
+    output.signals.dedup();
+    output
 }
 
 fn regex_analyzer_diagnostic(
@@ -2653,6 +2590,34 @@ macro_rules! shell_signal {
     };
 }
 
+macro_rules! sink_signal {
+    (
+        $path:expr,
+        $line:expr,
+        $column:expr,
+        $kind:expr,
+        $sink_kind:expr,
+        $target:expr,
+        $risk:expr,
+        $confidence:expr,
+        $evidence:expr $(,)?
+    ) => {
+        sink_security_signal(
+            $path,
+            $line,
+            $column,
+            SinkSignalDetails {
+                kind: $kind,
+                sink_kind: $sink_kind,
+                target: $target,
+                risk: $risk,
+                confidence: $confidence,
+                evidence: $evidence,
+            },
+        )
+    };
+}
+
 fn detect_javascript_subprocess_execution(
     path: &str,
     line_number: usize,
@@ -2663,16 +2628,13 @@ fn detect_javascript_subprocess_execution(
     javascript_subprocess_calls(line, context)
         .into_iter()
         .map(|call| {
-            shell_signal!(
+            sink_signal!(
                 path,
                 line_number,
                 call.column,
                 SecuritySignalKind::SubprocessExecution,
-                None,
-                Some(SecuritySink {
-                    kind: SecuritySinkKind::ProcessExecution,
-                    target: Some(call.name),
-                }),
+                SecuritySinkKind::ProcessExecution,
+                Some(call.name),
                 SecurityRiskScore::new(65),
                 AnalyzerConfidence::Medium,
                 evidence,
@@ -2705,16 +2667,13 @@ fn detect_javascript_network_access(
                 .map(|(_, url)| url)
                 .next()
                 .unwrap_or(call.name);
-            shell_signal!(
+            sink_signal!(
                 path,
                 line_number,
                 call.column,
                 SecuritySignalKind::NetworkAccess,
-                None,
-                Some(SecuritySink {
-                    kind: SecuritySinkKind::NetworkRequest,
-                    target: Some(target),
-                }),
+                SecuritySinkKind::NetworkRequest,
+                Some(target),
                 SecurityRiskScore::new(45),
                 AnalyzerConfidence::Medium,
                 evidence,
@@ -2742,16 +2701,13 @@ fn detect_javascript_file_writes(
         .into_iter()
         .map(|call| {
             let target = javascript_file_write_target(call.args);
-            shell_signal!(
+            sink_signal!(
                 path,
                 line_number,
                 call.column,
                 SecuritySignalKind::FileWrite,
-                None,
-                Some(SecuritySink {
-                    kind: SecuritySinkKind::FileWrite,
-                    target,
-                }),
+                SecuritySinkKind::FileWrite,
+                target,
                 SecurityRiskScore::new(50),
                 AnalyzerConfidence::Medium,
                 evidence,
@@ -2769,16 +2725,13 @@ fn detect_javascript_dynamic_code_evaluation(
     let mut signals = find_javascript_calls(line, &["eval"])
         .into_iter()
         .map(|call| {
-            shell_signal!(
+            sink_signal!(
                 path,
                 line_number,
                 call.column,
                 SecuritySignalKind::DynamicCodeEvaluation,
-                None,
-                Some(SecuritySink {
-                    kind: SecuritySinkKind::DynamicCodeEvaluation,
-                    target: Some(call.name),
-                }),
+                SecuritySinkKind::DynamicCodeEvaluation,
+                Some(call.name),
                 SecurityRiskScore::new(70),
                 AnalyzerConfidence::Medium,
                 evidence,
@@ -2787,16 +2740,13 @@ fn detect_javascript_dynamic_code_evaluation(
         .collect::<Vec<_>>();
 
     for (column, target) in find_javascript_function_constructor_calls(line) {
-        signals.push(shell_signal!(
+        signals.push(sink_signal!(
             path,
             line_number,
             column,
             SecuritySignalKind::DynamicCodeEvaluation,
-            None,
-            Some(SecuritySink {
-                kind: SecuritySinkKind::DynamicCodeEvaluation,
-                target: Some(target),
-            }),
+            SecuritySinkKind::DynamicCodeEvaluation,
+            Some(target),
             SecurityRiskScore::new(70),
             AnalyzerConfidence::Medium,
             evidence,
@@ -2819,16 +2769,13 @@ fn detect_javascript_package_installation(
             javascript_package_install_target(call.args).map(|target| (call, target))
         })
         .map(|(call, target)| {
-            shell_signal!(
+            sink_signal!(
                 path,
                 line_number,
                 call.column,
                 SecuritySignalKind::PackageInstallation,
-                None,
-                Some(SecuritySink {
-                    kind: SecuritySinkKind::PackageInstall,
-                    target: Some(target),
-                }),
+                SecuritySinkKind::PackageInstall,
+                Some(target),
                 SecurityRiskScore::new(65),
                 AnalyzerConfidence::High,
                 evidence,
@@ -3015,16 +2962,13 @@ fn detect_python_subprocess_execution(
     find_python_calls(line, PROCESS_CALLS)
         .into_iter()
         .map(|call| {
-            shell_signal!(
+            sink_signal!(
                 path,
                 line_number,
                 call.column,
                 SecuritySignalKind::SubprocessExecution,
-                None,
-                Some(SecuritySink {
-                    kind: SecuritySinkKind::ProcessExecution,
-                    target: Some(call.name),
-                }),
+                SecuritySinkKind::ProcessExecution,
+                Some(call.name),
                 SecurityRiskScore::new(65),
                 AnalyzerConfidence::Medium,
                 evidence,
@@ -3059,16 +3003,13 @@ fn detect_python_network_access(
                 .map(|(_, url)| url)
                 .next()
                 .unwrap_or(call.name);
-            shell_signal!(
+            sink_signal!(
                 path,
                 line_number,
                 call.column,
                 SecuritySignalKind::NetworkAccess,
-                None,
-                Some(SecuritySink {
-                    kind: SecuritySinkKind::NetworkRequest,
-                    target: Some(target),
-                }),
+                SecuritySinkKind::NetworkRequest,
+                Some(target),
                 SecurityRiskScore::new(45),
                 AnalyzerConfidence::Medium,
                 evidence,
@@ -3078,19 +3019,16 @@ fn detect_python_network_access(
 
     for call in find_python_calls(line, &["request"]) {
         if !find_external_urls(call.args).is_empty() {
-            signals.push(shell_signal!(
+            signals.push(sink_signal!(
                 path,
                 line_number,
                 call.column,
                 SecuritySignalKind::NetworkAccess,
-                None,
-                Some(SecuritySink {
-                    kind: SecuritySinkKind::NetworkRequest,
-                    target: find_external_urls(call.args)
-                        .into_iter()
-                        .map(|(_, url)| url)
-                        .next(),
-                }),
+                SecuritySinkKind::NetworkRequest,
+                find_external_urls(call.args)
+                    .into_iter()
+                    .map(|(_, url)| url)
+                    .next(),
                 SecurityRiskScore::new(45),
                 AnalyzerConfidence::Medium,
                 evidence,
@@ -3112,16 +3050,13 @@ fn detect_python_file_writes(
     for call in find_python_calls(line, &["open"]) {
         if python_open_call_writes(call.args) {
             let target = python_open_file_write_target(call.args);
-            signals.push(shell_signal!(
+            signals.push(sink_signal!(
                 path,
                 line_number,
                 call.column,
                 SecuritySignalKind::FileWrite,
-                None,
-                Some(SecuritySink {
-                    kind: SecuritySinkKind::FileWrite,
-                    target,
-                }),
+                SecuritySinkKind::FileWrite,
+                target,
                 SecurityRiskScore::new(50),
                 AnalyzerConfidence::Medium,
                 evidence,
@@ -3132,16 +3067,13 @@ fn detect_python_file_writes(
     for call in find_python_calls(line, &["write_text", "write_bytes"]) {
         if python_method_call(line, call.start) {
             let target = python_pathlib_file_write_target(line, call.start);
-            signals.push(shell_signal!(
+            signals.push(sink_signal!(
                 path,
                 line_number,
                 call.column,
                 SecuritySignalKind::FileWrite,
-                None,
-                Some(SecuritySink {
-                    kind: SecuritySinkKind::FileWrite,
-                    target,
-                }),
+                SecuritySinkKind::FileWrite,
+                target,
                 SecurityRiskScore::new(50),
                 AnalyzerConfidence::Medium,
                 evidence,
@@ -3161,16 +3093,13 @@ fn detect_python_dynamic_code_evaluation(
     find_python_calls(line, &["eval", "exec"])
         .into_iter()
         .map(|call| {
-            shell_signal!(
+            sink_signal!(
                 path,
                 line_number,
                 call.column,
                 SecuritySignalKind::DynamicCodeEvaluation,
-                None,
-                Some(SecuritySink {
-                    kind: SecuritySinkKind::DynamicCodeEvaluation,
-                    target: Some(call.name),
-                }),
+                SecuritySinkKind::DynamicCodeEvaluation,
+                Some(call.name),
                 SecurityRiskScore::new(70),
                 AnalyzerConfidence::Medium,
                 evidence,
@@ -3198,16 +3127,13 @@ fn detect_python_package_installation(
         .into_iter()
         .filter_map(|call| python_package_install_target(call.args).map(|target| (call, target)))
         .map(|(call, target)| {
-            shell_signal!(
+            sink_signal!(
                 path,
                 line_number,
                 call.column,
                 SecuritySignalKind::PackageInstallation,
-                None,
-                Some(SecuritySink {
-                    kind: SecuritySinkKind::PackageInstall,
-                    target: Some(target),
-                }),
+                SecuritySinkKind::PackageInstall,
+                Some(target),
                 SecurityRiskScore::new(65),
                 AnalyzerConfidence::High,
                 evidence,
@@ -3592,6 +3518,37 @@ fn environment_secret_signal(
     )
 }
 
+struct SinkSignalDetails<'a> {
+    kind: SecuritySignalKind,
+    sink_kind: SecuritySinkKind,
+    target: Option<String>,
+    risk: SecurityRiskScore,
+    confidence: AnalyzerConfidence,
+    evidence: &'a str,
+}
+
+fn sink_security_signal(
+    path: &str,
+    line: usize,
+    column: usize,
+    details: SinkSignalDetails<'_>,
+) -> SecuritySignal {
+    shell_signal!(
+        path,
+        line,
+        column,
+        details.kind,
+        None,
+        Some(SecuritySink {
+            kind: details.sink_kind,
+            target: details.target,
+        }),
+        details.risk,
+        details.confidence,
+        details.evidence,
+    )
+}
+
 struct ShellSignalDetails<'a> {
     kind: SecuritySignalKind,
     source: Option<SecuritySource>,
@@ -3708,6 +3665,11 @@ fn parse_plain_shell_variable(line: &str, start: usize) -> Option<(String, usize
     Some((line[start..end].to_owned(), end))
 }
 
+const PYTHON_STRING_QUOTES: &[u8] = b"'\"";
+const JAVASCRIPT_STRING_QUOTES: &[u8] = b"'\"`";
+const PYTHON_IDENTIFIER_EXTRA_BYTES: &[u8] = b"_";
+const JAVASCRIPT_IDENTIFIER_EXTRA_BYTES: &[u8] = b"_$";
+
 fn find_python_env_index_reads(line: &str, prefix: &str) -> Vec<(usize, String)> {
     let mut reads = Vec::new();
     let mut search_start = 0;
@@ -3745,23 +3707,40 @@ fn find_python_env_call_reads(line: &str, prefix: &str) -> Vec<(usize, String)> 
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct PythonCall<'a> {
+struct SourceCall<'a> {
     name: String,
     start: usize,
     column: usize,
     args: &'a str,
 }
 
-fn find_python_calls<'a>(line: &'a str, names: &[&str]) -> Vec<PythonCall<'a>> {
+fn find_python_calls<'a>(line: &'a str, names: &[&str]) -> Vec<SourceCall<'a>> {
+    find_source_calls(
+        line,
+        names,
+        PYTHON_STRING_QUOTES,
+        PYTHON_IDENTIFIER_EXTRA_BYTES,
+    )
+}
+
+fn find_source_calls<'a>(
+    line: &'a str,
+    names: &[&str],
+    quote_bytes: &[u8],
+    identifier_extra_bytes: &[u8],
+) -> Vec<SourceCall<'a>> {
     let mut calls = Vec::new();
     let mut index = 0;
 
     while index < line.len() {
-        let Some((name, name_start, args_start)) = find_next_python_call(line, index, names) else {
+        let Some((name, name_start, args_start)) =
+            find_next_source_call(line, index, names, quote_bytes, identifier_extra_bytes)
+        else {
             break;
         };
-        let args_end = find_python_call_args_end(line, args_start).unwrap_or(line.len());
-        calls.push(PythonCall {
+        let args_end =
+            find_source_call_args_end(line, args_start, quote_bytes).unwrap_or(line.len());
+        calls.push(SourceCall {
             name: name.to_owned(),
             start: name_start,
             column: name_start + 1,
@@ -3779,10 +3758,12 @@ fn find_python_calls<'a>(line: &'a str, names: &[&str]) -> Vec<PythonCall<'a>> {
     calls
 }
 
-fn find_next_python_call(
+fn find_next_source_call(
     line: &str,
     start: usize,
     names: &[&str],
+    quote_bytes: &[u8],
+    identifier_extra_bytes: &[u8],
 ) -> Option<(String, usize, usize)> {
     let mut best = None;
 
@@ -3797,9 +3778,9 @@ fn find_next_python_call(
                 .as_bytes()
                 .get(open_paren)
                 .is_some_and(|byte| *byte == b'(')
-                && python_name_boundary_before(line, name_start)
-                && python_name_boundary_after(line, name_end)
-                && !python_index_in_string(line, name_start)
+                && source_name_boundary_before(line, name_start, identifier_extra_bytes)
+                && source_name_boundary_after(line, name_end, identifier_extra_bytes)
+                && !index_in_quoted_literal(line, name_start, quote_bytes)
             {
                 let args_start = open_paren + 1;
                 if best
@@ -3819,19 +3800,23 @@ fn find_next_python_call(
 }
 
 fn find_python_call_args_end(line: &str, start: usize) -> Option<usize> {
+    find_source_call_args_end(line, start, PYTHON_STRING_QUOTES)
+}
+
+fn find_source_call_args_end(line: &str, start: usize, quote_bytes: &[u8]) -> Option<usize> {
     let bytes = line.as_bytes();
     let mut index = start;
     let mut depth = 1usize;
-    let mut quote_state = PythonQuoteState::default();
+    let mut quote_state = QuoteState::default();
 
     while index < bytes.len() {
         let byte = bytes[index];
-        if quote_state.consume(byte) {
+        if quote_state.consume(byte, quote_bytes) {
             index += 1;
             continue;
         }
 
-        if !quote_state.is_quoted() && update_python_delimiter_depth(byte, &mut depth) {
+        if !quote_state.is_quoted() && update_delimiter_depth(byte, &mut depth) {
             return Some(index);
         }
 
@@ -3842,13 +3827,13 @@ fn find_python_call_args_end(line: &str, start: usize) -> Option<usize> {
 }
 
 #[derive(Debug, Default)]
-struct PythonQuoteState {
+struct QuoteState {
     quote: Option<u8>,
     escaped: bool,
 }
 
-impl PythonQuoteState {
-    fn consume(&mut self, byte: u8) -> bool {
+impl QuoteState {
+    fn consume(&mut self, byte: u8, quote_bytes: &[u8]) -> bool {
         if self.escaped {
             self.escaped = false;
             return true;
@@ -3859,7 +3844,7 @@ impl PythonQuoteState {
             return true;
         }
 
-        if matches!(byte, b'\'' | b'"') {
+        if quote_bytes.contains(&byte) {
             self.toggle_quote(byte);
             return true;
         }
@@ -3880,7 +3865,7 @@ impl PythonQuoteState {
     }
 }
 
-fn update_python_delimiter_depth(byte: u8, depth: &mut usize) -> bool {
+fn update_delimiter_depth(byte: u8, depth: &mut usize) -> bool {
     match byte {
         b'(' | b'[' | b'{' => *depth += 1,
         b')' | b']' | b'}' => {
@@ -3894,6 +3879,10 @@ fn update_python_delimiter_depth(byte: u8, depth: &mut usize) -> bool {
 }
 
 fn python_index_in_string(line: &str, target: usize) -> bool {
+    index_in_quoted_literal(line, target, PYTHON_STRING_QUOTES)
+}
+
+fn index_in_quoted_literal(line: &str, target: usize, quote_bytes: &[u8]) -> bool {
     let bytes = line.as_bytes();
     let mut index = 0;
     let mut quote = None;
@@ -3911,7 +3900,7 @@ fn python_index_in_string(line: &str, target: usize) -> bool {
             index += 1;
             continue;
         }
-        if matches!(byte, b'\'' | b'"') {
+        if quote_bytes.contains(&byte) {
             if quote == Some(byte) {
                 quote = None;
             } else if quote.is_none() {
@@ -3925,18 +3914,26 @@ fn python_index_in_string(line: &str, target: usize) -> bool {
 }
 
 fn python_name_boundary_before(line: &str, start: usize) -> bool {
+    source_name_boundary_before(line, start, PYTHON_IDENTIFIER_EXTRA_BYTES)
+}
+
+fn source_name_boundary_before(line: &str, start: usize, extra_identifier_bytes: &[u8]) -> bool {
     start == 0
         || !line
             .as_bytes()
             .get(start - 1)
-            .is_some_and(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_'))
+            .is_some_and(|byte| is_identifier_byte(*byte, extra_identifier_bytes))
 }
 
-fn python_name_boundary_after(line: &str, end: usize) -> bool {
+fn source_name_boundary_after(line: &str, end: usize, extra_identifier_bytes: &[u8]) -> bool {
     !line
         .as_bytes()
         .get(end)
-        .is_some_and(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_'))
+        .is_some_and(|byte| is_identifier_byte(*byte, extra_identifier_bytes))
+}
+
+fn is_identifier_byte(byte: u8, extra_identifier_bytes: &[u8]) -> bool {
+    byte.is_ascii_alphanumeric() || extra_identifier_bytes.contains(&byte)
 }
 
 fn python_method_call(line: &str, name_start: usize) -> bool {
@@ -4040,26 +4037,42 @@ fn find_python_keyword_string_argument(args: &str, keyword: &str) -> Option<Stri
 }
 
 fn python_top_level_arguments(args: &str) -> Vec<&str> {
+    top_level_arguments(args, PYTHON_STRING_QUOTES)
+}
+
+fn python_string_literals(line: &str) -> Vec<String> {
+    string_literals(line, PYTHON_STRING_QUOTES)
+}
+
+fn parse_python_string_literal(line: &str, start: usize) -> Option<(String, usize)> {
+    parse_string_literal(line, start, PYTHON_STRING_QUOTES)
+}
+
+fn top_level_arguments<'a>(args: &'a str, quote_bytes: &[u8]) -> Vec<&'a str> {
     let bytes = args.as_bytes();
     let mut arguments = Vec::new();
     let mut start = 0;
-    let mut index = 0;
     let mut depth = 0usize;
-    let mut quote_state = PythonQuoteState::default();
+    let mut quote_state = QuoteState::default();
 
-    while index < bytes.len() {
-        let byte = bytes[index];
-        if quote_state.consume(byte) {
-            index += 1;
+    for (index, byte) in bytes.iter().enumerate() {
+        if quote_state.consume(*byte, quote_bytes) {
             continue;
         }
 
-        if !quote_state.is_quoted() && python_argument_separator(byte, &mut depth) {
-            arguments.push(&args[start..index]);
-            start = index + 1;
+        if quote_state.is_quoted() {
+            continue;
         }
 
-        index += 1;
+        match *byte {
+            b',' if depth == 0 => {
+                arguments.push(&args[start..index]);
+                start = index + 1;
+            }
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
     }
 
     if start < args.len() || args.ends_with(',') {
@@ -4069,29 +4082,14 @@ fn python_top_level_arguments(args: &str) -> Vec<&str> {
     arguments
 }
 
-fn python_argument_separator(byte: u8, depth: &mut usize) -> bool {
-    match byte {
-        b',' if *depth == 0 => true,
-        b'(' | b'[' | b'{' => {
-            *depth += 1;
-            false
-        }
-        b')' | b']' | b'}' => {
-            *depth = depth.saturating_sub(1);
-            false
-        }
-        _ => false,
-    }
-}
-
-fn python_string_literals(line: &str) -> Vec<String> {
+fn string_literals(line: &str, quote_bytes: &[u8]) -> Vec<String> {
     let mut literals = Vec::new();
     let bytes = line.as_bytes();
     let mut index = 0;
 
     while index < bytes.len() {
-        if matches!(bytes[index], b'\'' | b'"') {
-            if let Some((literal, end)) = parse_python_string_literal(line, index) {
+        if quote_bytes.contains(&bytes[index]) {
+            if let Some((literal, end)) = parse_string_literal(line, index, quote_bytes) {
                 literals.push(literal);
                 index = end;
                 continue;
@@ -4103,10 +4101,10 @@ fn python_string_literals(line: &str) -> Vec<String> {
     literals
 }
 
-fn parse_python_string_literal(line: &str, start: usize) -> Option<(String, usize)> {
+fn parse_string_literal(line: &str, start: usize, quote_bytes: &[u8]) -> Option<(String, usize)> {
     let bytes = line.as_bytes();
     let quote = *bytes.get(start)?;
-    if !matches!(quote, b'\'' | b'"') {
+    if !quote_bytes.contains(&quote) {
         return None;
     }
 
@@ -4404,14 +4402,6 @@ fn parse_javascript_bracket_env_read(
     Some(((literal_start + 1, name), close + 1))
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct JavaScriptCall<'a> {
-    name: String,
-    start: usize,
-    column: usize,
-    args: &'a str,
-}
-
 const JAVASCRIPT_CHILD_PROCESS_METHODS: &[&str] = &[
     "exec",
     "execSync",
@@ -4425,7 +4415,7 @@ const JAVASCRIPT_CHILD_PROCESS_METHODS: &[&str] = &[
 fn javascript_subprocess_calls<'a>(
     line: &'a str,
     context: &JavaScriptAnalysisContext,
-) -> Vec<JavaScriptCall<'a>> {
+) -> Vec<SourceCall<'a>> {
     let mut names = JAVASCRIPT_CHILD_PROCESS_METHODS
         .iter()
         .map(|method| format!("child_process.{method}"))
@@ -4444,192 +4434,25 @@ fn javascript_subprocess_calls<'a>(
     find_javascript_calls(line, &name_refs)
 }
 
-fn find_javascript_calls<'a>(line: &'a str, names: &[&str]) -> Vec<JavaScriptCall<'a>> {
-    let mut calls = Vec::new();
-    let mut index = 0;
-
-    while index < line.len() {
-        let Some((name, name_start, args_start)) = find_next_javascript_call(line, index, names)
-        else {
-            break;
-        };
-        let args_end = find_javascript_call_args_end(line, args_start).unwrap_or(line.len());
-        calls.push(JavaScriptCall {
-            name: name.to_owned(),
-            start: name_start,
-            column: name_start + 1,
-            args: &line[args_start..args_end],
-        });
-        index = args_start.saturating_add(1);
-    }
-
-    calls.sort_by(|left, right| {
-        left.start
-            .cmp(&right.start)
-            .then(left.name.cmp(&right.name))
-    });
-    calls.dedup_by(|left, right| left.start == right.start && left.name == right.name);
-    calls
-}
-
-fn find_next_javascript_call(
-    line: &str,
-    start: usize,
-    names: &[&str],
-) -> Option<(String, usize, usize)> {
-    let mut best = None;
-
-    for &name in names {
-        let mut search_start = start;
-        while let Some(relative_index) = line[search_start..].find(name) {
-            let name_start = search_start + relative_index;
-            let name_end = name_start + name.len();
-            let open_paren = skip_ascii_whitespace(line, name_end);
-
-            if line
-                .as_bytes()
-                .get(open_paren)
-                .is_some_and(|byte| *byte == b'(')
-                && javascript_name_boundary_before(line, name_start)
-                && javascript_name_boundary_after(line, name_end)
-                && !javascript_index_in_string_or_template(line, name_start)
-            {
-                let args_start = open_paren + 1;
-                if best
-                    .as_ref()
-                    .is_none_or(|(_, best_start, _)| name_start < *best_start)
-                {
-                    best = Some((name.to_owned(), name_start, args_start));
-                }
-                break;
-            }
-
-            search_start = name_end;
-        }
-    }
-
-    best
-}
-
-fn find_javascript_call_args_end(line: &str, start: usize) -> Option<usize> {
-    let bytes = line.as_bytes();
-    let mut index = start;
-    let mut depth = 1usize;
-    let mut quote_state = JavaScriptQuoteState::default();
-
-    while index < bytes.len() {
-        let byte = bytes[index];
-        if quote_state.consume(byte) {
-            index += 1;
-            continue;
-        }
-
-        if !quote_state.is_quoted() && update_javascript_delimiter_depth(byte, &mut depth) {
-            return Some(index);
-        }
-
-        index += 1;
-    }
-
-    None
-}
-
-#[derive(Debug, Default)]
-struct JavaScriptQuoteState {
-    quote: Option<u8>,
-    escaped: bool,
-}
-
-impl JavaScriptQuoteState {
-    fn consume(&mut self, byte: u8) -> bool {
-        if self.escaped {
-            self.escaped = false;
-            return true;
-        }
-
-        if self.quote.is_some() && byte == b'\\' {
-            self.escaped = true;
-            return true;
-        }
-
-        if matches!(byte, b'\'' | b'"' | b'`') {
-            self.toggle_quote(byte);
-            return true;
-        }
-
-        false
-    }
-
-    fn is_quoted(&self) -> bool {
-        self.quote.is_some()
-    }
-
-    fn toggle_quote(&mut self, byte: u8) {
-        if self.quote == Some(byte) {
-            self.quote = None;
-        } else if self.quote.is_none() {
-            self.quote = Some(byte);
-        }
-    }
-}
-
-fn update_javascript_delimiter_depth(byte: u8, depth: &mut usize) -> bool {
-    match byte {
-        b'(' | b'[' | b'{' => *depth += 1,
-        b')' | b']' | b'}' => {
-            *depth = depth.saturating_sub(1);
-            return *depth == 0;
-        }
-        _ => {}
-    }
-
-    false
+fn find_javascript_calls<'a>(line: &'a str, names: &[&str]) -> Vec<SourceCall<'a>> {
+    find_source_calls(
+        line,
+        names,
+        JAVASCRIPT_STRING_QUOTES,
+        JAVASCRIPT_IDENTIFIER_EXTRA_BYTES,
+    )
 }
 
 fn javascript_index_in_string_or_template(line: &str, target: usize) -> bool {
-    let bytes = line.as_bytes();
-    let mut index = 0;
-    let mut quote = None;
-    let mut escaped = false;
-
-    while index < bytes.len() && index < target {
-        let byte = bytes[index];
-        if escaped {
-            escaped = false;
-            index += 1;
-            continue;
-        }
-        if quote.is_some() && byte == b'\\' {
-            escaped = true;
-            index += 1;
-            continue;
-        }
-        if matches!(byte, b'\'' | b'"' | b'`') {
-            if quote == Some(byte) {
-                quote = None;
-            } else if quote.is_none() {
-                quote = Some(byte);
-            }
-        }
-        index += 1;
-    }
-
-    quote.is_some()
+    index_in_quoted_literal(line, target, JAVASCRIPT_STRING_QUOTES)
 }
 
 fn javascript_name_boundary_before(line: &str, start: usize) -> bool {
-    start == 0
-        || !line
-            .as_bytes()
-            .get(start - 1)
-            .is_some_and(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$'))
+    source_name_boundary_before(line, start, JAVASCRIPT_IDENTIFIER_EXTRA_BYTES)
 }
 
 fn javascript_name_boundary_after(line: &str, end: usize) -> bool {
-    !line
-        .as_bytes()
-        .get(end)
-        .is_some_and(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$'))
+    source_name_boundary_after(line, end, JAVASCRIPT_IDENTIFIER_EXTRA_BYTES)
 }
 
 fn find_javascript_new_function_calls(line: &str) -> Vec<(usize, String)> {
@@ -4773,103 +4596,15 @@ fn command_phrase_boundary_after(text: &str, end: usize) -> bool {
 }
 
 fn javascript_top_level_arguments(args: &str) -> Vec<&str> {
-    let bytes = args.as_bytes();
-    let mut arguments = Vec::new();
-    let mut start = 0;
-    let mut depth = 0usize;
-    let mut quote_state = JavaScriptQuoteState::default();
-
-    for (index, byte) in bytes.iter().enumerate() {
-        if javascript_argument_byte_is_nested(*byte, &mut quote_state, &mut depth) {
-            continue;
-        }
-
-        if *byte == b',' {
-            arguments.push(&args[start..index]);
-            start = index + 1;
-        }
-    }
-
-    if start < args.len() || args.ends_with(',') {
-        arguments.push(&args[start..]);
-    }
-
-    arguments
-}
-
-fn javascript_argument_byte_is_nested(
-    byte: u8,
-    quote_state: &mut JavaScriptQuoteState,
-    depth: &mut usize,
-) -> bool {
-    if quote_state.consume(byte) {
-        return true;
-    }
-
-    quote_state.is_quoted() || update_javascript_argument_depth(byte, depth) || *depth > 0
-}
-
-fn update_javascript_argument_depth(byte: u8, depth: &mut usize) -> bool {
-    match byte {
-        b'(' | b'[' | b'{' => {
-            *depth += 1;
-            true
-        }
-        b')' | b']' | b'}' => {
-            *depth = depth.saturating_sub(1);
-            true
-        }
-        _ => false,
-    }
+    top_level_arguments(args, JAVASCRIPT_STRING_QUOTES)
 }
 
 fn javascript_string_literals(line: &str) -> Vec<String> {
-    let mut literals = Vec::new();
-    let bytes = line.as_bytes();
-    let mut index = 0;
-
-    while index < bytes.len() {
-        if matches!(bytes[index], b'\'' | b'"' | b'`') {
-            if let Some((literal, end)) = parse_javascript_string_literal(line, index) {
-                literals.push(literal);
-                index = end;
-                continue;
-            }
-        }
-        index += 1;
-    }
-
-    literals
+    string_literals(line, JAVASCRIPT_STRING_QUOTES)
 }
 
 fn parse_javascript_string_literal(line: &str, start: usize) -> Option<(String, usize)> {
-    let bytes = line.as_bytes();
-    let quote = *bytes.get(start)?;
-    if !matches!(quote, b'\'' | b'"' | b'`') {
-        return None;
-    }
-
-    let mut end = start + 1;
-    let mut escaped = false;
-    while end < bytes.len() {
-        let byte = bytes[end];
-        if escaped {
-            escaped = false;
-            end += 1;
-            continue;
-        }
-        if byte == b'\\' {
-            escaped = true;
-            end += 1;
-            continue;
-        }
-        if byte == quote {
-            return Some((line[start + 1..end].to_owned(), end + 1));
-        }
-        end += 1;
-    }
-
-    None
+    parse_string_literal(line, start, JAVASCRIPT_STRING_QUOTES)
 }
 
 fn parse_javascript_identifier(text: &str) -> Option<String> {
@@ -4879,16 +4614,22 @@ fn parse_javascript_identifier(text: &str) -> Option<String> {
 }
 
 fn parse_javascript_identifier_at(text: &str, start: usize) -> Option<(String, usize)> {
+    parse_identifier_at(text, start, JAVASCRIPT_IDENTIFIER_EXTRA_BYTES)
+}
+
+fn parse_identifier_at(
+    text: &str,
+    start: usize,
+    extra_identifier_bytes: &[u8],
+) -> Option<(String, usize)> {
     let bytes = text.as_bytes();
     let first = *bytes.get(start)?;
-    if !(first.is_ascii_alphabetic() || matches!(first, b'_' | b'$')) {
+    if !(first.is_ascii_alphabetic() || extra_identifier_bytes.contains(&first)) {
         return None;
     }
 
     let mut end = start + 1;
-    while end < bytes.len()
-        && (bytes[end].is_ascii_alphanumeric() || matches!(bytes[end], b'_' | b'$'))
-    {
+    while end < bytes.len() && is_identifier_byte(bytes[end], extra_identifier_bytes) {
         end += 1;
     }
 
