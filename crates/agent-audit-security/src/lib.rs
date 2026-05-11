@@ -1159,6 +1159,175 @@ pub enum ClassificationMethod {
     StaticMetadata,
 }
 
+pub trait SecurityAnalyzer {
+    fn id(&self) -> &str;
+
+    fn capabilities(&self) -> &[SecurityAnalyzerCapability];
+
+    fn analyze(&self, input: &SecurityAnalyzerInput<'_>) -> SecurityAnalyzerOutput;
+
+    fn supported_languages(&self) -> Vec<SecurityLanguage> {
+        self.capabilities()
+            .iter()
+            .map(|capability| capability.language)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
+    fn supported_modes(&self) -> Vec<SecurityAnalyzerMode> {
+        self.capabilities()
+            .iter()
+            .map(|capability| capability.mode)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct SecurityAnalyzerCapability {
+    pub language: SecurityLanguage,
+    pub mode: SecurityAnalyzerMode,
+    pub precision: SecurityAnalyzerPrecision,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SecurityAnalyzerMode {
+    SyntaxTree,
+    RegexFallback,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SecurityAnalyzerPrecision {
+    Precise,
+    Fallback,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SecurityAnalyzerInput<'a> {
+    pub artifact: SecurityAnalyzerArtifactInput<'a>,
+    pub package: SecurityAnalyzerPackageContext<'a>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SecurityAnalyzerArtifactInput<'a> {
+    pub path: &'a str,
+    pub kind: SecurityArtifactKind,
+    pub language: SecurityLanguage,
+    pub classification_method: SecurityArtifactClassificationMethod,
+    pub classification_signals: &'a [SecurityArtifactClassificationSignal],
+    pub executable: bool,
+    pub size_bytes: u64,
+    pub content: SecurityAnalyzerContent<'a>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SecurityAnalyzerContent<'a> {
+    pub bytes: &'a [u8],
+    pub text: Option<&'a str>,
+    pub read_status: SecurityArtifactReadStatus,
+    pub max_bytes: usize,
+}
+
+impl<'a> SecurityAnalyzerContent<'a> {
+    pub fn from_bytes(
+        bytes: &'a [u8],
+        read_status: SecurityArtifactReadStatus,
+        max_bytes: usize,
+    ) -> Self {
+        let text = if is_binary_content(bytes) {
+            None
+        } else {
+            std::str::from_utf8(bytes).ok()
+        };
+
+        Self {
+            bytes,
+            text,
+            read_status,
+            max_bytes,
+        }
+    }
+
+    pub fn is_truncated(&self) -> bool {
+        self.read_status == SecurityArtifactReadStatus::Truncated
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SecurityAnalyzerPackageContext<'a> {
+    pub package_root: &'a str,
+    pub manifest_path: &'a str,
+    pub declared_tools: &'a [SecurityDeclaredTool],
+    pub declared_permissions: &'a [SecurityDeclaredPermission],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct SecurityDeclaredTool {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct SecurityDeclaredPermission {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SecurityAnalyzerOutput {
+    pub signals: Vec<SecuritySignal>,
+    pub diagnostics: Vec<SecurityAnalyzerDiagnostic>,
+}
+
+impl SecurityAnalyzerOutput {
+    pub fn is_empty(&self) -> bool {
+        self.signals.is_empty() && self.diagnostics.is_empty()
+    }
+
+    pub fn recoverable_diagnostic(diagnostic: SecurityAnalyzerDiagnostic) -> Self {
+        Self {
+            signals: Vec::new(),
+            diagnostics: vec![diagnostic],
+        }
+    }
+
+    pub fn sort_deterministically(&mut self) {
+        self.signals.sort();
+        self.diagnostics.sort();
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct SecurityAnalyzerDiagnostic {
+    pub analyzer_id: String,
+    pub severity: SecurityAnalyzerDiagnosticSeverity,
+    pub kind: SecurityAnalyzerDiagnosticKind,
+    pub message: String,
+    pub location: Option<SecurityLocation>,
+    pub mode: Option<SecurityAnalyzerMode>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SecurityAnalyzerDiagnosticSeverity {
+    Info,
+    Warning,
+    Error,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SecurityAnalyzerDiagnosticKind {
+    UnsupportedLanguage,
+    SyntaxParseFailed,
+    TextUnavailable,
+    ContentTruncated,
+    AnalyzerInternalError,
+    Other,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1276,6 +1445,113 @@ mod tests {
                     }
                 ]
             })
+        );
+    }
+
+    #[test]
+    fn analyzers_can_read_in_memory_artifact_content_directly() {
+        let analyzer = FakeSyntaxAnalyzer;
+        let content = b"sudo apt-get update\n";
+        let classification_signals = [SecurityArtifactClassificationSignal::Extension];
+        let tools = [SecurityDeclaredTool {
+            name: "shell".to_owned(),
+        }];
+        let permissions = [SecurityDeclaredPermission {
+            name: "network".to_owned(),
+        }];
+        let input = analyzer_input(
+            "scripts/install.sh",
+            content,
+            &classification_signals,
+            &tools,
+            &permissions,
+        );
+
+        let output = analyzer.analyze(&input);
+
+        assert_eq!(analyzer.id(), "fake-syntax");
+        assert_eq!(input.artifact.content.text, Some("sudo apt-get update\n"));
+        assert_eq!(input.package.manifest_path, "SKILL.md");
+        assert_eq!(input.package.declared_tools[0].name, "shell");
+        assert_eq!(input.package.declared_permissions[0].name, "network");
+        assert_eq!(output.diagnostics, Vec::new());
+        assert_eq!(output.signals.len(), 1);
+        assert_eq!(output.signals[0].location.path, "scripts/install.sh");
+        assert_eq!(
+            output.signals[0].classification,
+            ClassificationMethod::AstPattern
+        );
+    }
+
+    #[test]
+    fn recoverable_analyzer_diagnostics_do_not_abort_signal_output() {
+        let analyzer = FakeRecoveringAnalyzer;
+        let classification_signals = [SecurityArtifactClassificationSignal::Extension];
+        let input = analyzer_input(
+            "scripts/install.sh",
+            b"sudo apt-get update\n",
+            &classification_signals,
+            &[],
+            &[],
+        );
+
+        let output = analyzer.analyze(&input);
+
+        assert_eq!(output.signals.len(), 1);
+        assert_eq!(output.diagnostics.len(), 1);
+        assert_eq!(output.diagnostics[0].analyzer_id, "fake-recovering");
+        assert_eq!(
+            output.diagnostics[0].severity,
+            SecurityAnalyzerDiagnosticSeverity::Error
+        );
+        assert_eq!(
+            output.diagnostics[0].kind,
+            SecurityAnalyzerDiagnosticKind::SyntaxParseFailed
+        );
+        assert_eq!(
+            output.diagnostics[0].location,
+            Some(signal_location("scripts/install.sh"))
+        );
+        assert_eq!(
+            output.diagnostics[0].mode,
+            Some(SecurityAnalyzerMode::SyntaxTree)
+        );
+    }
+
+    #[test]
+    fn analyzer_syntax_and_regex_fallback_modes_are_stable() {
+        let analyzer = FakeHybridAnalyzer;
+
+        assert_eq!(
+            analyzer.supported_languages(),
+            vec![SecurityLanguage::Shell, SecurityLanguage::Python]
+        );
+        assert_eq!(
+            analyzer.supported_modes(),
+            vec![
+                SecurityAnalyzerMode::SyntaxTree,
+                SecurityAnalyzerMode::RegexFallback,
+            ]
+        );
+        assert_eq!(
+            serde_json::to_value(analyzer.capabilities()).expect("serialize capabilities"),
+            serde_json::json!([
+                {
+                    "language": "shell",
+                    "mode": "syntax-tree",
+                    "precision": "precise"
+                },
+                {
+                    "language": "shell",
+                    "mode": "regex-fallback",
+                    "precision": "fallback"
+                },
+                {
+                    "language": "python",
+                    "mode": "regex-fallback",
+                    "precision": "fallback"
+                }
+            ])
         );
     }
 
@@ -1876,6 +2152,147 @@ mod tests {
         assert!(classify_security_artifact("../scripts/run.sh", b"echo nope\n", true).is_none());
         assert!(classify_security_artifact("https://example.test/run.sh", b"", false).is_none());
         assert!(classify_security_artifact("C:\\tmp\\run.sh", b"", false).is_none());
+    }
+
+    const FAKE_SYNTAX_CAPABILITIES: &[SecurityAnalyzerCapability] = &[SecurityAnalyzerCapability {
+        language: SecurityLanguage::Shell,
+        mode: SecurityAnalyzerMode::SyntaxTree,
+        precision: SecurityAnalyzerPrecision::Precise,
+    }];
+
+    const FAKE_RECOVERING_CAPABILITIES: &[SecurityAnalyzerCapability] =
+        &[SecurityAnalyzerCapability {
+            language: SecurityLanguage::Shell,
+            mode: SecurityAnalyzerMode::SyntaxTree,
+            precision: SecurityAnalyzerPrecision::Precise,
+        }];
+
+    const FAKE_HYBRID_CAPABILITIES: &[SecurityAnalyzerCapability] = &[
+        SecurityAnalyzerCapability {
+            language: SecurityLanguage::Shell,
+            mode: SecurityAnalyzerMode::SyntaxTree,
+            precision: SecurityAnalyzerPrecision::Precise,
+        },
+        SecurityAnalyzerCapability {
+            language: SecurityLanguage::Shell,
+            mode: SecurityAnalyzerMode::RegexFallback,
+            precision: SecurityAnalyzerPrecision::Fallback,
+        },
+        SecurityAnalyzerCapability {
+            language: SecurityLanguage::Python,
+            mode: SecurityAnalyzerMode::RegexFallback,
+            precision: SecurityAnalyzerPrecision::Fallback,
+        },
+    ];
+
+    struct FakeSyntaxAnalyzer;
+
+    impl SecurityAnalyzer for FakeSyntaxAnalyzer {
+        fn id(&self) -> &str {
+            "fake-syntax"
+        }
+
+        fn capabilities(&self) -> &[SecurityAnalyzerCapability] {
+            FAKE_SYNTAX_CAPABILITIES
+        }
+
+        fn analyze(&self, input: &SecurityAnalyzerInput<'_>) -> SecurityAnalyzerOutput {
+            let mut output = SecurityAnalyzerOutput::default();
+            if input
+                .artifact
+                .content
+                .text
+                .is_some_and(|text| text.contains("sudo"))
+            {
+                let mut signal = sudo_signal(input.artifact.path, 1, 1);
+                signal.classification = ClassificationMethod::AstPattern;
+                output.signals.push(signal);
+            }
+
+            output
+        }
+    }
+
+    struct FakeRecoveringAnalyzer;
+
+    impl SecurityAnalyzer for FakeRecoveringAnalyzer {
+        fn id(&self) -> &str {
+            "fake-recovering"
+        }
+
+        fn capabilities(&self) -> &[SecurityAnalyzerCapability] {
+            FAKE_RECOVERING_CAPABILITIES
+        }
+
+        fn analyze(&self, input: &SecurityAnalyzerInput<'_>) -> SecurityAnalyzerOutput {
+            SecurityAnalyzerOutput {
+                signals: vec![sudo_signal(input.artifact.path, 1, 1)],
+                diagnostics: vec![SecurityAnalyzerDiagnostic {
+                    analyzer_id: self.id().to_owned(),
+                    severity: SecurityAnalyzerDiagnosticSeverity::Error,
+                    kind: SecurityAnalyzerDiagnosticKind::SyntaxParseFailed,
+                    message: "syntax parser failed; regex fallback can continue".to_owned(),
+                    location: Some(signal_location(input.artifact.path)),
+                    mode: Some(SecurityAnalyzerMode::SyntaxTree),
+                }],
+            }
+        }
+    }
+
+    struct FakeHybridAnalyzer;
+
+    impl SecurityAnalyzer for FakeHybridAnalyzer {
+        fn id(&self) -> &str {
+            "fake-hybrid"
+        }
+
+        fn capabilities(&self) -> &[SecurityAnalyzerCapability] {
+            FAKE_HYBRID_CAPABILITIES
+        }
+
+        fn analyze(&self, _input: &SecurityAnalyzerInput<'_>) -> SecurityAnalyzerOutput {
+            SecurityAnalyzerOutput::default()
+        }
+    }
+
+    fn analyzer_input<'a>(
+        path: &'a str,
+        content: &'a [u8],
+        classification_signals: &'a [SecurityArtifactClassificationSignal],
+        declared_tools: &'a [SecurityDeclaredTool],
+        declared_permissions: &'a [SecurityDeclaredPermission],
+    ) -> SecurityAnalyzerInput<'a> {
+        SecurityAnalyzerInput {
+            artifact: SecurityAnalyzerArtifactInput {
+                path,
+                kind: SecurityArtifactKind::Script,
+                language: SecurityLanguage::Shell,
+                classification_method: SecurityArtifactClassificationMethod::Extension,
+                classification_signals,
+                executable: true,
+                size_bytes: content.len() as u64,
+                content: SecurityAnalyzerContent::from_bytes(
+                    content,
+                    SecurityArtifactReadStatus::Full,
+                    content.len(),
+                ),
+            },
+            package: SecurityAnalyzerPackageContext {
+                package_root: ".",
+                manifest_path: "SKILL.md",
+                declared_tools,
+                declared_permissions,
+            },
+        }
+    }
+
+    fn signal_location(path: &str) -> SecurityLocation {
+        SecurityLocation {
+            path: path.to_owned(),
+            line: Some(1),
+            column: Some(1),
+            byte_offset: None,
+        }
     }
 
     fn sudo_signal(path: &str, line: usize, column: usize) -> SecuritySignal {
