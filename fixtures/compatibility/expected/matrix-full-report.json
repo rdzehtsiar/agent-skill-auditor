@@ -1,0 +1,490 @@
+{
+  "packages": [
+    {
+      "root": ".agents/skills/codex-pass",
+      "manifest_path": ".agents/skills/codex-pass/SKILL.md",
+      "manifest": {
+        "name": "codex-pass",
+        "description": "Codex preferred path fixture.",
+        "frontmatter": {
+          "description": "Codex preferred path fixture.",
+          "name": "codex-pass",
+          "tools": [
+            "shell"
+          ]
+        },
+        "body": "\n# Codex Pass\n\nPortable instructions for a Codex-style package.\n",
+        "headings": [
+          "Codex Pass"
+        ],
+        "links": [],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [
+          "shell"
+        ],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": ".agents/skills/codex-script",
+      "manifest_path": ".agents/skills/codex-script/SKILL.md",
+      "manifest": {
+        "name": "codex-script",
+        "description": "Codex preferred path with an inert script artifact.",
+        "frontmatter": {
+          "description": "Codex preferred path with an inert script artifact.",
+          "name": "codex-script",
+          "tools": [
+            "shell"
+          ]
+        },
+        "body": "\n# Codex Script\n\nInspect [the helper](scripts/check.sh) without executing it.\n",
+        "headings": [
+          "Codex Script"
+        ],
+        "links": [
+          {
+            "target": "scripts/check.sh",
+            "line": 10,
+            "exists": null
+          }
+        ],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [
+          "shell"
+        ],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [
+          {
+            "target": "scripts/check.sh",
+            "line": 10,
+            "exists": true
+          }
+        ],
+        "artifacts": [
+          "scripts"
+        ],
+        "files": [
+          {
+            "path": "scripts/check.sh",
+            "artifact": "scripts",
+            "kind": "file",
+            "size_bytes": 54,
+            "readonly": false
+          }
+        ]
+      }
+    },
+    {
+      "root": ".claude/skills/claude-pass",
+      "manifest_path": ".claude/skills/claude-pass/SKILL.md",
+      "manifest": {
+        "name": "claude-pass",
+        "description": "Claude preferred path fixture.",
+        "frontmatter": {
+          "allowed-tools": [
+            "Read"
+          ],
+          "description": "Claude preferred path fixture.",
+          "name": "claude-pass"
+        },
+        "body": "\n# Claude Pass\n\nPortable instructions for a Claude-style package.\n",
+        "headings": [
+          "Claude Pass"
+        ],
+        "links": [],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": ".github/skills/copilot-pass",
+      "manifest_path": ".github/skills/copilot-pass/SKILL.md",
+      "manifest": {
+        "name": "copilot-pass",
+        "description": "Copilot preferred path fixture.",
+        "frontmatter": {
+          "description": "Copilot preferred path fixture.",
+          "name": "copilot-pass",
+          "tools": [
+            "editor"
+          ]
+        },
+        "body": "\n# Copilot Pass\n\nPortable instructions for Copilot-style packages.\n",
+        "headings": [
+          "Copilot Pass"
+        ],
+        "links": [],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [
+          "editor"
+        ],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": "generic/missing-description",
+      "manifest_path": "generic/missing-description/SKILL.md",
+      "manifest": {
+        "name": "matrix-missing-description",
+        "description": null,
+        "frontmatter": {
+          "name": "matrix-missing-description"
+        },
+        "body": "\n# Matrix Missing Description\n",
+        "headings": [
+          "Matrix Missing Description"
+        ],
+        "links": [],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [],
+        "files": []
+      }
+    },
+    {
+      "root": "generic/unknown-frontmatter",
+      "manifest_path": "generic/unknown-frontmatter/SKILL.md",
+      "manifest": {
+        "name": "matrix-unknown-frontmatter",
+        "description": "Matrix fixture with unsupported metadata.",
+        "frontmatter": {
+          "description": "Matrix fixture with unsupported metadata.",
+          "name": "matrix-unknown-frontmatter",
+          "owner": "platform"
+        },
+        "body": "\n# Matrix Unknown Frontmatter\n\nThis fixture triggers a deterministic compatibility warning.\n",
+        "headings": [
+          "Matrix Unknown Frontmatter"
+        ],
+        "links": [],
+        "inline_code": [],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [],
+        "files": []
+      }
+    }
+  ],
+  "findings": [
+    {
+      "rule_id": "SKILL002",
+      "severity": "low",
+      "category": "spec",
+      "title": "Missing skill description",
+      "message": "The skill manifest does not declare a description.",
+      "location": {
+        "path": "generic/missing-description/SKILL.md",
+        "line": 1
+      },
+      "rationale": "Reviewers and host profiles need a concise behavior statement for the skill.",
+      "remediation": "Add a non-empty `description` field to frontmatter or an opening paragraph.",
+      "suppression": "Suppress `SKILL002` only with a documented reason in the project audit config."
+    },
+    {
+      "rule_id": "SKILL040",
+      "severity": "low",
+      "category": "compatibility",
+      "title": "Unknown frontmatter field",
+      "message": "The manifest declares unsupported frontmatter field `owner`.",
+      "location": {
+        "path": "generic/unknown-frontmatter/SKILL.md",
+        "line": 4
+      },
+      "rationale": "Unknown fields may be ignored, rejected, or interpreted differently by hosts, reducing portability and reviewability.",
+      "remediation": "Remove the field, move the information into the Markdown body, or wait for documented host profile support.",
+      "suppression": "Suppress `SKILL040` only with a documented reason in the project audit config."
+    }
+  ],
+  "suppressed_findings": [],
+  "summary": {
+    "package_count": 6,
+    "finding_count": 2,
+    "suppressed_finding_count": 0,
+    "invalid_manifest_count": 1,
+    "broken_reference_count": 0
+  },
+  "compatibility": {
+    "profiles": [
+      "agent-skills-spec",
+      "claude-code",
+      "codex",
+      "github-copilot",
+      "vscode-copilot",
+      "generic"
+    ],
+    "matrix": [
+      {
+        "path": ".agents/skills/codex-pass/SKILL.md",
+        "name": "codex-pass",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "warn",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "warn",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "warn",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "pass",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": ".agents/skills/codex-script/SKILL.md",
+        "name": "codex-script",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "warn",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "warn",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "warn",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "warn",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "pass",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": ".claude/skills/claude-pass/SKILL.md",
+        "name": "claude-pass",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "warn",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "warn",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "warn",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "pass",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": ".github/skills/copilot-pass/SKILL.md",
+        "name": "copilot-pass",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "warn",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "warn",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "pass",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "generic/missing-description/SKILL.md",
+        "name": "matrix-missing-description",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL002"
+            ]
+          },
+          {
+            "profile": "claude-code",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL002"
+            ]
+          },
+          {
+            "profile": "codex",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL002"
+            ]
+          },
+          {
+            "profile": "github-copilot",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL002"
+            ]
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL002"
+            ]
+          },
+          {
+            "profile": "generic",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL002"
+            ]
+          }
+        ]
+      },
+      {
+        "path": "generic/unknown-frontmatter/SKILL.md",
+        "name": "matrix-unknown-frontmatter",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL040"
+            ]
+          },
+          {
+            "profile": "claude-code",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL040"
+            ]
+          },
+          {
+            "profile": "codex",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL040"
+            ]
+          },
+          {
+            "profile": "github-copilot",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL040"
+            ]
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL040"
+            ]
+          },
+          {
+            "profile": "generic",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL040"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

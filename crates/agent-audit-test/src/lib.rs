@@ -403,127 +403,25 @@ mod tests {
     }
 
     #[test]
-    fn phase3_compatibility_matrix_fixture_has_stable_projection() {
-        let matrix = scan_compatibility_fixture("matrix", ScanOptions::default());
-        let first_projection = compatibility_snapshot_projection(&matrix);
-        let second_projection = compatibility_snapshot_projection(&scan_compatibility_fixture(
-            "matrix",
-            ScanOptions::default(),
-        ));
+    fn phase3_compatibility_matrix_fixture_matches_full_json_snapshot() {
+        let first_report = scan_compatibility_fixture("matrix", ScanOptions::default());
+        let second_report = scan_compatibility_fixture("matrix", ScanOptions::default());
 
-        let expected = serde_json::json!({
-            "summary": {
-                "package_count": 6,
-                "finding_count": 2,
-                "suppressed_finding_count": 0,
-                "invalid_manifest_count": 1,
-                "broken_reference_count": 0
-            },
-            "findings": [
-                {
-                    "path": "generic/missing-description/SKILL.md",
-                    "line": 1,
-                    "rule_id": "SKILL002"
-                },
-                {
-                    "path": "generic/unknown-frontmatter/SKILL.md",
-                    "line": 4,
-                    "rule_id": "SKILL040"
-                }
-            ],
-            "compatibility": {
-                "profiles": [
-                    "agent-skills-spec",
-                    "claude-code",
-                    "codex",
-                    "github-copilot",
-                    "vscode-copilot",
-                    "generic"
-                ],
-                "matrix": [
-                    {
-                        "path": ".agents/skills/codex-pass/SKILL.md",
-                        "name": "codex-pass",
-                        "profiles": [
-                            {"profile": "agent-skills-spec", "status": "pass", "finding_ids": []},
-                            {"profile": "claude-code", "status": "warn", "finding_ids": []},
-                            {"profile": "codex", "status": "pass", "finding_ids": []},
-                            {"profile": "github-copilot", "status": "warn", "finding_ids": []},
-                            {"profile": "vscode-copilot", "status": "warn", "finding_ids": []},
-                            {"profile": "generic", "status": "pass", "finding_ids": []}
-                        ]
-                    },
-                    {
-                        "path": ".agents/skills/codex-script/SKILL.md",
-                        "name": "codex-script",
-                        "profiles": [
-                            {"profile": "agent-skills-spec", "status": "pass", "finding_ids": []},
-                            {"profile": "claude-code", "status": "warn", "finding_ids": []},
-                            {"profile": "codex", "status": "warn", "finding_ids": []},
-                            {"profile": "github-copilot", "status": "warn", "finding_ids": []},
-                            {"profile": "vscode-copilot", "status": "warn", "finding_ids": []},
-                            {"profile": "generic", "status": "pass", "finding_ids": []}
-                        ]
-                    },
-                    {
-                        "path": ".claude/skills/claude-pass/SKILL.md",
-                        "name": "claude-pass",
-                        "profiles": [
-                            {"profile": "agent-skills-spec", "status": "pass", "finding_ids": []},
-                            {"profile": "claude-code", "status": "pass", "finding_ids": []},
-                            {"profile": "codex", "status": "warn", "finding_ids": []},
-                            {"profile": "github-copilot", "status": "warn", "finding_ids": []},
-                            {"profile": "vscode-copilot", "status": "warn", "finding_ids": []},
-                            {"profile": "generic", "status": "pass", "finding_ids": []}
-                        ]
-                    },
-                    {
-                        "path": ".github/skills/copilot-pass/SKILL.md",
-                        "name": "copilot-pass",
-                        "profiles": [
-                            {"profile": "agent-skills-spec", "status": "pass", "finding_ids": []},
-                            {"profile": "claude-code", "status": "warn", "finding_ids": []},
-                            {"profile": "codex", "status": "warn", "finding_ids": []},
-                            {"profile": "github-copilot", "status": "pass", "finding_ids": []},
-                            {"profile": "vscode-copilot", "status": "pass", "finding_ids": []},
-                            {"profile": "generic", "status": "pass", "finding_ids": []}
-                        ]
-                    },
-                    {
-                        "path": "generic/missing-description/SKILL.md",
-                        "name": "matrix-missing-description",
-                        "profiles": [
-                            {"profile": "agent-skills-spec", "status": "fail", "finding_ids": ["SKILL002"]},
-                            {"profile": "claude-code", "status": "fail", "finding_ids": ["SKILL002"]},
-                            {"profile": "codex", "status": "fail", "finding_ids": ["SKILL002"]},
-                            {"profile": "github-copilot", "status": "fail", "finding_ids": ["SKILL002"]},
-                            {"profile": "vscode-copilot", "status": "fail", "finding_ids": ["SKILL002"]},
-                            {"profile": "generic", "status": "fail", "finding_ids": ["SKILL002"]}
-                        ]
-                    },
-                    {
-                        "path": "generic/unknown-frontmatter/SKILL.md",
-                        "name": "matrix-unknown-frontmatter",
-                        "profiles": [
-                            {"profile": "agent-skills-spec", "status": "warn", "finding_ids": ["SKILL040"]},
-                            {"profile": "claude-code", "status": "warn", "finding_ids": ["SKILL040"]},
-                            {"profile": "codex", "status": "warn", "finding_ids": ["SKILL040"]},
-                            {"profile": "github-copilot", "status": "warn", "finding_ids": ["SKILL040"]},
-                            {"profile": "vscode-copilot", "status": "warn", "finding_ids": ["SKILL040"]},
-                            {"profile": "generic", "status": "warn", "finding_ids": ["SKILL040"]}
-                        ]
-                    }
-                ]
-            }
-        });
+        let first_json = render_json(&first_report).expect("render compatibility matrix JSON");
+        let second_json = render_json(&second_report).expect("rerender compatibility matrix JSON");
+        let expected_json = expected_compatibility_matrix_json();
 
-        assert_eq!(first_projection, second_projection);
-        assert_eq!(first_projection, expected);
+        assert_eq!(first_json.as_bytes(), second_json.as_bytes());
+        assert_eq!(first_json, expected_json);
+        assert!(!first_json.contains("timestamp"));
+        assert!(!first_json.contains("generated_at"));
+        assert!(!json_contains_path(&first_json, &workspace_root()));
 
-        let rendered = render_json(&matrix).expect("render compatibility matrix JSON");
-        assert!(!json_contains_path(&rendered, &workspace_root()));
-        assert!(!rendered.contains("timestamp"));
-        assert!(!rendered.contains("generated_at"));
+        let value: serde_json::Value =
+            serde_json::from_str(&first_json).expect("parse compatibility matrix JSON");
+        assert_eq!(value["summary"]["package_count"], 6);
+        assert_eq!(value["summary"]["finding_count"], 2);
+        assert_eq!(value["compatibility"]["matrix"].as_array().unwrap().len(), 6);
     }
 
     fn representative_corpus_root() -> PathBuf {
@@ -573,6 +471,13 @@ mod tests {
         expected.strip_suffix('\n').unwrap_or(expected)
     }
 
+    fn expected_compatibility_matrix_json() -> &'static str {
+        let expected = include_str!(
+            "../../../fixtures/compatibility/expected/matrix-full-report.json"
+        );
+        expected.strip_suffix('\n').unwrap_or(expected)
+    }
+
     fn assert_compatibility_profile_projection(
         report: &ScanReport,
         path: &str,
@@ -615,41 +520,6 @@ mod tests {
                 )
             })
             .collect()
-    }
-
-    fn compatibility_snapshot_projection(report: &ScanReport) -> serde_json::Value {
-        serde_json::json!({
-            "summary": {
-                "package_count": report.summary.package_count,
-                "finding_count": report.summary.finding_count,
-                "suppressed_finding_count": report.summary.suppressed_finding_count,
-                "invalid_manifest_count": report.summary.invalid_manifest_count,
-                "broken_reference_count": report.summary.broken_reference_count,
-            },
-            "findings": report.findings.iter().map(|finding| {
-                serde_json::json!({
-                    "path": finding.location.path,
-                    "line": finding.location.line,
-                    "rule_id": finding.rule_id,
-                })
-            }).collect::<Vec<_>>(),
-            "compatibility": {
-                "profiles": report.compatibility.profiles,
-                "matrix": report.compatibility.matrix.iter().map(|row| {
-                    serde_json::json!({
-                        "path": row.path,
-                        "name": row.name,
-                        "profiles": row.profiles.iter().map(|profile| {
-                            serde_json::json!({
-                                "profile": profile.profile,
-                                "status": profile.status.as_str(),
-                                "finding_ids": profile.finding_ids,
-                            })
-                        }).collect::<Vec<_>>(),
-                    })
-                }).collect::<Vec<_>>(),
-            },
-        })
     }
 
     fn workspace_root() -> PathBuf {
