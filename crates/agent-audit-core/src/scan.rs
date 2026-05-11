@@ -39,6 +39,7 @@ impl Default for ScanOptions {
 
 pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> {
     let manifests = discover_skill_manifests(root)?;
+    let profiles = selected_profiles(options.config.as_ref());
     let mut packages = Vec::new();
     let mut package_facts = Vec::new();
 
@@ -120,19 +121,22 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
             .references
             .sort_by(|left, right| left.target.cmp(&right.target));
 
+        let frontmatter_fields = manifest
+            .frontmatter
+            .keys()
+            .filter(|field| !is_claude_accepted_frontmatter_field(&profiles, field))
+            .map(|field| RuleFrontmatterFieldFact {
+                name: field.clone(),
+                line: frontmatter_key_lines.get(field.as_str()).copied(),
+            })
+            .collect();
+
         package_facts.push(RulePackageFacts {
             manifest_path: manifest_display.clone(),
             manifest: RuleManifestFacts::Parsed(RuleParsedManifestFacts {
                 name: manifest.name.clone(),
                 description: manifest.description.clone(),
-                frontmatter_fields: manifest
-                    .frontmatter
-                    .keys()
-                    .map(|field| RuleFrontmatterFieldFact {
-                        name: field.clone(),
-                        line: frontmatter_key_lines.get(field.as_str()).copied(),
-                    })
-                    .collect(),
+                frontmatter_fields,
                 references: graph
                     .references
                     .iter()
@@ -154,10 +158,15 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         });
     }
 
-    let findings = evaluate_structural_rules(&package_facts)
+    let mut findings = evaluate_structural_rules(&package_facts)
         .into_iter()
         .map(skill_finding_from_evaluated_rule)
-        .collect();
+        .collect::<Vec<_>>();
+    findings.extend(evaluate_compatibility_findings(
+        &packages,
+        options.config.as_ref(),
+    ));
+    sort_skill_findings(&mut findings);
     let (findings, suppressed_findings) = apply_suppressions(findings, options.config.as_ref());
 
     let invalid_manifest_count = findings
@@ -215,12 +224,56 @@ fn compatibility_for_profile(
 ) -> ProfileCompatibilityResult {
     match profile {
         "agent-skills-spec" => evaluate_baseline_structural_profile(profile, package, findings),
+        "claude-code" => evaluate_claude_code_profile(profile, package, findings),
         "generic" => evaluate_baseline_structural_profile(profile, package, findings),
         _ => ProfileCompatibilityResult {
             profile: profile.to_owned(),
             status: CompatibilityStatus::Unknown,
             finding_ids: Vec::new(),
         },
+    }
+}
+
+fn evaluate_claude_code_profile(
+    profile: &str,
+    package: &SkillPackage,
+    findings: &[SkillFinding],
+) -> ProfileCompatibilityResult {
+    const FAIL_RULES: &[&str] = &["SKILL001", "SKILL002", "SKILL041"];
+    const BASELINE_WARN_RULES: &[&str] = &["SKILL010", "SKILL020", "SKILL030"];
+    const COMPATIBILITY_WARN_RULES: &[&str] = &["SKILL050"];
+
+    let mut rule_order = FAIL_RULES
+        .iter()
+        .chain(BASELINE_WARN_RULES)
+        .chain(COMPATIBILITY_WARN_RULES)
+        .copied()
+        .collect::<Vec<_>>();
+    if has_claude_unknown_frontmatter_field(package) {
+        rule_order.push("SKILL040");
+    }
+    rule_order.sort_unstable();
+    rule_order.dedup();
+
+    let finding_ids =
+        compatibility_finding_ids_for_package(&package.manifest_path, findings, rule_order.iter());
+    let has_fail = finding_ids
+        .iter()
+        .any(|rule_id| FAIL_RULES.contains(&rule_id.as_str()));
+    let has_matrix_warning = !is_claude_preferred_manifest_path(&package.manifest_path)
+        || has_script_reference_or_artifact(package);
+    let status = if has_fail {
+        CompatibilityStatus::Fail
+    } else if finding_ids.is_empty() && !has_matrix_warning {
+        CompatibilityStatus::Pass
+    } else {
+        CompatibilityStatus::Warn
+    };
+
+    ProfileCompatibilityResult {
+        profile: profile.to_owned(),
+        status,
+        finding_ids,
     }
 }
 
@@ -268,6 +321,122 @@ fn compatibility_finding_ids_for_package<'a>(
         })
         .map(|rule_id| (*rule_id).to_owned())
         .collect()
+}
+
+fn evaluate_compatibility_findings(
+    packages: &[SkillPackage],
+    config: Option<&AuditConfig>,
+) -> Vec<SkillFinding> {
+    if !selected_profiles(config)
+        .iter()
+        .any(|profile| profile == "claude-code")
+    {
+        return Vec::new();
+    }
+
+    packages
+        .iter()
+        .filter(|package| is_claude_preferred_manifest_path(&package.manifest_path))
+        .flat_map(claude_code_metadata_findings)
+        .collect()
+}
+
+fn claude_code_metadata_findings(package: &SkillPackage) -> Vec<SkillFinding> {
+    const IGNORED_FIELDS: &[&str] = &["permissions", "tools"];
+
+    package
+        .manifest
+        .frontmatter
+        .keys()
+        .filter(|field| IGNORED_FIELDS.contains(&field.as_str()))
+        .map(|field| {
+            compatibility_finding(
+                "SKILL050",
+                format!(
+                    "Claude Code is likely to ignore the `{field}` frontmatter field; use `allowed-tools` for Claude tool allowlists or move advisory metadata into the Markdown body."
+                ),
+                package.manifest_path.clone(),
+                Some(1),
+            )
+        })
+        .collect()
+}
+
+fn compatibility_finding(
+    rule_id: &str,
+    message: String,
+    path: String,
+    line: Option<usize>,
+) -> SkillFinding {
+    let metadata = active_rule_metadata(rule_id)
+        .expect("compatibility finding must have active registry metadata");
+
+    SkillFinding {
+        rule_id: metadata.id.as_str().to_owned(),
+        severity: severity_from_metadata(metadata.severity),
+        category: category_from_metadata(metadata.category),
+        title: metadata.title.to_owned(),
+        message,
+        location: crate::model::FindingLocation { path, line },
+        rationale: metadata.rationale.to_owned(),
+        remediation: metadata.remediation.to_owned(),
+        suppression: metadata.suppression_guidance.to_owned(),
+    }
+}
+
+fn sort_skill_findings(findings: &mut [SkillFinding]) {
+    findings.sort_by(|left, right| {
+        left.location
+            .path
+            .cmp(&right.location.path)
+            .then(left.location.line.cmp(&right.location.line))
+            .then(left.rule_id.cmp(&right.rule_id))
+            .then(left.message.cmp(&right.message))
+    });
+}
+
+fn has_claude_unknown_frontmatter_field(package: &SkillPackage) -> bool {
+    const ACCEPTED_FIELDS: &[&str] = &["allowed-tools", "description", "name"];
+    const KNOWN_IGNORED_FIELDS: &[&str] = &["permissions", "tools"];
+
+    package.manifest.frontmatter.keys().any(|field| {
+        !ACCEPTED_FIELDS.contains(&field.as_str())
+            && !KNOWN_IGNORED_FIELDS.contains(&field.as_str())
+    })
+}
+
+fn is_claude_accepted_frontmatter_field(profiles: &[String], field: &str) -> bool {
+    field == "allowed-tools" && profiles.iter().any(|profile| profile == "claude-code")
+}
+
+fn is_claude_preferred_manifest_path(path: &str) -> bool {
+    let path = normalize_report_path(path);
+    let Some(skill_path) = path.strip_prefix(".claude/skills/") else {
+        return false;
+    };
+    let Some(skill_name) = skill_path.strip_suffix("/SKILL.md") else {
+        return false;
+    };
+
+    !skill_name.is_empty() && !skill_name.contains('/')
+}
+
+fn has_script_reference_or_artifact(package: &SkillPackage) -> bool {
+    package
+        .graph
+        .references
+        .iter()
+        .any(|reference| normalize_report_path(&reference.target).starts_with("scripts/"))
+        || package
+            .graph
+            .files
+            .iter()
+            .any(|file| file.artifact == SkillArtifactKind::Scripts)
+        || package
+            .graph
+            .artifacts
+            .iter()
+            .any(|artifact| artifact == "scripts")
 }
 
 fn selected_profiles(config: Option<&AuditConfig>) -> Vec<String> {
@@ -777,11 +946,7 @@ description: Default compatibility fixture.
                     CompatibilityStatus::Pass,
                     Vec::<&str>::new()
                 ),
-                (
-                    "claude-code",
-                    CompatibilityStatus::Unknown,
-                    Vec::<&str>::new()
-                ),
+                ("claude-code", CompatibilityStatus::Warn, Vec::<&str>::new()),
                 ("codex", CompatibilityStatus::Unknown, Vec::<&str>::new()),
                 (
                     "github-copilot",
@@ -798,6 +963,62 @@ description: Default compatibility fixture.
         );
         assert_eq!(report.summary.finding_count, 0);
         assert_eq!(report.summary.suppressed_finding_count, 0);
+    }
+
+    #[test]
+    fn scan_default_profiles_emit_claude_ignored_metadata_skill050() {
+        let workspace = TestWorkspace::new("scan-default-claude-ignored-metadata");
+        workspace.write_file(
+            ".claude/skills/reviewer/SKILL.md",
+            r#"---
+name: reviewer
+description: Reviews code changes.
+tools:
+  - shell
+---
+
+# Reviewer
+"#,
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_eq!(
+            report
+                .findings
+                .iter()
+                .map(|finding| finding.rule_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["SKILL050"]
+        );
+        assert_eq!(
+            ".claude/skills/reviewer/SKILL.md",
+            report.findings[0].location.path
+        );
+        assert!(report.findings[0].message.contains("`tools`"));
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![
+                (
+                    "agent-skills-spec",
+                    CompatibilityStatus::Pass,
+                    Vec::<&str>::new()
+                ),
+                ("claude-code", CompatibilityStatus::Warn, vec!["SKILL050"]),
+                ("codex", CompatibilityStatus::Unknown, Vec::<&str>::new()),
+                (
+                    "github-copilot",
+                    CompatibilityStatus::Unknown,
+                    Vec::<&str>::new()
+                ),
+                (
+                    "vscode-copilot",
+                    CompatibilityStatus::Unknown,
+                    Vec::<&str>::new()
+                ),
+                ("generic", CompatibilityStatus::Pass, Vec::<&str>::new()),
+            ]
+        );
     }
 
     #[test]
@@ -837,8 +1058,8 @@ Read [missing](references/missing.md).
                 ),
                 (
                     "claude-code",
-                    CompatibilityStatus::Unknown,
-                    Vec::<&str>::new()
+                    CompatibilityStatus::Warn,
+                    vec!["SKILL010", "SKILL040"]
                 ),
                 ("codex", CompatibilityStatus::Unknown, Vec::<&str>::new()),
                 (
@@ -891,6 +1112,368 @@ This manifest intentionally has no heading fallback.
                 CompatibilityStatus::Fail,
                 vec!["SKILL001", "SKILL040"]
             )
+        );
+    }
+
+    #[test]
+    fn scan_claude_code_preferred_path_passes() {
+        let workspace = TestWorkspace::new("scan-claude-preferred-pass");
+        workspace.write_file(
+            ".claude/skills/reviewer/SKILL.md",
+            r#"---
+name: reviewer
+description: Reviews code changes.
+---
+
+# Reviewer
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - claude-code
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert!(report.findings.is_empty());
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![("claude-code", CompatibilityStatus::Pass, Vec::<&str>::new())]
+        );
+    }
+
+    #[test]
+    fn scan_claude_code_allowed_tools_does_not_report_skill040() {
+        let workspace = TestWorkspace::new("scan-claude-allowed-tools-pass");
+        workspace.write_file(
+            ".claude/skills/reviewer/SKILL.md",
+            r#"---
+name: reviewer
+description: Reviews code changes.
+allowed-tools:
+  - Bash(git diff:*)
+---
+
+# Reviewer
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - claude-code
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert!(report.findings.is_empty());
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![("claude-code", CompatibilityStatus::Pass, Vec::<&str>::new())]
+        );
+    }
+
+    #[test]
+    fn scan_claude_code_allowed_tools_on_root_skill_warns_only_for_path() {
+        let workspace = TestWorkspace::new("scan-claude-root-allowed-tools-path-warn");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: reviewer
+description: Reviews code changes.
+allowed-tools:
+  - Bash(git diff:*)
+---
+
+# Reviewer
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - claude-code
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert!(report.findings.is_empty());
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![("claude-code", CompatibilityStatus::Warn, Vec::<&str>::new())]
+        );
+    }
+
+    #[test]
+    fn scan_claude_code_warns_for_non_claude_path_without_finding_id() {
+        let workspace = TestWorkspace::new("scan-claude-path-warn");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: reviewer
+description: Reviews code changes.
+---
+
+# Reviewer
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - claude-code
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert!(report.findings.is_empty());
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![("claude-code", CompatibilityStatus::Warn, Vec::<&str>::new())]
+        );
+    }
+
+    #[test]
+    fn scan_claude_code_warns_for_ignored_metadata_with_skill050() {
+        let workspace = TestWorkspace::new("scan-claude-ignored-metadata");
+        workspace.write_file(
+            ".claude/skills/reviewer/SKILL.md",
+            r#"---
+name: reviewer
+description: Reviews code changes.
+tools:
+  - shell
+---
+
+# Reviewer
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - claude-code
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(report.findings.len(), 1);
+        assert_eq!(report.findings[0].rule_id, "SKILL050");
+        assert_eq!(report.findings[0].category, FindingCategory::Compatibility);
+        assert_eq!(
+            report.findings[0].location.path,
+            ".claude/skills/reviewer/SKILL.md"
+        );
+        assert!(report.findings[0].message.contains("`tools`"));
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![("claude-code", CompatibilityStatus::Warn, vec!["SKILL050"])]
+        );
+    }
+
+    #[test]
+    fn scan_claude_code_warns_for_script_references_without_finding_id() {
+        let workspace = TestWorkspace::new("scan-claude-script-warn");
+        workspace.write_file(
+            ".claude/skills/reviewer/SKILL.md",
+            r#"---
+name: reviewer
+description: Reviews code changes.
+---
+
+# Reviewer
+
+Run [check](scripts/check.sh) when explicitly requested.
+"#,
+        );
+        workspace.write_file(".claude/skills/reviewer/scripts/check.sh", "echo check\n");
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - claude-code
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert!(report.findings.is_empty());
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![("claude-code", CompatibilityStatus::Warn, Vec::<&str>::new())]
+        );
+    }
+
+    #[test]
+    fn scan_claude_code_fails_for_baseline_required_findings() {
+        let workspace = TestWorkspace::new("scan-claude-baseline-fail");
+        workspace.write_file(
+            ".claude/skills/reviewer/SKILL.md",
+            r#"---
+name: reviewer
+---
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - claude-code
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![("claude-code", CompatibilityStatus::Fail, vec!["SKILL002"])]
+        );
+    }
+
+    #[test]
+    fn scan_claude_code_ignores_suppressed_skill050() {
+        let workspace = TestWorkspace::new("scan-claude-suppressed-skill050");
+        workspace.write_file(
+            ".claude/skills/reviewer/SKILL.md",
+            r#"---
+name: reviewer
+description: Reviews code changes.
+tools:
+  - shell
+---
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - claude-code
+
+ignore:
+  - rule: SKILL050
+    path: .claude/skills/reviewer/SKILL.md
+    reason: Claude wrapper translates portable tools metadata.
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert!(report.findings.is_empty());
+        assert_eq!(report.summary.suppressed_finding_count, 1);
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![("claude-code", CompatibilityStatus::Pass, Vec::<&str>::new())]
+        );
+    }
+
+    #[test]
+    fn scan_explicit_config_profiles_preserves_claude_order() {
+        let workspace = TestWorkspace::new("scan-claude-profile-order");
+        workspace.write_file(
+            ".claude/skills/reviewer/SKILL.md",
+            r#"---
+name: reviewer
+description: Reviews code changes.
+---
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - generic
+  - claude-code
+  - agent-skills-spec
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(
+            report.compatibility.profiles,
+            vec!["generic", "claude-code", "agent-skills-spec"]
+        );
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![
+                ("generic", CompatibilityStatus::Pass, Vec::<&str>::new()),
+                ("claude-code", CompatibilityStatus::Pass, Vec::<&str>::new()),
+                (
+                    "agent-skills-spec",
+                    CompatibilityStatus::Pass,
+                    Vec::<&str>::new()
+                ),
+            ]
         );
     }
 
@@ -3027,7 +3610,7 @@ description: JSON stability fixture.
                 .collect::<Vec<_>>(),
             vec![
                 ("agent-skills-spec", "pass", 0),
-                ("claude-code", "unknown", 0),
+                ("claude-code", "warn", 0),
                 ("codex", "unknown", 0),
                 ("github-copilot", "unknown", 0),
                 ("vscode-copilot", "unknown", 0),
@@ -3103,7 +3686,7 @@ description: JSON stability fixture.
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
+            "status": "warn",
             "finding_ids": []
           },
           {

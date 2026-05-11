@@ -1246,7 +1246,7 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
+            "status": "warn",
             "finding_ids": []
           },
           {
@@ -1284,8 +1284,10 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
           },
           {
             "profile": "codex",
@@ -1324,8 +1326,10 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "fail",
+            "finding_ids": [
+              "SKILL002"
+            ]
           },
           {
             "profile": "codex",
@@ -1362,7 +1366,7 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
+            "status": "warn",
             "finding_ids": []
           },
           {
@@ -1400,8 +1404,10 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
           },
           {
             "profile": "codex",
@@ -1440,8 +1446,10 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
           },
           {
             "profile": "codex",
@@ -1478,7 +1486,7 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           },
           {
@@ -1516,8 +1524,10 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL040"
+            ]
           },
           {
             "profile": "codex",
@@ -1554,7 +1564,7 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
+            "status": "warn",
             "finding_ids": []
           },
           {
@@ -1592,8 +1602,10 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
           },
           {
             "profile": "codex",
@@ -1632,8 +1644,10 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
           },
           {
             "profile": "codex",
@@ -1670,7 +1684,7 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
+            "status": "warn",
             "finding_ids": []
           },
           {
@@ -1706,7 +1720,7 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
+            "status": "warn",
             "finding_ids": []
           },
           {
@@ -1742,7 +1756,7 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
+            "status": "warn",
             "finding_ids": []
           },
           {
@@ -1778,7 +1792,7 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
+            "status": "warn",
             "finding_ids": []
           },
           {
@@ -1814,7 +1828,7 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
+            "status": "warn",
             "finding_ids": []
           },
           {
@@ -1852,8 +1866,10 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
           },
           {
             "profile": "codex",
@@ -1892,8 +1908,10 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
           },
           {
             "profile": "codex",
@@ -1932,8 +1950,10 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
           },
           {
             "profile": "codex",
@@ -1972,8 +1992,10 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "fail",
+            "finding_ids": [
+              "SKILL002"
+            ]
           },
           {
             "profile": "codex",
@@ -2012,8 +2034,10 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
           },
           {
             "profile": "codex",
@@ -2050,7 +2074,7 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
+            "status": "warn",
             "finding_ids": []
           },
           {
@@ -2086,7 +2110,7 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
+            "status": "warn",
             "finding_ids": []
           },
           {
@@ -2124,8 +2148,10 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL040"
+            ]
           },
           {
             "profile": "codex",
@@ -2162,7 +2188,7 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
+            "status": "warn",
             "finding_ids": []
           },
           {
@@ -2198,7 +2224,7 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
+            "status": "warn",
             "finding_ids": []
           },
           {
@@ -2234,7 +2260,7 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
+            "status": "warn",
             "finding_ids": []
           },
           {
@@ -2272,8 +2298,10 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
           },
           {
             "profile": "codex",
@@ -2310,7 +2338,7 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
+            "status": "warn",
             "finding_ids": []
           },
           {
@@ -2349,8 +2377,11 @@
           },
           {
             "profile": "claude-code",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010",
+              "SKILL040"
+            ]
           },
           {
             "profile": "codex",
