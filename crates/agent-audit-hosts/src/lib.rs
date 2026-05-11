@@ -533,6 +533,7 @@ pub struct ProfileCompatibilityResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
 
     #[test]
     fn host_profiles_are_stable_and_unique() {
@@ -555,15 +556,31 @@ mod tests {
     }
 
     #[test]
-    fn profile_definitions_preserve_stable_id_order() {
-        let profile_ids: Vec<_> = profiles().iter().map(|profile| profile.id).collect();
+    fn profiles_are_returned_in_deterministic_registry_order() {
+        let profile_ids = profile_ids(profiles());
 
         assert_eq!(profile_ids, HOST_PROFILES);
     }
 
     #[test]
-    fn profile_definitions_expose_expected_public_data() {
-        for profile in HOST_PROFILE_DEFINITIONS {
+    fn profile_registry_apis_are_consistent() {
+        assert_eq!(profiles(), HOST_PROFILE_DEFINITIONS);
+        assert_eq!(profiles().len(), HOST_PROFILES.len());
+
+        for (index, id) in HOST_PROFILES.iter().enumerate() {
+            let profile = profile_by_id(id).unwrap_or_else(|| panic!("{id} profile exists"));
+
+            assert_eq!(profile, &HOST_PROFILE_DEFINITIONS[index]);
+            assert_eq!(profile, &profiles()[index]);
+            assert_eq!(profile.id, *id);
+        }
+
+        assert_eq!(profile_by_id("unknown-host"), None);
+    }
+
+    #[test]
+    fn profile_definitions_expose_supported_static_data() {
+        for profile in profiles() {
             assert!(!profile.id.is_empty());
             assert!(!profile.display_name.is_empty(), "{}", profile.id);
             assert!(!profile.required_fields.is_empty(), "{}", profile.id);
@@ -596,8 +613,101 @@ mod tests {
             assert!(!profile.documentation_notes.is_empty(), "{}", profile.id);
             assert_eq!(profile_by_id(profile.id), Some(profile));
         }
+    }
 
-        assert_eq!(profile_by_id("unknown-host"), None);
+    #[test]
+    fn profile_documentation_fields_are_non_empty() {
+        for profile in profiles() {
+            assert_not_blank(profile.id, "id", profile.id);
+            assert_not_blank(profile.id, "display_name", profile.display_name);
+
+            for field in profile.required_fields {
+                assert_manifest_field_documented(profile.id, "required_fields", field);
+            }
+
+            for field in profile.accepted_optional_fields {
+                assert_manifest_field_documented(profile.id, "accepted_optional_fields", field);
+            }
+
+            for field in profile.known_ignored_fields {
+                assert_manifest_field_documented(profile.id, "known_ignored_fields", field);
+            }
+
+            for field in profile.metadata_fields {
+                assert_not_blank(profile.id, "metadata field name", field.field);
+                assert_not_blank(profile.id, "metadata field description", field.description);
+                if let Some(namespace) = field.namespace {
+                    assert_not_blank(profile.id, "metadata field namespace", namespace);
+                }
+            }
+
+            for namespace in profile.metadata_namespaces {
+                assert_not_blank(profile.id, "metadata namespace", namespace);
+            }
+
+            assert_not_blank(
+                profile.id,
+                "manifest size limit description",
+                profile.recommended_manifest_size_limit.description,
+            );
+
+            for note in profile.documentation_notes {
+                assert_not_blank(profile.id, "documentation note", note);
+            }
+        }
+    }
+
+    #[test]
+    fn profile_data_is_internally_coherent_for_future_evaluators() {
+        for profile in profiles() {
+            assert_unique_manifest_fields(profile.id, "required_fields", profile.required_fields);
+            assert_unique_manifest_fields(
+                profile.id,
+                "accepted_optional_fields",
+                profile.accepted_optional_fields,
+            );
+            assert_unique_manifest_fields(
+                profile.id,
+                "known_ignored_fields",
+                profile.known_ignored_fields,
+            );
+            assert_unique_metadata_fields(profile.id, profile.metadata_fields);
+
+            for convention in profile.path_conventions {
+                assert_not_blank(profile.id, "path convention pattern", convention.pattern);
+                assert_not_blank(
+                    profile.id,
+                    "path convention description",
+                    convention.description,
+                );
+            }
+
+            assert!(profile.recommended_manifest_size_limit.bytes > 0, "{}", profile.id);
+
+            assert_capability_expectation_documented(
+                profile.id,
+                "tool_expectation",
+                profile.tool_expectation,
+            );
+            assert_capability_expectation_documented(
+                profile.id,
+                "script_support",
+                profile.script_support,
+            );
+            assert_capability_expectation_documented(
+                profile.id,
+                "artifact_support",
+                profile.artifact_support,
+            );
+
+            for notice in profile.known_incompatibilities {
+                assert_notice_documented(profile.id, "known_incompatibilities", notice);
+            }
+
+            for notice in profile.warnings {
+                assert_notice_documented(profile.id, "warnings", notice);
+            }
+        }
     }
 
     #[test]
@@ -655,6 +765,76 @@ mod tests {
                 "status": "warn",
                 "finding_ids": ["HOST020", "SKILL050"]
             })
+        );
+    }
+
+    fn profile_ids(profiles: &[HostProfile]) -> Vec<&'static str> {
+        profiles.iter().map(|profile| profile.id).collect()
+    }
+
+    fn assert_manifest_field_documented(
+        profile_id: &str,
+        category: &str,
+        field: &ManifestField,
+    ) {
+        assert_not_blank(profile_id, category, field.name);
+        assert_not_blank(profile_id, category, field.description);
+    }
+
+    fn assert_capability_expectation_documented(
+        profile_id: &str,
+        category: &str,
+        expectation: CapabilityExpectation,
+    ) {
+        assert_not_blank(profile_id, category, expectation.summary);
+        assert!(
+            !expectation.notes.is_empty(),
+            "{profile_id} {category} notes must not be empty"
+        );
+
+        for note in expectation.notes {
+            assert_not_blank(profile_id, category, note);
+        }
+    }
+
+    fn assert_notice_documented(profile_id: &str, category: &str, notice: &ProfileNotice) {
+        assert_not_blank(profile_id, category, notice.code);
+        assert_not_blank(profile_id, category, notice.summary);
+    }
+
+    fn assert_unique_manifest_fields(
+        profile_id: &str,
+        category: &str,
+        fields: &[ManifestField],
+    ) {
+        let mut names = BTreeSet::new();
+
+        for field in fields {
+            assert!(
+                names.insert(field.name),
+                "{profile_id} {category} contains duplicate field {}",
+                field.name
+            );
+        }
+    }
+
+    fn assert_unique_metadata_fields(profile_id: &str, fields: &[HostMetadataField]) {
+        let mut names = BTreeSet::new();
+
+        for field in fields {
+            assert!(
+                names.insert((field.namespace, field.field)),
+                "{profile_id} metadata_fields contains duplicate field {:?}/{}",
+                field.namespace,
+                field.field
+            );
+        }
+    }
+
+    fn assert_not_blank(profile_id: &str, field: &str, value: &str) {
+        assert!(
+            !value.trim().is_empty(),
+            "{profile_id} {field} must not be blank"
         );
     }
 }
