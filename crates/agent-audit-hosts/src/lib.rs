@@ -49,6 +49,49 @@ macro_rules! host_profile {
     };
 }
 
+macro_rules! name_description_tools_profile {
+    (
+        id: $id:expr,
+        display_name: $display_name:expr,
+        name: $name_description:expr,
+        description: $description_description:expr,
+        tools: $tools_description:expr,
+        ignored_allowed_tools: $ignored_allowed_tools_description:expr,
+        metadata_fields: $metadata_fields:expr,
+        metadata_namespaces: $metadata_namespaces:expr,
+        path_conventions: $path_conventions:expr,
+        manifest_size_limit: $recommended_manifest_size_limit:expr,
+        capabilities: ($tool_expectation:expr, $script_support:expr, $artifact_support:expr $(,)?),
+        known_incompatibilities: $known_incompatibilities:expr,
+        warnings: $warnings:expr,
+        documentation_notes: $documentation_notes:expr $(,)?
+    ) => {
+        host_profile!(
+            $id,
+            $display_name,
+            &[manifest_field("name", $name_description)],
+            &[
+                manifest_field("description", $description_description),
+                manifest_field("tools", $tools_description),
+            ],
+            &[manifest_field(
+                "allowed-tools",
+                $ignored_allowed_tools_description,
+            )],
+            $metadata_fields,
+            $metadata_namespaces,
+            $path_conventions,
+            $recommended_manifest_size_limit,
+            $tool_expectation,
+            $script_support,
+            $artifact_support,
+            $known_incompatibilities,
+            $warnings,
+            $documentation_notes,
+        )
+    };
+}
+
 pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
     host_profile!(
         "agent-skills-spec",
@@ -152,10 +195,7 @@ pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
                 "Each skill package is rooted at a manifest file.",
             ),
             path_convention("scripts/", "Optional scripts referenced by the skill."),
-            path_convention(
-                "references/",
-                "Optional supporting reference material.",
-            ),
+            path_convention("references/", "Optional supporting reference material."),
         ],
         manifest_size_limit(
             32 * 1024,
@@ -180,34 +220,20 @@ pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
         )],
         &["Model this profile around Claude Code skill packaging and permission metadata."],
     ),
-    host_profile!(
-        "codex",
-        "Codex",
-        &[manifest_field(
-            "name",
-            "Skill name used by Codex to present available skills.",
-        )],
-        &[
-            manifest_field(
-                "description",
-                "Description that explains when Codex should apply the skill.",
-            ),
-            manifest_field(
-                "tools",
-                "Tool or capability hints documented by the package.",
-            ),
-        ],
-        &[manifest_field(
-            "allowed-tools",
-            "Claude-style allowlists may be documentation only for Codex.",
-        )],
-        &[metadata_field(
+    name_description_tools_profile!(
+        id: "codex",
+        display_name: "Codex",
+        name: "Skill name used by Codex to present available skills.",
+        description: "Description that explains when Codex should apply the skill.",
+        tools: "Tool or capability hints documented by the package.",
+        ignored_allowed_tools: "Claude-style allowlists may be documentation only for Codex.",
+        metadata_fields: &[metadata_field(
             "tools",
             Some("codex"),
             "Codex-facing capability declarations when present.",
         )],
-        &["codex", "openai"],
-        &[
+        metadata_namespaces: &["codex", "openai"],
+        path_conventions: &[
             path_convention(
                 ".agents/skills/**/SKILL.md",
                 "Agent skill discovery path used by Codex-style packages.",
@@ -219,57 +245,48 @@ pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
                 "Images and static files referenced by instructions.",
             ),
         ],
-        manifest_size_limit(
+        manifest_size_limit: manifest_size_limit(
             32 * 1024,
             "Keep instructions short enough to fit predictable context budgets.",
         ),
-        expectation(
-            "Tool needs should be documented explicitly and treated as host-mediated capabilities.",
-            &["Tool declarations do not imply automatic access."],
+        capabilities: (
+            expectation(
+                "Tool needs should be documented explicitly and treated as host-mediated capabilities.",
+                &["Tool declarations do not imply automatic access."],
+            ),
+            expectation(
+                "Scripts can be included as artifacts, but execution is host-mediated and should be reviewed.",
+                &["Auditors should inspect scripts without running them."],
+            ),
+            expectation(
+                "scripts/, references/, and assets/ are supported package conventions.",
+                &["Artifact links should be relative and deterministic."],
+            ),
         ),
-        expectation(
-            "Scripts can be included as artifacts, but execution is host-mediated and should be reviewed.",
-            &["Auditors should inspect scripts without running them."],
-        ),
-        expectation(
-            "scripts/, references/, and assets/ are supported package conventions.",
-            &["Artifact links should be relative and deterministic."],
-        ),
-        &[notice(
+        known_incompatibilities: &[notice(
             "CODEX001",
             "Claude-only permission metadata may not be enforced.",
         )],
-        &[notice(
+        warnings: &[notice(
             "CODEX-W001",
             "Skills that require network access or script execution are less portable.",
         )],
-        &["Use this profile for Codex-compatible offline skill package review."],
+        documentation_notes: &["Use this profile for Codex-compatible offline skill package review."],
     ),
-    host_profile!(
-        "github-copilot",
-        "GitHub Copilot",
-        &[manifest_field("name", "Skill or instruction package name.")],
-        &[
-            manifest_field(
-                "description",
-                "Summary used by reviewers to understand intended behavior.",
-            ),
-            manifest_field(
-                "tools",
-                "Documented tool expectations for environments that expose them.",
-            ),
-        ],
-        &[manifest_field(
-            "allowed-tools",
-            "Host may ignore explicit tool allowlists embedded in skill metadata.",
-        )],
-        &[metadata_field(
+    name_description_tools_profile!(
+        id: "github-copilot",
+        display_name: "GitHub Copilot",
+        name: "Skill or instruction package name.",
+        description: "Summary used by reviewers to understand intended behavior.",
+        tools: "Documented tool expectations for environments that expose them.",
+        ignored_allowed_tools: "Host may ignore explicit tool allowlists embedded in skill metadata.",
+        metadata_fields: &[metadata_field(
             "github",
             Some("github"),
             "GitHub-specific metadata namespace for future compatibility checks.",
         )],
-        &["github", "copilot"],
-        &[
+        metadata_namespaces: &["github", "copilot"],
+        path_conventions: &[
             path_convention(
                 ".github/skills/**/SKILL.md",
                 "Repository-scoped GitHub skill discovery path.",
@@ -280,51 +297,48 @@ pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
                 "Reference material packaged with the skill.",
             ),
         ],
-        manifest_size_limit(
+        manifest_size_limit: manifest_size_limit(
             24 * 1024,
             "Prefer compact repository instructions for predictable host consumption.",
         ),
-        expectation(
-            "Tool expectations should be documented but may not map to explicit host permissions.",
-            &["Repository context and available tools vary by host surface."],
+        capabilities: (
+            expectation(
+                "Tool expectations should be documented but may not map to explicit host permissions.",
+                &["Repository context and available tools vary by host surface."],
+            ),
+            expectation(
+                "Scripts should be treated as reviewable artifacts, not automatically supported actions.",
+                &["CI and local developer environments may differ."],
+            ),
+            expectation(
+                "Reference files are useful; executable artifacts require careful review.",
+                &["Keep package references repository-relative."],
+            ),
         ),
-        expectation(
-            "Scripts should be treated as reviewable artifacts, not automatically supported actions.",
-            &["CI and local developer environments may differ."],
-        ),
-        expectation(
-            "Reference files are useful; executable artifacts require careful review.",
-            &["Keep package references repository-relative."],
-        ),
-        &[notice(
+        known_incompatibilities: &[notice(
             "GHCOPILOT001",
             "Skill packages that depend on explicit host tool allowlists may not transfer directly.",
         )],
-        &[notice(
+        warnings: &[notice(
             "GHCOPILOT-W001",
             "Repository-specific assumptions can reduce portability across Copilot surfaces.",
         )],
-        &["Use this profile for GitHub-hosted skill package compatibility notes."],
+        documentation_notes: &["Use this profile for GitHub-hosted skill package compatibility notes."],
     ),
-    host_profile!(
-        "vscode-copilot",
-        "VS Code Copilot",
-        &[manifest_field("name", "Skill or instruction package name.")],
-        &[
-            manifest_field("description", "Summary of when the skill should apply."),
-            manifest_field("tools", "Documented local tool expectations."),
-        ],
-        &[manifest_field(
-            "allowed-tools",
-            "Host-specific allowlists from other agents may be ignored.",
-        )],
-        &[metadata_field(
+    name_description_tools_profile!(
+        id: "vscode-copilot",
+        display_name: "VS Code Copilot",
+        name: "Skill or instruction package name.",
+        description: "Summary of when the skill should apply.",
+        tools: "Documented local tool expectations.",
+        ignored_allowed_tools: "Host-specific allowlists from other agents may be ignored.",
+        metadata_fields: &[metadata_field(
             "vscode",
             Some("vscode"),
             "VS Code specific metadata namespace for future compatibility checks.",
         )],
-        &["vscode", "copilot"],
-        &[
+        metadata_namespaces: &["vscode", "copilot"],
+        path_conventions: &[
             path_convention(
                 ".github/skills/**/SKILL.md",
                 "Repository skill path often shared with Copilot workflows.",
@@ -332,51 +346,48 @@ pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
             path_convention("SKILL.md", "Portable skill manifest location."),
             path_convention("assets/", "Static assets referenced by the skill."),
         ],
-        manifest_size_limit(
+        manifest_size_limit: manifest_size_limit(
             24 * 1024,
             "Keep local editor instructions compact and scannable.",
         ),
-        expectation(
-            "Local tool expectations should be described rather than assumed.",
-            &["Available editor tools depend on extensions, workspace trust, and user configuration."],
+        capabilities: (
+            expectation(
+                "Local tool expectations should be described rather than assumed.",
+                &["Available editor tools depend on extensions, workspace trust, and user configuration."],
+            ),
+            expectation(
+                "Scripts are local artifacts and should require explicit user or host action.",
+                &["Workspace trust and shell availability affect script behavior."],
+            ),
+            expectation(
+                "References and assets can be useful when paths remain workspace-relative.",
+                &["Absolute local paths reduce portability."],
+            ),
         ),
-        expectation(
-            "Scripts are local artifacts and should require explicit user or host action.",
-            &["Workspace trust and shell availability affect script behavior."],
-        ),
-        expectation(
-            "References and assets can be useful when paths remain workspace-relative.",
-            &["Absolute local paths reduce portability."],
-        ),
-        &[notice(
+        known_incompatibilities: &[notice(
             "VSCOPILOT001",
             "Workspace-specific assumptions may not hold outside VS Code.",
         )],
-        &[notice(
+        warnings: &[notice(
             "VSCOPILOT-W001",
             "Local shell or extension dependencies should be documented explicitly.",
         )],
-        &["Use this profile for editor-oriented Copilot compatibility checks."],
+        documentation_notes: &["Use this profile for editor-oriented Copilot compatibility checks."],
     ),
-    host_profile!(
-        "generic",
-        "Generic Agent",
-        &[manifest_field("name", "Portable skill name.")],
-        &[
-            manifest_field("description", "Portable description of skill behavior."),
-            manifest_field("tools", "Optional human-readable tool expectations."),
-        ],
-        &[manifest_field(
-            "allowed-tools",
-            "Host-specific tool permission fields may be ignored by generic agents.",
-        )],
-        &[metadata_field(
+    name_description_tools_profile!(
+        id: "generic",
+        display_name: "Generic Agent",
+        name: "Portable skill name.",
+        description: "Portable description of skill behavior.",
+        tools: "Optional human-readable tool expectations.",
+        ignored_allowed_tools: "Host-specific tool permission fields may be ignored by generic agents.",
+        metadata_fields: &[metadata_field(
             "metadata",
             None,
             "Unrecognized metadata should be treated conservatively.",
         )],
-        &["generic"],
-        &[
+        metadata_namespaces: &["generic"],
+        path_conventions: &[
             path_convention(
                 "**/SKILL.md",
                 "Discover skill manifests regardless of host-specific parent directory.",
@@ -387,31 +398,33 @@ pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
             ),
             path_convention("assets/", "Static assets remain optional and package-relative."),
         ],
-        manifest_size_limit(
+        manifest_size_limit: manifest_size_limit(
             16 * 1024,
             "Use a conservative manifest size for broad agent portability.",
         ),
-        expectation(
-            "Tool requirements should be documented as assumptions, not guarantees.",
-            &["Generic agents may not expose matching tools or permission controls."],
+        capabilities: (
+            expectation(
+                "Tool requirements should be documented as assumptions, not guarantees.",
+                &["Generic agents may not expose matching tools or permission controls."],
+            ),
+            expectation(
+                "Do not assume script execution support.",
+                &["Generic compatibility requires behavior to be understandable without running code."],
+            ),
+            expectation(
+                "Artifacts are optional and should degrade gracefully when ignored.",
+                &["Core behavior should remain clear from SKILL.md."],
+            ),
         ),
-        expectation(
-            "Do not assume script execution support.",
-            &["Generic compatibility requires behavior to be understandable without running code."],
-        ),
-        expectation(
-            "Artifacts are optional and should degrade gracefully when ignored.",
-            &["Core behavior should remain clear from SKILL.md."],
-        ),
-        &[notice(
+        known_incompatibilities: &[notice(
             "GENERIC001",
             "Host-specific metadata and path conventions may not be recognized.",
         )],
-        &[notice(
+        warnings: &[notice(
             "GENERIC-W001",
             "Features requiring a specific agent host are not generically portable.",
         )],
-        &["Use this profile as the broadest compatibility target when no host is selected."],
+        documentation_notes: &["Use this profile as the broadest compatibility target when no host is selected."],
     ),
 ];
 
@@ -632,6 +645,111 @@ mod tests {
         assert_eq!(profile_by_id("unknown-host"), None);
     }
 
+    macro_rules! expected_profile_shape {
+        (
+            id: $id:expr,
+            display_name: $display_name:expr,
+            required_fields: $required_fields:expr,
+            accepted_optional_fields: $accepted_optional_fields:expr,
+            known_ignored_fields: $known_ignored_fields:expr,
+            metadata_fields: $metadata_fields:expr,
+            path_conventions: $path_conventions:expr,
+            manifest_size_limit: $manifest_size_limit:expr $(,)?
+        ) => {
+            ProfileShape {
+                id: $id,
+                display_name: $display_name,
+                required_fields: $required_fields,
+                accepted_optional_fields: $accepted_optional_fields,
+                known_ignored_fields: $known_ignored_fields,
+                metadata_fields: $metadata_fields,
+                path_conventions: $path_conventions,
+                manifest_size_limit: $manifest_size_limit,
+            }
+        };
+    }
+
+    #[test]
+    fn profile_registry_shape_is_complete_and_stable() {
+        let registry_shape: Vec<_> = profiles().iter().map(profile_shape).collect();
+
+        assert_eq!(
+            registry_shape,
+            vec![
+                expected_profile_shape!(
+                    id: "agent-skills-spec",
+                    display_name: "Agent Skills Specification",
+                    required_fields: vec!["name", "description"],
+                    accepted_optional_fields: vec![],
+                    known_ignored_fields: vec!["license"],
+                    metadata_fields: vec![(None, "tools")],
+                    path_conventions: vec!["SKILL.md", "scripts/", "references/", "assets/"],
+                    manifest_size_limit: 32 * 1024,
+                ),
+                expected_profile_shape!(
+                    id: "claude-code",
+                    display_name: "Claude Code",
+                    required_fields: vec!["name"],
+                    accepted_optional_fields: vec!["description", "allowed-tools"],
+                    known_ignored_fields: vec!["tools"],
+                    metadata_fields: vec![(Some("claude"), "allowed-tools")],
+                    path_conventions: vec![
+                        ".claude/skills/**/SKILL.md",
+                        "SKILL.md",
+                        "scripts/",
+                        "references/"
+                    ],
+                    manifest_size_limit: 32 * 1024,
+                ),
+                expected_profile_shape!(
+                    id: "codex",
+                    display_name: "Codex",
+                    required_fields: vec!["name"],
+                    accepted_optional_fields: vec!["description", "tools"],
+                    known_ignored_fields: vec!["allowed-tools"],
+                    metadata_fields: vec![(Some("codex"), "tools")],
+                    path_conventions: vec![
+                        ".agents/skills/**/SKILL.md",
+                        "SKILL.md",
+                        "scripts/",
+                        "assets/"
+                    ],
+                    manifest_size_limit: 32 * 1024,
+                ),
+                expected_profile_shape!(
+                    id: "github-copilot",
+                    display_name: "GitHub Copilot",
+                    required_fields: vec!["name"],
+                    accepted_optional_fields: vec!["description", "tools"],
+                    known_ignored_fields: vec!["allowed-tools"],
+                    metadata_fields: vec![(Some("github"), "github")],
+                    path_conventions: vec![".github/skills/**/SKILL.md", "SKILL.md", "references/"],
+                    manifest_size_limit: 24 * 1024,
+                ),
+                expected_profile_shape!(
+                    id: "vscode-copilot",
+                    display_name: "VS Code Copilot",
+                    required_fields: vec!["name"],
+                    accepted_optional_fields: vec!["description", "tools"],
+                    known_ignored_fields: vec!["allowed-tools"],
+                    metadata_fields: vec![(Some("vscode"), "vscode")],
+                    path_conventions: vec![".github/skills/**/SKILL.md", "SKILL.md", "assets/"],
+                    manifest_size_limit: 24 * 1024,
+                ),
+                expected_profile_shape!(
+                    id: "generic",
+                    display_name: "Generic Agent",
+                    required_fields: vec!["name"],
+                    accepted_optional_fields: vec!["description", "tools"],
+                    known_ignored_fields: vec!["allowed-tools"],
+                    metadata_fields: vec![(None, "metadata")],
+                    path_conventions: vec!["**/SKILL.md", "references/", "assets/"],
+                    manifest_size_limit: 16 * 1024,
+                ),
+            ]
+        );
+    }
+
     #[test]
     fn profile_definitions_expose_supported_static_data() {
         for profile in profiles() {
@@ -797,6 +915,51 @@ mod tests {
 
     fn profile_ids(profiles: &[HostProfile]) -> Vec<&'static str> {
         profiles.iter().map(|profile| profile.id).collect()
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct ProfileShape {
+        id: &'static str,
+        display_name: &'static str,
+        required_fields: Vec<&'static str>,
+        accepted_optional_fields: Vec<&'static str>,
+        known_ignored_fields: Vec<&'static str>,
+        metadata_fields: Vec<(Option<&'static str>, &'static str)>,
+        path_conventions: Vec<&'static str>,
+        manifest_size_limit: usize,
+    }
+
+    fn profile_shape(profile: &HostProfile) -> ProfileShape {
+        ProfileShape {
+            id: profile.id,
+            display_name: profile.display_name,
+            required_fields: manifest_field_names(profile.required_fields),
+            accepted_optional_fields: manifest_field_names(profile.accepted_optional_fields),
+            known_ignored_fields: manifest_field_names(profile.known_ignored_fields),
+            metadata_fields: metadata_field_keys(profile.metadata_fields),
+            path_conventions: path_patterns(profile.path_conventions),
+            manifest_size_limit: profile.recommended_manifest_size_limit.bytes,
+        }
+    }
+
+    fn manifest_field_names(fields: &[ManifestField]) -> Vec<&'static str> {
+        fields.iter().map(|field| field.name).collect()
+    }
+
+    fn metadata_field_keys(
+        fields: &[HostMetadataField],
+    ) -> Vec<(Option<&'static str>, &'static str)> {
+        fields
+            .iter()
+            .map(|field| (field.namespace, field.field))
+            .collect()
+    }
+
+    fn path_patterns(conventions: &[PathConvention]) -> Vec<&'static str> {
+        conventions
+            .iter()
+            .map(|convention| convention.pattern)
+            .collect()
     }
 
     fn assert_manifest_field_documented(profile_id: &str, category: &str, field: &ManifestField) {
