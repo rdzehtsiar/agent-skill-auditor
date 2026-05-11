@@ -3,6 +3,8 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+use agent_audit_hosts::HOST_PROFILES;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RuleId {
     Skill001,
@@ -132,35 +134,6 @@ impl fmt::Display for RuleStatus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum HostProfile {
-    AgentSkillsSpec,
-    ClaudeCode,
-    Codex,
-    GithubCopilot,
-    VscodeCopilot,
-    Generic,
-}
-
-impl HostProfile {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::AgentSkillsSpec => "agent-skills-spec",
-            Self::ClaudeCode => "claude-code",
-            Self::Codex => "codex",
-            Self::GithubCopilot => "github-copilot",
-            Self::VscodeCopilot => "vscode-copilot",
-            Self::Generic => "generic",
-        }
-    }
-}
-
-impl fmt::Display for HostProfile {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.as_str())
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RuleInputNodeType {
     SkillManifest,
     Frontmatter,
@@ -199,7 +172,7 @@ pub struct RuleMetadata {
     pub title: &'static str,
     pub severity: RuleSeverity,
     pub category: RuleCategory,
-    pub applicable_profiles: &'static [HostProfile],
+    pub applicable_profiles: &'static [&'static str],
     pub input_node_types: &'static [RuleInputNodeType],
     pub rationale: &'static str,
     pub remediation: &'static str,
@@ -239,14 +212,7 @@ pub const ACTIVE_RULE_IDS: &[&str] = &[
 
 pub const RESERVED_RULE_IDS: &[&str] = &[];
 
-pub const ALL_HOST_PROFILES: &[HostProfile] = &[
-    HostProfile::AgentSkillsSpec,
-    HostProfile::ClaudeCode,
-    HostProfile::Codex,
-    HostProfile::GithubCopilot,
-    HostProfile::VscodeCopilot,
-    HostProfile::Generic,
-];
+pub const ALL_HOST_PROFILES: &[&str] = HOST_PROFILES;
 
 const SKILL_MANIFEST_INPUT: &[RuleInputNodeType] = &[RuleInputNodeType::SkillManifest];
 const FRONTMATTER_INPUT: &[RuleInputNodeType] = &[RuleInputNodeType::Frontmatter];
@@ -742,13 +708,7 @@ pub fn render_rule_documentation_for(registry: &RuleRegistry) -> String {
         markdown.push_str(metadata.category.as_str());
         markdown.push_str("`\n");
         markdown.push_str("- Applies to: ");
-        push_backticked_list(
-            &mut markdown,
-            metadata
-                .applicable_profiles
-                .iter()
-                .map(|profile| profile.as_str()),
-        );
+        push_backticked_list(&mut markdown, metadata.applicable_profiles.iter().copied());
         markdown.push('\n');
         markdown.push_str("- Input nodes: ");
         push_backticked_list(
@@ -994,6 +954,25 @@ mod tests {
                     metadata.id.as_str()
                 );
             }
+        }
+    }
+
+    #[test]
+    fn rule_metadata_uses_host_owned_profile_ids() {
+        let profiles: &[&str] = RULE_METADATA[0].applicable_profiles;
+
+        assert_eq!(ALL_HOST_PROFILES, HOST_PROFILES);
+        assert_eq!(profiles, HOST_PROFILES);
+
+        for metadata in RULE_REGISTRY.rules() {
+            assert!(
+                metadata
+                    .applicable_profiles
+                    .iter()
+                    .all(|profile| HOST_PROFILES.contains(profile)),
+                "{} references a profile outside agent-audit-hosts",
+                metadata.id.as_str()
+            );
         }
     }
 
