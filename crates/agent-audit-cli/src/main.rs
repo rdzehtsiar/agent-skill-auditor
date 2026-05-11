@@ -3,6 +3,7 @@
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::process::Command as ProcessCommand;
 
 use agent_audit_core::{
     parse_audit_config, parse_severity, report_matches_fail_on, scan_path, AuditConfig, AuditError,
@@ -54,6 +55,17 @@ struct ScanCommand {
     )]
     fail_on: Vec<Severity>,
     #[arg(
+        long,
+        value_name = "PATH",
+        help = "Write the rendered report to a file instead of stdout"
+    )]
+    output: Option<PathBuf>,
+    #[arg(
+        long,
+        help = "Open an HTML report after writing it to an explicit output file"
+    )]
+    open: bool,
+    #[arg(
         long = "profile",
         value_parser = parse_scan_profile,
         value_delimiter = ',',
@@ -89,6 +101,16 @@ fn run_scan(command: ScanCommand) -> Result<()> {
 }
 
 fn run_scan_with_writer(command: ScanCommand, writer: &mut impl Write) -> Result<()> {
+    run_scan_with_writer_and_opener(command, writer, open_report_file)
+}
+
+fn run_scan_with_writer_and_opener(
+    command: ScanCommand,
+    writer: &mut impl Write,
+    opener: impl FnOnce(&Path) -> Result<()>,
+) -> Result<()> {
+    validate_output_options(&command)?;
+
     let config = command
         .config
         .as_deref()
@@ -105,19 +127,24 @@ fn run_scan_with_writer(command: ScanCommand, writer: &mut impl Write) -> Result
             ..ScanOptions::default()
         },
     )?;
-    write_report_and_apply_fail_on(&report, command.format, &fail_on, writer)
+    write_report_apply_fail_on_and_maybe_open(&report, &command, &fail_on, writer, opener)
 }
 
-fn write_report_and_apply_fail_on(
+fn write_report_apply_fail_on_and_maybe_open(
     report: &ScanReport,
-    format: ReportFormat,
+    command: &ScanCommand,
     fail_on: &[Severity],
     writer: &mut impl Write,
+    opener: impl FnOnce(&Path) -> Result<()>,
 ) -> Result<()> {
-    let rendered = render_report(report, format)?;
+    let rendered = render_report(report, command.format)?;
 
-    writer.write_all(rendered.as_bytes())?;
-    writer.flush()?;
+    if let Some(output_path) = command.output.as_deref() {
+        write_output_file(output_path, &rendered)?;
+    } else {
+        writer.write_all(rendered.as_bytes())?;
+        writer.flush()?;
+    }
 
     if report_matches_fail_on(report, fail_on) {
         return Err(anyhow!(
@@ -125,7 +152,113 @@ fn write_report_and_apply_fail_on(
         ));
     }
 
+    if command.open {
+        let output_path = command
+            .output
+            .as_deref()
+            .expect("--open validation should require --output");
+        opener(output_path)?;
+    }
+
     Ok(())
+}
+
+fn validate_output_options(command: &ScanCommand) -> Result<()> {
+    if command.open && command.output.is_none() {
+        return Err(anyhow!(
+            "--open requires --output because there is no HTML report file to open"
+        ));
+    }
+
+    if command.open && command.format != ReportFormat::Html {
+        return Err(anyhow!("--open can only be used with --format html"));
+    }
+
+    if let Some(output_path) = command.output.as_deref() {
+        if output_path.is_dir() {
+            return Err(anyhow!(
+                "--output target is an existing directory: {}",
+                output_path.display()
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn write_output_file(output_path: &Path, rendered: &str) -> Result<()> {
+    if let Some(parent) = output_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).with_context(|| {
+                format!(
+                    "failed to create output parent directory {}",
+                    parent.display()
+                )
+            })?;
+        }
+    }
+
+    fs::write(output_path, rendered)
+        .with_context(|| format!("failed to write report {}", output_path.display()))
+}
+
+fn open_report_file(path: &Path) -> Result<()> {
+    let status = platform_open_command(path)
+        .status()
+        .with_context(|| format!("failed to open report {}", path.display()))?;
+
+    if !status.success() {
+        return Err(anyhow!(
+            "failed to open report {}: opener exited with {}",
+            path.display(),
+            status
+        ));
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn platform_open_command(path: &Path) -> ProcessCommand {
+    let mut command = ProcessCommand::new("cmd");
+    command.arg("/C").arg("start").arg("").arg(path);
+    command
+}
+
+#[cfg(target_os = "macos")]
+fn platform_open_command(path: &Path) -> ProcessCommand {
+    let mut command = ProcessCommand::new("open");
+    command.arg(path);
+    command
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn platform_open_command(path: &Path) -> ProcessCommand {
+    let mut command = ProcessCommand::new("xdg-open");
+    command.arg(path);
+    command
+}
+
+#[cfg(test)]
+fn write_report_and_apply_fail_on(
+    report: &ScanReport,
+    format: ReportFormat,
+    fail_on: &[Severity],
+    writer: &mut impl Write,
+) -> Result<()> {
+    let command = ScanCommand {
+        path: PathBuf::from("."),
+        format,
+        config: None,
+        fail_on: fail_on.to_vec(),
+        output: None,
+        open: false,
+        profiles: Vec::new(),
+        supply_chain: false,
+        strict_supply_chain: false,
+    };
+
+    write_report_apply_fail_on_and_maybe_open(report, &command, fail_on, writer, |_| Ok(()))
 }
 
 fn effective_fail_on<'a>(
@@ -236,6 +369,7 @@ mod tests {
         FindingCategory, FindingLocation, SkillFinding, SuppressedFinding, SuppressionMatch,
     };
     use clap::CommandFactory;
+    use std::cell::Cell;
     use std::fs;
     use std::path::Path;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -316,6 +450,21 @@ mod tests {
     }
 
     #[test]
+    fn scan_help_lists_output_and_open_options() {
+        let mut command = Cli::command();
+        let help = command
+            .find_subcommand_mut("scan")
+            .expect("scan subcommand should be registered")
+            .render_long_help()
+            .to_string();
+
+        assert!(help.contains("--output <PATH>"));
+        assert!(help.contains("Write the rendered report to a file instead of stdout"));
+        assert!(help.contains("--open"));
+        assert!(help.contains("Open an HTML report after writing it to an explicit output file"));
+    }
+
+    #[test]
     fn parses_default_scan_command() {
         let cli = Cli::parse_from(["agent-audit", "scan"]);
 
@@ -325,6 +474,8 @@ mod tests {
                 assert_eq!(command.format, ReportFormat::Summary);
                 assert_eq!(command.config, None);
                 assert_eq!(command.fail_on, Vec::<Severity>::new());
+                assert_eq!(command.output, None);
+                assert!(!command.open);
                 assert_eq!(command.profiles, Vec::<String>::new());
                 assert!(!command.supply_chain);
                 assert!(!command.strict_supply_chain);
@@ -365,7 +516,31 @@ mod tests {
                 assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
                 assert_eq!(command.config, Some(PathBuf::from("audit.yaml")));
                 assert_eq!(command.fail_on, Vec::<Severity>::new());
+                assert_eq!(command.output, None);
+                assert!(!command.open);
                 assert_eq!(command.profiles, Vec::<String>::new());
+            }
+        }
+    }
+
+    #[test]
+    fn parses_scan_output_and_open_options() {
+        let cli = Cli::parse_from([
+            "agent-audit",
+            "scan",
+            "fixtures/spec/basic",
+            "--format",
+            "html",
+            "--output",
+            "reports/report.html",
+            "--open",
+        ]);
+
+        match cli.command {
+            Command::Scan(command) => {
+                assert_eq!(command.format, ReportFormat::Html);
+                assert_eq!(command.output, Some(PathBuf::from("reports/report.html")));
+                assert!(command.open);
             }
         }
     }
@@ -540,6 +715,8 @@ mod tests {
                 assert_eq!(command.format, expected);
                 assert_eq!(command.config, None);
                 assert_eq!(command.fail_on, Vec::<Severity>::new());
+                assert_eq!(command.output, None);
+                assert!(!command.open);
             }
         }
     }
@@ -663,6 +840,196 @@ description: HTML output fixture.
         assert!(output.contains("<h1>Agent Skill Auditor Report</h1>"));
         assert!(output.contains("html-output"));
         assert!(output.ends_with('\n'));
+    }
+
+    #[test]
+    fn run_scan_output_omitted_preserves_stdout_behavior() {
+        let workspace = CliTestWorkspace::new("stdout-unchanged");
+        workspace.write_file("SKILL.md", valid_skill("stdout-unchanged"));
+
+        let first = run_scan_output(scan_command(&workspace, ReportFormat::Summary))
+            .expect("run first stdout scan");
+        let second = run_scan_output(ScanCommand {
+            output: None,
+            ..scan_command(&workspace, ReportFormat::Summary)
+        })
+        .expect("run second stdout scan");
+
+        assert_eq!(first, second);
+        assert!(second.starts_with("Agent Skill Auditor scan summary\n"));
+    }
+
+    #[test]
+    fn run_scan_writes_output_file_and_suppresses_report_stdout() {
+        let workspace = CliTestWorkspace::new("file-output");
+        workspace.write_file("SKILL.md", valid_skill("file-output"));
+        let output_path = workspace.root.join("reports/nested/report.json");
+        let mut stdout = Vec::new();
+
+        run_scan_with_writer(
+            ScanCommand {
+                output: Some(output_path.clone()),
+                ..scan_command(&workspace, ReportFormat::Json)
+            },
+            &mut stdout,
+        )
+        .expect("run scan with file output");
+
+        assert!(stdout.is_empty());
+        let report = fs::read_to_string(output_path).expect("read report file");
+        assert!(report.starts_with("{\n"));
+        assert!(report.contains("\"file-output\""));
+    }
+
+    #[test]
+    fn run_scan_rejects_existing_directory_output_target() {
+        let workspace = CliTestWorkspace::new("directory-output-target");
+        workspace.write_file("SKILL.md", valid_skill("directory-output-target"));
+        let mut stdout = Vec::new();
+
+        let error = run_scan_with_writer(
+            ScanCommand {
+                output: Some(workspace.root.clone()),
+                ..scan_command(&workspace, ReportFormat::Json)
+            },
+            &mut stdout,
+        )
+        .expect_err("directory output target should fail");
+        let message = error.to_string();
+
+        assert!(stdout.is_empty());
+        assert!(message.contains("--output target is an existing directory"));
+        assert!(message.contains(&workspace.root.display().to_string()));
+    }
+
+    #[test]
+    fn run_scan_applies_fail_on_after_successful_output_file_write() {
+        let workspace = CliTestWorkspace::new("fail-on-after-file-write");
+        workspace.write_file("SKILL.md", missing_name_skill());
+        let output_path = workspace.root.join("reports/report.json");
+        let mut stdout = Vec::new();
+
+        let error = run_scan_with_writer(
+            ScanCommand {
+                fail_on: vec![Severity::Low],
+                output: Some(output_path.clone()),
+                ..scan_command(&workspace, ReportFormat::Json)
+            },
+            &mut stdout,
+        )
+        .expect_err("fail_on should fail after output write");
+        let report = fs::read_to_string(output_path).expect("report should be written");
+
+        assert!(stdout.is_empty());
+        assert!(report.contains("\"rule_id\": \"SKILL001\""));
+        assert!(error
+            .to_string()
+            .contains("fail_on matched an unsuppressed finding severity"));
+    }
+
+    #[test]
+    fn run_scan_rejects_open_without_output_before_scanning() {
+        let workspace = CliTestWorkspace::new("open-without-output");
+        let mut stdout = Vec::new();
+
+        let error = run_scan_with_writer(
+            ScanCommand {
+                path: workspace.root.join("missing-scan-target"),
+                format: ReportFormat::Html,
+                open: true,
+                ..scan_command(&workspace, ReportFormat::Html)
+            },
+            &mut stdout,
+        )
+        .expect_err("--open without output should fail before scanning");
+
+        assert!(stdout.is_empty());
+        assert!(error.to_string().contains("--open requires --output"));
+    }
+
+    #[test]
+    fn run_scan_rejects_open_with_non_html_format_before_scanning() {
+        let workspace = CliTestWorkspace::new("open-non-html");
+        let mut stdout = Vec::new();
+
+        let error = run_scan_with_writer(
+            ScanCommand {
+                path: workspace.root.join("missing-scan-target"),
+                output: Some(workspace.root.join("report.json")),
+                open: true,
+                ..scan_command(&workspace, ReportFormat::Json)
+            },
+            &mut stdout,
+        )
+        .expect_err("--open with non-html format should fail before scanning");
+
+        assert!(stdout.is_empty());
+        assert!(error
+            .to_string()
+            .contains("--open can only be used with --format html"));
+    }
+
+    #[test]
+    fn run_scan_opens_html_output_after_successful_fail_on_check() {
+        let workspace = CliTestWorkspace::new("open-html-output");
+        workspace.write_file("SKILL.md", valid_skill("open-html-output"));
+        let output_path = workspace.root.join("report.html");
+        let opened = Cell::new(false);
+        let mut stdout = Vec::new();
+
+        run_scan_with_writer_and_opener(
+            ScanCommand {
+                output: Some(output_path.clone()),
+                open: true,
+                ..scan_command(&workspace, ReportFormat::Html)
+            },
+            &mut stdout,
+            |path| {
+                assert_eq!(path, output_path.as_path());
+                opened.set(true);
+                Ok(())
+            },
+        )
+        .expect("HTML output should open after successful scan");
+
+        assert!(stdout.is_empty());
+        assert!(opened.get());
+        assert!(fs::read_to_string(output_path)
+            .expect("read HTML report")
+            .starts_with("<!doctype html>\n"));
+    }
+
+    #[test]
+    fn run_scan_does_not_call_opener_when_fail_on_matches() {
+        let workspace = CliTestWorkspace::new("open-skipped-on-fail-on");
+        workspace.write_file("SKILL.md", missing_name_skill());
+        let output_path = workspace.root.join("report.html");
+        let opened = Cell::new(false);
+        let mut stdout = Vec::new();
+
+        let error = run_scan_with_writer_and_opener(
+            ScanCommand {
+                fail_on: vec![Severity::Low],
+                output: Some(output_path.clone()),
+                open: true,
+                ..scan_command(&workspace, ReportFormat::Html)
+            },
+            &mut stdout,
+            |_| {
+                opened.set(true);
+                Ok(())
+            },
+        )
+        .expect_err("fail_on should prevent opening");
+
+        assert!(stdout.is_empty());
+        assert!(!opened.get());
+        assert!(fs::read_to_string(output_path)
+            .expect("read HTML report")
+            .contains("SKILL001"));
+        assert!(error
+            .to_string()
+            .contains("fail_on matched an unsuppressed finding severity"));
     }
 
     #[test]
@@ -1626,6 +1993,8 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
             format,
             config: None,
             fail_on: Vec::new(),
+            output: None,
+            open: false,
             profiles: Vec::new(),
             supply_chain: false,
             strict_supply_chain: false,
