@@ -31,12 +31,720 @@
     "summary": {
       "type": "object"
     },
+    "supply_chain": {
+      "$ref": "#/$defs/supplyChainInventory"
+    },
     "compatibility": {
       "$ref": "#/$defs/compatibilityMatrix"
     }
   },
   "additionalProperties": false,
   "$defs": {
+    "supplyChainInventory": {
+      "type": "object",
+      "required": [
+        "licenses",
+        "trust_manifests",
+        "external_urls",
+        "remote_dependencies",
+        "package_managers",
+        "lockfiles",
+        "executables",
+        "binaries",
+        "checksums",
+        "permissions",
+        "offline_readiness"
+      ],
+      "properties": {
+        "licenses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/licenseEvidence"
+          }
+        },
+        "trust_manifests": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/trustManifest"
+          }
+        },
+        "external_urls": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/externalUrl"
+          }
+        },
+        "remote_dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/remoteDependency"
+          }
+        },
+        "package_managers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/packageManagerEvidence"
+          }
+        },
+        "lockfiles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/lockfileEvidence"
+          }
+        },
+        "executables": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/executableArtifact"
+          }
+        },
+        "binaries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/binaryArtifact"
+          }
+        },
+        "checksums": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/checksumEvidence"
+          }
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/permissionEvidence"
+          }
+        },
+        "offline_readiness": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/offlineReadiness"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "licenseEvidence": {
+      "type": "object",
+      "required": [
+        "path",
+        "line",
+        "source",
+        "scope",
+        "normalized",
+        "raw",
+        "confidence"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "$ref": "#/$defs/optionalLine"
+        },
+        "source": {
+          "$ref": "#/$defs/supplyChainSourceKind"
+        },
+        "scope": {
+          "$ref": "#/$defs/licenseScope"
+        },
+        "normalized": {
+          "type": "string"
+        },
+        "raw": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "confidence": {
+          "$ref": "#/$defs/evidenceConfidence"
+        }
+      },
+      "additionalProperties": false
+    },
+    "trustManifest": {
+      "type": "object",
+      "required": [
+        "path",
+        "line",
+        "source",
+        "format",
+        "normalized",
+        "raw",
+        "confidence",
+        "valid"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "$ref": "#/$defs/optionalLine"
+        },
+        "source": {
+          "$ref": "#/$defs/supplyChainSourceKind"
+        },
+        "format": {
+          "$ref": "#/$defs/trustManifestFormat"
+        },
+        "normalized": {
+          "type": "string"
+        },
+        "raw": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "confidence": {
+          "$ref": "#/$defs/evidenceConfidence"
+        },
+        "valid": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "externalUrl": {
+      "type": "object",
+      "required": [
+        "path",
+        "line",
+        "source",
+        "kind",
+        "normalized",
+        "raw",
+        "confidence",
+        "pinned"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "$ref": "#/$defs/optionalLine"
+        },
+        "source": {
+          "$ref": "#/$defs/supplyChainSourceKind"
+        },
+        "kind": {
+          "$ref": "#/$defs/externalUrlKind"
+        },
+        "normalized": {
+          "type": "string"
+        },
+        "raw": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "confidence": {
+          "$ref": "#/$defs/evidenceConfidence"
+        },
+        "pinned": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "remoteDependency": {
+      "type": "object",
+      "required": [
+        "path",
+        "line",
+        "source",
+        "kind",
+        "package_manager",
+        "name",
+        "version",
+        "normalized",
+        "raw",
+        "confidence",
+        "pinned"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "$ref": "#/$defs/optionalLine"
+        },
+        "source": {
+          "$ref": "#/$defs/supplyChainSourceKind"
+        },
+        "kind": {
+          "$ref": "#/$defs/remoteDependencyKind"
+        },
+        "package_manager": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/packageManagerKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "version": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "normalized": {
+          "type": "string"
+        },
+        "raw": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "confidence": {
+          "$ref": "#/$defs/evidenceConfidence"
+        },
+        "pinned": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "packageManagerEvidence": {
+      "type": "object",
+      "required": [
+        "path",
+        "line",
+        "source",
+        "manager",
+        "manifest_path",
+        "normalized",
+        "raw",
+        "confidence"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "$ref": "#/$defs/optionalLine"
+        },
+        "source": {
+          "$ref": "#/$defs/supplyChainSourceKind"
+        },
+        "manager": {
+          "$ref": "#/$defs/packageManagerKind"
+        },
+        "manifest_path": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "normalized": {
+          "type": "string"
+        },
+        "raw": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "confidence": {
+          "$ref": "#/$defs/evidenceConfidence"
+        }
+      },
+      "additionalProperties": false
+    },
+    "lockfileEvidence": {
+      "type": "object",
+      "required": [
+        "path",
+        "line",
+        "source",
+        "manager",
+        "normalized",
+        "raw",
+        "confidence"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "$ref": "#/$defs/optionalLine"
+        },
+        "source": {
+          "$ref": "#/$defs/supplyChainSourceKind"
+        },
+        "manager": {
+          "$ref": "#/$defs/packageManagerKind"
+        },
+        "normalized": {
+          "type": "string"
+        },
+        "raw": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "confidence": {
+          "$ref": "#/$defs/evidenceConfidence"
+        }
+      },
+      "additionalProperties": false
+    },
+    "executableArtifact": {
+      "type": "object",
+      "required": [
+        "path",
+        "line",
+        "source",
+        "kind",
+        "language",
+        "reason",
+        "referenced",
+        "normalized",
+        "raw",
+        "confidence"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "$ref": "#/$defs/optionalLine"
+        },
+        "source": {
+          "$ref": "#/$defs/supplyChainSourceKind"
+        },
+        "kind": {
+          "$ref": "#/$defs/executableKind"
+        },
+        "language": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "referenced": {
+          "type": "boolean"
+        },
+        "normalized": {
+          "type": "string"
+        },
+        "raw": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "confidence": {
+          "$ref": "#/$defs/evidenceConfidence"
+        }
+      },
+      "additionalProperties": false
+    },
+    "binaryArtifact": {
+      "type": "object",
+      "required": [
+        "path",
+        "line",
+        "source",
+        "kind",
+        "size_bytes",
+        "referenced",
+        "normalized",
+        "raw",
+        "confidence"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "$ref": "#/$defs/optionalLine"
+        },
+        "source": {
+          "$ref": "#/$defs/supplyChainSourceKind"
+        },
+        "kind": {
+          "$ref": "#/$defs/binaryArtifactKind"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "referenced": {
+          "type": "boolean"
+        },
+        "normalized": {
+          "type": "string"
+        },
+        "raw": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "confidence": {
+          "$ref": "#/$defs/evidenceConfidence"
+        }
+      },
+      "additionalProperties": false
+    },
+    "checksumEvidence": {
+      "type": "object",
+      "required": [
+        "path",
+        "line",
+        "source",
+        "algorithm",
+        "digest",
+        "target_path",
+        "normalized",
+        "raw",
+        "confidence"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "$ref": "#/$defs/optionalLine"
+        },
+        "source": {
+          "$ref": "#/$defs/supplyChainSourceKind"
+        },
+        "algorithm": {
+          "$ref": "#/$defs/checksumAlgorithm"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "target_path": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "normalized": {
+          "type": "string"
+        },
+        "raw": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "confidence": {
+          "$ref": "#/$defs/evidenceConfidence"
+        }
+      },
+      "additionalProperties": false
+    },
+    "permissionEvidence": {
+      "type": "object",
+      "required": [
+        "path",
+        "line",
+        "source",
+        "kind",
+        "evidence",
+        "normalized",
+        "raw",
+        "confidence"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "$ref": "#/$defs/optionalLine"
+        },
+        "source": {
+          "$ref": "#/$defs/supplyChainSourceKind"
+        },
+        "kind": {
+          "$ref": "#/$defs/permissionKind"
+        },
+        "evidence": {
+          "$ref": "#/$defs/permissionEvidenceKind"
+        },
+        "normalized": {
+          "type": "string"
+        },
+        "raw": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "confidence": {
+          "$ref": "#/$defs/evidenceConfidence"
+        }
+      },
+      "additionalProperties": false
+    },
+    "offlineReadiness": {
+      "type": "object",
+      "required": [
+        "path",
+        "status",
+        "score",
+        "reasons"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/offlineReadinessStatus"
+        },
+        "score": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "optionalLine": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "optionalString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "supplyChainSourceKind": {
+      "type": "string",
+      "enum": [
+        "frontmatter",
+        "markdown-link",
+        "inline-code",
+        "code-block",
+        "script",
+        "package-manifest",
+        "lockfile",
+        "trust-manifest",
+        "filesystem",
+        "inferred"
+      ]
+    },
+    "evidenceConfidence": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    "licenseScope": {
+      "type": "string",
+      "enum": [
+        "repository",
+        "skill"
+      ]
+    },
+    "trustManifestFormat": {
+      "type": "string",
+      "enum": [
+        "agent-audit",
+        "unknown"
+      ]
+    },
+    "externalUrlKind": {
+      "type": "string",
+      "enum": [
+        "documentation",
+        "remote-script",
+        "downloaded-artifact",
+        "package-registry",
+        "github-raw",
+        "github-release-asset",
+        "http-endpoint",
+        "localhost",
+        "internal",
+        "unknown"
+      ]
+    },
+    "remoteDependencyKind": {
+      "type": "string",
+      "enum": [
+        "package",
+        "script",
+        "artifact",
+        "repository",
+        "service",
+        "unknown"
+      ]
+    },
+    "packageManagerKind": {
+      "type": "string",
+      "enum": [
+        "npm",
+        "yarn",
+        "pnpm",
+        "pip",
+        "poetry",
+        "uv",
+        "cargo",
+        "go",
+        "gem",
+        "composer",
+        "unknown"
+      ]
+    },
+    "executableKind": {
+      "type": "string",
+      "enum": [
+        "script",
+        "binary",
+        "command",
+        "unknown"
+      ]
+    },
+    "binaryArtifactKind": {
+      "type": "string",
+      "enum": [
+        "executable",
+        "archive",
+        "wasm",
+        "jar",
+        "opaque-asset",
+        "unknown"
+      ]
+    },
+    "checksumAlgorithm": {
+      "type": "string",
+      "enum": [
+        "sha256",
+        "sha384",
+        "sha512",
+        "unknown"
+      ]
+    },
+    "permissionKind": {
+      "type": "string",
+      "enum": [
+        "network",
+        "filesystem-read",
+        "filesystem-write",
+        "secrets",
+        "subprocess",
+        "package-install",
+        "binary-execution",
+        "git-operations",
+        "privilege-escalation"
+      ]
+    },
+    "permissionEvidenceKind": {
+      "type": "string",
+      "enum": [
+        "declared",
+        "observed"
+      ]
+    },
+    "offlineReadinessStatus": {
+      "type": "string",
+      "enum": [
+        "ready",
+        "partial",
+        "not-ready",
+        "unknown"
+      ]
+    },
     "compatibilityMatrix": {
       "type": "object",
       "required": [

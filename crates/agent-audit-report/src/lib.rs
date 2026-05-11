@@ -844,7 +844,7 @@ mod tests {
     use agent_audit_core::model::ScanSummary;
     use agent_audit_core::{
         FindingLocation, SkillFinding, SkillGraph, SkillManifest, SkillPackage, SkillReference,
-        SuppressedFinding, SuppressionMatch,
+        SupplyChainInventory, SuppressedFinding, SuppressionMatch,
     };
     use std::collections::BTreeMap;
     use std::path::Path;
@@ -2444,6 +2444,7 @@ mod tests {
             },
             findings: Vec::new(),
             suppressed_findings: Vec::new(),
+            supply_chain: SupplyChainInventory::default(),
             compatibility: CompatibilityMatrix::default(),
         }
     }
@@ -2468,6 +2469,7 @@ mod tests {
             },
             findings,
             suppressed_findings: Vec::new(),
+            supply_chain: SupplyChainInventory::default(),
             compatibility: CompatibilityMatrix::default(),
         }
     }

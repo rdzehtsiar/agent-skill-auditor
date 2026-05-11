@@ -17,8 +17,14 @@ pub use discovery::discover_skill_manifests;
 pub use error::{AuditError, AuditResult};
 pub use fail::report_matches_fail_on;
 pub use model::{
-    CompatibilityMatrix, FindingCategory, FindingLocation, MarkdownCodeBlock, ScanReport, Severity,
+    BinaryArtifact, BinaryArtifactKind, ChecksumAlgorithm, ChecksumEvidence, CompatibilityMatrix,
+    EvidenceConfidence, ExecutableArtifact, ExecutableKind, ExternalUrl, ExternalUrlKind,
+    FindingCategory, FindingLocation, LicenseEvidence, LicenseScope, LockfileEvidence,
+    MarkdownCodeBlock, OfflineReadiness, OfflineReadinessScore, OfflineReadinessStatus,
+    PackageManagerEvidence, PackageManagerKind, PermissionEvidence, PermissionEvidenceKind,
+    PermissionKind, RemoteDependency, RemoteDependencyKind, ScanReport, Severity,
     SkillArtifactKind, SkillCompatibilityRow, SkillFile, SkillFileKind, SkillFinding, SkillGraph,
-    SkillManifest, SkillPackage, SkillReference, SuppressedFinding, SuppressionMatch,
+    SkillManifest, SkillPackage, SkillReference, SupplyChainInventory, SupplyChainSourceKind,
+    SuppressedFinding, SuppressionMatch, TrustManifest, TrustManifestFormat,
 };
 pub use scan::{scan_path, ScanOptions};

@@ -207,7 +207,7 @@ fn parse_scan_profile(value: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agent_audit_core::model::{CompatibilityMatrix, ScanSummary};
+    use agent_audit_core::model::{CompatibilityMatrix, ScanSummary, SupplyChainInventory};
     use agent_audit_core::{
         FindingCategory, FindingLocation, SkillFinding, SuppressedFinding, SuppressionMatch,
     };
@@ -831,6 +831,7 @@ ignore:
                     reason: "Accepted privileged setup fixture.".to_owned(),
                 },
             }],
+            supply_chain: SupplyChainInventory::default(),
             compatibility: CompatibilityMatrix::default(),
         };
         let mut output = Vec::new();

@@ -911,6 +911,19 @@
     "invalid_manifest_count": 0,
     "broken_reference_count": 0
   },
+  "supply_chain": {
+    "licenses": [],
+    "trust_manifests": [],
+    "external_urls": [],
+    "remote_dependencies": [],
+    "package_managers": [],
+    "lockfiles": [],
+    "executables": [],
+    "binaries": [],
+    "checksums": [],
+    "permissions": [],
+    "offline_readiness": []
+  },
   "compatibility": {
     "profiles": [
       "agent-skills-spec",

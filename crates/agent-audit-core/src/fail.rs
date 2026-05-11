@@ -15,7 +15,7 @@ mod tests {
     use super::*;
     use crate::model::{
         CompatibilityMatrix, FindingCategory, FindingLocation, ScanSummary, SkillFinding,
-        SuppressedFinding, SuppressionMatch,
+        SupplyChainInventory, SuppressedFinding, SuppressionMatch,
     };
 
     #[test]
@@ -119,6 +119,7 @@ mod tests {
             },
             findings,
             suppressed_findings,
+            supply_chain: SupplyChainInventory::default(),
             compatibility: CompatibilityMatrix::default(),
         }
     }

@@ -497,17 +497,63 @@ mod tests {
     }
 
     #[test]
-    fn json_report_schema_documents_compatibility_matrix_contract() {
+    fn json_report_schema_documents_report_contract_sections() {
         let schema = report_schema();
 
         assert_eq!(
             schema["$schema"],
             "https://json-schema.org/draft/2020-12/schema"
         );
+        assert!(!string_array(&schema["required"]).contains(&"supply_chain".to_owned()));
+        assert_eq!(
+            schema["properties"]["supply_chain"]["$ref"],
+            "#/$defs/supplyChainInventory"
+        );
         assert!(!string_array(&schema["required"]).contains(&"compatibility".to_owned()));
         assert_eq!(
             schema["properties"]["compatibility"]["$ref"],
             "#/$defs/compatibilityMatrix"
+        );
+
+        let supply_chain_schema = &schema["$defs"]["supplyChainInventory"];
+        assert_eq!(
+            string_array(&supply_chain_schema["required"]),
+            vec![
+                "licenses",
+                "trust_manifests",
+                "external_urls",
+                "remote_dependencies",
+                "package_managers",
+                "lockfiles",
+                "executables",
+                "binaries",
+                "checksums",
+                "permissions",
+                "offline_readiness"
+            ]
+        );
+        assert_eq!(
+            supply_chain_schema["properties"]["licenses"]["items"]["$ref"],
+            "#/$defs/licenseEvidence"
+        );
+        assert_eq!(
+            supply_chain_schema["properties"]["offline_readiness"]["items"]["$ref"],
+            "#/$defs/offlineReadiness"
+        );
+        assert_eq!(
+            string_array(&schema["$defs"]["supplyChainSourceKind"]["enum"]),
+            vec![
+                "frontmatter",
+                "markdown-link",
+                "inline-code",
+                "code-block",
+                "script",
+                "package-manifest",
+                "lockfile",
+                "trust-manifest",
+                "filesystem",
+                "inferred"
+            ]
         );
 
         let compatibility_schema = &schema["$defs"]["compatibilityMatrix"];
@@ -567,6 +613,7 @@ mod tests {
         }))
         .expect("deserialize legacy report without compatibility");
         assert!(legacy_report.compatibility.is_empty());
+        assert!(legacy_report.supply_chain.licenses.is_empty());
     }
 
     fn representative_corpus_root() -> PathBuf {
@@ -651,6 +698,29 @@ mod tests {
         assert!(value["findings"].is_array());
         assert!(value["suppressed_findings"].is_array());
         assert!(value["summary"].is_object());
+
+        let supply_chain = value["supply_chain"]
+            .as_object()
+            .expect("supply chain object");
+        assert_eq!(
+            supply_chain.keys().cloned().collect::<Vec<_>>(),
+            vec![
+                "binaries".to_owned(),
+                "checksums".to_owned(),
+                "executables".to_owned(),
+                "external_urls".to_owned(),
+                "licenses".to_owned(),
+                "lockfiles".to_owned(),
+                "offline_readiness".to_owned(),
+                "package_managers".to_owned(),
+                "permissions".to_owned(),
+                "remote_dependencies".to_owned(),
+                "trust_manifests".to_owned()
+            ]
+        );
+        for section in supply_chain.values() {
+            assert!(section.is_array());
+        }
 
         let compatibility = value["compatibility"]
             .as_object()

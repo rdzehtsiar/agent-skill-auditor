@@ -9,7 +9,7 @@ use crate::error::{AuditError, AuditResult};
 use crate::model::{
     CompatibilityMatrix, ScanReport, ScanSummary, SkillArtifactKind, SkillCompatibilityRow,
     SkillFile, SkillFileKind, SkillFinding, SkillGraph, SkillManifest, SkillPackage,
-    SkillReference, SuppressedFinding, SuppressionMatch,
+    SkillReference, SupplyChainInventory, SuppressedFinding, SuppressionMatch,
 };
 use crate::parse::parse_skill_manifest;
 use agent_audit_hosts::{
@@ -238,6 +238,7 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         packages,
         findings,
         suppressed_findings,
+        supply_chain: SupplyChainInventory::default(),
         compatibility,
     })
 }
@@ -5871,6 +5872,19 @@ description: JSON stability fixture.
     "suppressed_finding_count": 0,
     "invalid_manifest_count": 0,
     "broken_reference_count": 0
+  },
+  "supply_chain": {
+    "licenses": [],
+    "trust_manifests": [],
+    "external_urls": [],
+    "remote_dependencies": [],
+    "package_managers": [],
+    "lockfiles": [],
+    "executables": [],
+    "binaries": [],
+    "checksums": [],
+    "permissions": [],
+    "offline_readiness": []
   },
   "compatibility": {
     "profiles": [
