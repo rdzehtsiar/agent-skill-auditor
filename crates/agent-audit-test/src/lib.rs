@@ -421,7 +421,83 @@ mod tests {
             serde_json::from_str(&first_json).expect("parse compatibility matrix JSON");
         assert_eq!(value["summary"]["package_count"], 6);
         assert_eq!(value["summary"]["finding_count"], 2);
-        assert_eq!(value["compatibility"]["matrix"].as_array().unwrap().len(), 6);
+        assert_eq!(
+            value["compatibility"]["matrix"].as_array().unwrap().len(),
+            6
+        );
+    }
+
+    #[test]
+    fn json_report_schema_documents_compatibility_matrix_contract() {
+        let schema = report_schema();
+
+        assert_eq!(
+            schema["$schema"],
+            "https://json-schema.org/draft/2020-12/schema"
+        );
+        assert!(!string_array(&schema["required"]).contains(&"compatibility".to_owned()));
+        assert_eq!(
+            schema["properties"]["compatibility"]["$ref"],
+            "#/$defs/compatibilityMatrix"
+        );
+
+        let compatibility_schema = &schema["$defs"]["compatibilityMatrix"];
+        assert_eq!(
+            string_array(&compatibility_schema["required"]),
+            vec!["profiles", "matrix"]
+        );
+        assert_eq!(
+            compatibility_schema["properties"]["matrix"]["items"]["$ref"],
+            "#/$defs/skillCompatibilityRow"
+        );
+
+        let row_schema = &schema["$defs"]["skillCompatibilityRow"];
+        assert_eq!(
+            string_array(&row_schema["required"]),
+            vec!["path", "name", "profiles"]
+        );
+        assert_eq!(
+            string_array(&row_schema["properties"]["name"]["type"]),
+            vec!["string", "null"]
+        );
+
+        let profile_schema = &schema["$defs"]["profileCompatibilityResult"];
+        assert_eq!(
+            string_array(&profile_schema["required"]),
+            vec!["profile", "status", "finding_ids"]
+        );
+        assert_eq!(
+            string_array(&schema["$defs"]["compatibilityStatus"]["enum"]),
+            vec!["pass", "warn", "fail", "unknown"]
+        );
+
+        let report = scan_compatibility_fixture("matrix", ScanOptions::default());
+        let json = render_json(&report).expect("render compatibility report JSON");
+        let value: serde_json::Value =
+            serde_json::from_str(&json).expect("parse compatibility report JSON");
+        assert_json_report_matches_schema_contract(&value);
+
+        let reparsed: ScanReport =
+            serde_json::from_value(value.clone()).expect("deserialize compatibility report");
+        assert_eq!(
+            render_json(&reparsed).expect("rerender compatibility report"),
+            json
+        );
+
+        let legacy_report: ScanReport = serde_json::from_value(serde_json::json!({
+            "packages": [],
+            "findings": [],
+            "suppressed_findings": [],
+            "summary": {
+                "package_count": 0,
+                "finding_count": 0,
+                "suppressed_finding_count": 0,
+                "invalid_manifest_count": 0,
+                "broken_reference_count": 0
+            }
+        }))
+        .expect("deserialize legacy report without compatibility");
+        assert!(legacy_report.compatibility.is_empty());
     }
 
     fn representative_corpus_root() -> PathBuf {
@@ -472,10 +548,83 @@ mod tests {
     }
 
     fn expected_compatibility_matrix_json() -> &'static str {
-        let expected = include_str!(
-            "../../../fixtures/compatibility/expected/matrix-full-report.json"
-        );
+        let expected =
+            include_str!("../../../fixtures/compatibility/expected/matrix-full-report.json");
         expected.strip_suffix('\n').unwrap_or(expected)
+    }
+
+    fn report_schema() -> serde_json::Value {
+        serde_json::from_str(include_str!("../../../docs/report.schema.json"))
+            .expect("parse JSON report schema")
+    }
+
+    fn assert_json_report_matches_schema_contract(value: &serde_json::Value) {
+        assert!(value["packages"].is_array());
+        assert!(value["findings"].is_array());
+        assert!(value["suppressed_findings"].is_array());
+        assert!(value["summary"].is_object());
+
+        let compatibility = value["compatibility"]
+            .as_object()
+            .expect("compatibility object");
+        assert_eq!(
+            compatibility.keys().cloned().collect::<Vec<_>>(),
+            vec!["matrix".to_owned(), "profiles".to_owned()]
+        );
+        assert!(compatibility["profiles"]
+            .as_array()
+            .expect("compatibility profiles")
+            .iter()
+            .all(serde_json::Value::is_string));
+
+        let allowed_statuses = ["pass", "warn", "fail", "unknown"];
+        for row in compatibility["matrix"]
+            .as_array()
+            .expect("compatibility matrix")
+        {
+            let row = row.as_object().expect("compatibility row object");
+            assert_eq!(
+                row.keys().cloned().collect::<Vec<_>>(),
+                vec!["name".to_owned(), "path".to_owned(), "profiles".to_owned()]
+            );
+            assert!(row["path"].is_string());
+            assert!(row["name"].is_string() || row["name"].is_null());
+
+            for profile in row["profiles"]
+                .as_array()
+                .expect("row compatibility profiles")
+            {
+                let profile = profile.as_object().expect("profile result object");
+                assert_eq!(
+                    profile.keys().cloned().collect::<Vec<_>>(),
+                    vec![
+                        "finding_ids".to_owned(),
+                        "profile".to_owned(),
+                        "status".to_owned()
+                    ]
+                );
+                assert!(profile["profile"].is_string());
+                assert!(allowed_statuses.contains(
+                    &profile["status"]
+                        .as_str()
+                        .expect("compatibility status string")
+                ));
+                assert!(profile["finding_ids"]
+                    .as_array()
+                    .expect("finding IDs")
+                    .iter()
+                    .all(serde_json::Value::is_string));
+            }
+        }
+    }
+
+    fn string_array(value: &serde_json::Value) -> Vec<String> {
+        value
+            .as_array()
+            .expect("string array")
+            .iter()
+            .map(|entry| entry.as_str().expect("string entry").to_owned())
+            .collect()
     }
 
     fn assert_compatibility_profile_projection(

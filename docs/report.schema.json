@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-skill-auditor.local/schemas/report.schema.json",
+  "title": "Agent Skill Auditor JSON report",
+  "type": "object",
+  "required": [
+    "packages",
+    "findings",
+    "suppressed_findings",
+    "summary"
+  ],
+  "properties": {
+    "packages": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "suppressed_findings": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "summary": {
+      "type": "object"
+    },
+    "compatibility": {
+      "$ref": "#/$defs/compatibilityMatrix"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "compatibilityMatrix": {
+      "type": "object",
+      "required": [
+        "profiles",
+        "matrix"
+      ],
+      "properties": {
+        "profiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "matrix": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/skillCompatibilityRow"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "skillCompatibilityRow": {
+      "type": "object",
+      "required": [
+        "path",
+        "name",
+        "profiles"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "profiles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/profileCompatibilityResult"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "profileCompatibilityResult": {
+      "type": "object",
+      "required": [
+        "profile",
+        "status",
+        "finding_ids"
+      ],
+      "properties": {
+        "profile": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/compatibilityStatus"
+        },
+        "finding_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "compatibilityStatus": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "warn",
+        "fail",
+        "unknown"
+      ]
+    }
+  }
+}
