@@ -10,6 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 agent-audit-core = { path = "../agent-audit-core" }
+agent-audit-hosts = { path = "../agent-audit-hosts" }
 agent-audit-report = { path = "../agent-audit-report" }
 anyhow.workspace = true
 clap.workspace = true

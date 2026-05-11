@@ -8,6 +8,7 @@ use agent_audit_core::{
     parse_audit_config, parse_severity, report_matches_fail_on, scan_path, AuditConfig, AuditError,
     ScanOptions, ScanReport, Severity,
 };
+use agent_audit_hosts::HOST_PROFILES;
 use agent_audit_report::{
     render_report, ReportFormat, UnsupportedReportFormat, SUPPORTED_REPORT_FORMATS_HELP,
 };
@@ -52,6 +53,14 @@ struct ScanCommand {
         help = "Fail when an unsuppressed finding exactly matches severity; repeat for multiple severities"
     )]
     fail_on: Vec<Severity>,
+    #[arg(
+        long = "profile",
+        value_parser = parse_scan_profile,
+        value_delimiter = ',',
+        value_name = "PROFILE",
+        help = "Select compatibility profile(s); repeat or comma-separate values; use 'all' for every supported profile"
+    )]
+    profiles: Vec<String>,
 }
 
 fn main() -> Result<()> {
@@ -76,6 +85,7 @@ fn run_scan_with_writer(command: ScanCommand, writer: &mut impl Write) -> Result
         .map(load_explicit_config)
         .transpose()?;
     let fail_on = effective_fail_on(&command.fail_on, config.as_ref()).to_vec();
+    let config = effective_config(config, &command.profiles);
 
     let report = scan_path(
         &command.path,
@@ -118,6 +128,40 @@ fn effective_fail_on<'a>(
     config.map_or(&[], |config| config.fail_on.as_slice())
 }
 
+fn effective_config(config: Option<AuditConfig>, cli_profiles: &[String]) -> Option<AuditConfig> {
+    if cli_profiles.is_empty() {
+        return config;
+    }
+
+    let profiles = effective_cli_profiles(cli_profiles);
+    Some(match config {
+        Some(mut config) => {
+            config.profiles = profiles;
+            config
+        }
+        None => AuditConfig {
+            profiles,
+            fail_on: Vec::new(),
+            ignore: Vec::new(),
+        },
+    })
+}
+
+fn effective_cli_profiles(cli_profiles: &[String]) -> Vec<String> {
+    if cli_profiles.iter().any(|profile| profile == "all") {
+        return all_supported_profiles();
+    }
+
+    cli_profiles.to_vec()
+}
+
+fn all_supported_profiles() -> Vec<String> {
+    HOST_PROFILES
+        .iter()
+        .map(|profile| (*profile).to_owned())
+        .collect()
+}
+
 fn load_explicit_config(config_path: &Path) -> Result<AuditConfig> {
     let content = fs::read_to_string(config_path)
         .with_context(|| format!("failed to read config {}", config_path.display()))?;
@@ -145,6 +189,19 @@ fn parse_fail_on_severity(value: &str) -> Result<Severity, String> {
     parse_severity(value).ok_or_else(|| {
         format!("unknown severity `{value}`; expected one of: info, low, medium, high, critical")
     })
+}
+
+fn parse_scan_profile(value: &str) -> Result<String, String> {
+    let profile = value.trim();
+
+    if profile == "all" || HOST_PROFILES.contains(&profile) {
+        return Ok(profile.to_owned());
+    }
+
+    Err(format!(
+        "unknown profile `{profile}`; expected one of: all, {}",
+        HOST_PROFILES.join(", ")
+    ))
 }
 
 #[cfg(test)]
@@ -204,6 +261,21 @@ mod tests {
     }
 
     #[test]
+    fn scan_help_lists_profile_option() {
+        let mut command = Cli::command();
+        let help = command
+            .find_subcommand_mut("scan")
+            .expect("scan subcommand should be registered")
+            .render_long_help()
+            .to_string();
+
+        assert!(help.contains("--profile <PROFILE>"));
+        assert!(help.contains("Select compatibility profile(s)"));
+        assert!(help.contains("comma-separate"));
+        assert!(help.contains("use 'all'"));
+    }
+
+    #[test]
     fn parses_default_scan_command() {
         let cli = Cli::parse_from(["agent-audit", "scan"]);
 
@@ -213,6 +285,7 @@ mod tests {
                 assert_eq!(command.format, ReportFormat::Summary);
                 assert_eq!(command.config, None);
                 assert_eq!(command.fail_on, Vec::<Severity>::new());
+                assert_eq!(command.profiles, Vec::<String>::new());
             }
         }
     }
@@ -232,6 +305,7 @@ mod tests {
                 assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
                 assert_eq!(command.config, Some(PathBuf::from("audit.yaml")));
                 assert_eq!(command.fail_on, Vec::<Severity>::new());
+                assert_eq!(command.profiles, Vec::<String>::new());
             }
         }
     }
@@ -252,8 +326,96 @@ mod tests {
             Command::Scan(command) => {
                 assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
                 assert_eq!(command.fail_on, vec![Severity::Low, Severity::High]);
+                assert_eq!(command.profiles, Vec::<String>::new());
             }
         }
+    }
+
+    #[test]
+    fn parses_single_scan_profile() {
+        let cli = Cli::parse_from([
+            "agent-audit",
+            "scan",
+            "fixtures/spec/basic",
+            "--profile",
+            "codex",
+        ]);
+
+        match cli.command {
+            Command::Scan(command) => {
+                assert_eq!(command.profiles, vec!["codex"]);
+            }
+        }
+    }
+
+    #[test]
+    fn parses_repeatable_scan_profiles() {
+        let cli = Cli::parse_from([
+            "agent-audit",
+            "scan",
+            "fixtures/spec/basic",
+            "--profile",
+            "codex",
+            "--profile",
+            "generic",
+        ]);
+
+        match cli.command {
+            Command::Scan(command) => {
+                assert_eq!(command.profiles, vec!["codex", "generic"]);
+            }
+        }
+    }
+
+    #[test]
+    fn parses_comma_separated_scan_profiles() {
+        let cli = Cli::parse_from([
+            "agent-audit",
+            "scan",
+            "fixtures/spec/basic",
+            "--profile",
+            "generic,codex",
+        ]);
+
+        match cli.command {
+            Command::Scan(command) => {
+                assert_eq!(command.profiles, vec!["generic", "codex"]);
+            }
+        }
+    }
+
+    #[test]
+    fn parses_all_scan_profile_marker() {
+        let cli = Cli::parse_from([
+            "agent-audit",
+            "scan",
+            "fixtures/spec/basic",
+            "--profile",
+            "all",
+        ]);
+
+        match cli.command {
+            Command::Scan(command) => {
+                assert_eq!(command.profiles, vec!["all"]);
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_scan_profile_with_supported_names() {
+        let error = Cli::try_parse_from([
+            "agent-audit",
+            "scan",
+            "fixtures/spec/basic",
+            "--profile",
+            "unknown-host",
+        ])
+        .expect_err("invalid profile should fail");
+        let message = error.to_string();
+
+        assert!(message.contains("unknown profile `unknown-host`"));
+        assert!(message.contains("all, agent-skills-spec, claude-code, codex"));
+        assert!(message.contains("github-copilot, vscode-copilot, generic"));
     }
 
     #[test]
@@ -390,6 +552,7 @@ description: Summary output fixture.
             format: ReportFormat::Summary,
             config: None,
             fail_on: Vec::new(),
+            profiles: Vec::new(),
         })
         .expect("run summary scan");
 
@@ -418,6 +581,7 @@ description: JSON output fixture.
             format: ReportFormat::Json,
             config: None,
             fail_on: Vec::new(),
+            profiles: Vec::new(),
         })
         .expect("run JSON scan");
 
@@ -447,6 +611,7 @@ description: SARIF output fixture.
             format: ReportFormat::Sarif,
             config: None,
             fail_on: Vec::new(),
+            profiles: Vec::new(),
         })
         .expect("run SARIF scan");
 
@@ -475,6 +640,7 @@ description: HTML output fixture.
             format: ReportFormat::Html,
             config: None,
             fail_on: Vec::new(),
+            profiles: Vec::new(),
         })
         .expect("run HTML scan");
 
@@ -502,6 +668,7 @@ name: [unterminated
             format: ReportFormat::Summary,
             config: None,
             fail_on: Vec::new(),
+            profiles: Vec::new(),
         })
         .expect("malformed frontmatter should render report");
 
@@ -550,6 +717,7 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
             format: ReportFormat::Summary,
             config: None,
             fail_on: Vec::new(),
+            profiles: Vec::new(),
         })
         .expect("run summary scan");
 
@@ -570,6 +738,7 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
             format: ReportFormat::Summary,
             config: None,
             fail_on: Vec::new(),
+            profiles: Vec::new(),
         })
         .expect("default scan should render low findings without failing");
 
@@ -593,6 +762,7 @@ fail_on:
             format: ReportFormat::Summary,
             config: Some(workspace.root.join("agent-audit.yaml")),
             fail_on: Vec::new(),
+            profiles: Vec::new(),
         });
         let error = result.expect_err("low fail_on should fail after rendering");
 
@@ -621,6 +791,7 @@ fail_on:
             format: ReportFormat::Summary,
             config: Some(workspace.root.join("agent-audit.yaml")),
             fail_on: Vec::new(),
+            profiles: Vec::new(),
         });
         let error = result.expect_err("multiple config fail_on values should match low finding");
 
@@ -647,6 +818,7 @@ fail_on:
             format: ReportFormat::Summary,
             config: Some(workspace.root.join("agent-audit.yaml")),
             fail_on: Vec::new(),
+            profiles: Vec::new(),
         })
         .expect("high fail_on should not match low finding");
 
@@ -671,6 +843,7 @@ fail_on:
             format: ReportFormat::Summary,
             config: Some(workspace.root.join("agent-audit.yaml")),
             fail_on: Vec::new(),
+            profiles: Vec::new(),
         })
         .expect("multiple config fail_on values should not match low finding");
 
@@ -698,6 +871,7 @@ ignore:
             format: ReportFormat::Json,
             config: Some(workspace.root.join("agent-audit.yaml")),
             fail_on: Vec::new(),
+            profiles: Vec::new(),
         })
         .expect("suppressed low finding should not trigger fail_on");
         let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
@@ -761,6 +935,7 @@ ignore:
             format: ReportFormat::Summary,
             config: None,
             fail_on: vec![Severity::Low],
+            profiles: Vec::new(),
         });
 
         result.expect_err("CLI fail_on low should fail without config");
@@ -777,6 +952,7 @@ ignore:
             format: ReportFormat::Summary,
             config: None,
             fail_on: vec![Severity::Medium, Severity::Low],
+            profiles: Vec::new(),
         });
         let error = result.expect_err("multiple CLI fail_on values should match low finding");
 
@@ -803,6 +979,7 @@ fail_on:
             format: ReportFormat::Summary,
             config: Some(workspace.root.join("agent-audit.yaml")),
             fail_on: vec![Severity::High],
+            profiles: Vec::new(),
         })
         .expect("CLI fail_on high should override config fail_on low");
 
@@ -818,6 +995,7 @@ fail_on:
             format: ReportFormat::Summary,
             config: Some(fixture.join("agent-audit.yaml")),
             fail_on: Vec::new(),
+            profiles: Vec::new(),
         });
         let error = result.expect_err("low fail_on fixture should fail");
 
@@ -836,6 +1014,7 @@ fail_on:
             format: ReportFormat::Json,
             config: Some(fixture.join("agent-audit.yaml")),
             fail_on: Vec::new(),
+            profiles: Vec::new(),
         })
         .expect("suppressed low fixture should not fail");
         let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
@@ -857,6 +1036,7 @@ fail_on:
             format: ReportFormat::Summary,
             config: Some(fixture.join("agent-audit.yaml")),
             fail_on: Vec::new(),
+            profiles: Vec::new(),
         })
         .expect("high threshold should not fail low findings");
 
@@ -895,11 +1075,110 @@ ignore:
             format: ReportFormat::Summary,
             config: Some(workspace.root.join("agent-audit.yaml")),
             fail_on: Vec::new(),
+            profiles: Vec::new(),
         })
         .expect("valid config should load before scan");
 
         assert!(output.contains("Packages: 1\n"));
         assert!(output.ends_with('\n'));
+    }
+
+    #[test]
+    fn run_scan_cli_profiles_override_config_profiles() {
+        let workspace = CliTestWorkspace::new("cli-profiles-override-config");
+        workspace.write_file("SKILL.md", valid_skill("cli-profiles-override-config"));
+        workspace.write_file(
+            "agent-audit.yaml",
+            r#"
+profiles:
+  - generic
+  - codex
+"#,
+        );
+
+        let output = run_scan_output(ScanCommand {
+            path: workspace.root.clone(),
+            format: ReportFormat::Json,
+            config: Some(workspace.root.join("agent-audit.yaml")),
+            fail_on: Vec::new(),
+            profiles: vec!["claude-code".to_owned(), "agent-skills-spec".to_owned()],
+        })
+        .expect("CLI profiles should override config profiles");
+        let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
+
+        assert_eq!(
+            value["compatibility"]["profiles"],
+            serde_json::json!(["claude-code", "agent-skills-spec"])
+        );
+        assert_eq!(
+            profile_names(&value["compatibility"]["matrix"][0]["profiles"]),
+            vec!["claude-code", "agent-skills-spec"]
+        );
+    }
+
+    #[test]
+    fn run_scan_without_cli_profiles_leaves_config_profiles() {
+        let workspace = CliTestWorkspace::new("cli-profiles-leave-config");
+        workspace.write_file("SKILL.md", valid_skill("cli-profiles-leave-config"));
+        workspace.write_file(
+            "agent-audit.yaml",
+            r#"
+profiles:
+  - generic
+  - codex
+"#,
+        );
+
+        let output = run_scan_output(ScanCommand {
+            path: workspace.root.clone(),
+            format: ReportFormat::Json,
+            config: Some(workspace.root.join("agent-audit.yaml")),
+            fail_on: Vec::new(),
+            profiles: Vec::new(),
+        })
+        .expect("omitted CLI profiles should leave config profiles");
+        let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
+
+        assert_eq!(
+            value["compatibility"]["profiles"],
+            serde_json::json!(["generic", "codex"])
+        );
+        assert_eq!(
+            profile_names(&value["compatibility"]["matrix"][0]["profiles"]),
+            vec!["generic", "codex"]
+        );
+    }
+
+    #[test]
+    fn run_scan_all_cli_profile_selects_registry_order() {
+        let workspace = CliTestWorkspace::new("cli-profiles-all");
+        workspace.write_file("SKILL.md", valid_skill("cli-profiles-all"));
+        workspace.write_file(
+            "agent-audit.yaml",
+            r#"
+profiles:
+  - generic
+"#,
+        );
+
+        let output = run_scan_output(ScanCommand {
+            path: workspace.root.clone(),
+            format: ReportFormat::Json,
+            config: Some(workspace.root.join("agent-audit.yaml")),
+            fail_on: Vec::new(),
+            profiles: vec!["all".to_owned()],
+        })
+        .expect("all CLI profile should select registry order");
+        let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
+
+        assert_eq!(
+            value["compatibility"]["profiles"],
+            serde_json::json!(HOST_PROFILES)
+        );
+        assert_eq!(
+            profile_names(&value["compatibility"]["matrix"][0]["profiles"]),
+            HOST_PROFILES.to_vec()
+        );
     }
 
     #[test]
@@ -929,6 +1208,7 @@ ignore:
             format: ReportFormat::Json,
             config: Some(workspace.root.join("agent-audit.yaml")),
             fail_on: Vec::new(),
+            profiles: Vec::new(),
         })
         .expect("explicit config should suppress matching finding");
         let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
@@ -966,6 +1246,7 @@ description: Missing explicit config fixture.
             format: ReportFormat::Summary,
             config: Some(config_path.clone()),
             fail_on: Vec::new(),
+            profiles: Vec::new(),
         })
         .expect_err("missing config should fail before scan");
         let message = error.to_string();
@@ -995,6 +1276,7 @@ description: Malformed explicit config fixture.
             format: ReportFormat::Summary,
             config: Some(config_path.clone()),
             fail_on: Vec::new(),
+            profiles: Vec::new(),
         })
         .expect_err("malformed config should fail before scan");
         let message = error.to_string();
@@ -1024,6 +1306,7 @@ description: Invalid explicit config fixture.
             format: ReportFormat::Summary,
             config: Some(config_path.clone()),
             fail_on: Vec::new(),
+            profiles: Vec::new(),
         })
         .expect_err("invalid config should fail before scan");
         let message = error.to_string();
@@ -1054,6 +1337,7 @@ description: Invalid config fail_on fixture.
             format: ReportFormat::Summary,
             config: Some(config_path.clone()),
             fail_on: Vec::new(),
+            profiles: Vec::new(),
         })
         .expect_err("invalid config fail_on severity should fail before scan");
         let message = error.to_string();
@@ -1084,6 +1368,7 @@ description: No config discovery fixture.
             format: ReportFormat::Summary,
             config: None,
             fail_on: Vec::new(),
+            profiles: Vec::new(),
         })
         .expect("implicit config discovery should not run");
 
@@ -1097,6 +1382,18 @@ description: Missing name fail_on fixture.
 
 This manifest intentionally starts with a paragraph so the scanner cannot derive a heading fallback name.
 "#
+    }
+
+    fn valid_skill(name: &str) -> String {
+        format!(
+            r#"---
+name: {name}
+description: Valid profile fixture.
+---
+
+# {name}
+"#
+        )
     }
 
     fn test_finding(rule_id: &str, severity: Severity) -> SkillFinding {
@@ -1128,6 +1425,15 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
             .join(name)
     }
 
+    fn profile_names(value: &serde_json::Value) -> Vec<&str> {
+        value
+            .as_array()
+            .expect("profile result array")
+            .iter()
+            .map(|profile| profile["profile"].as_str().expect("profile name"))
+            .collect()
+    }
+
     struct CliTestWorkspace {
         root: PathBuf,
     }
@@ -1150,12 +1456,12 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
             Self { root }
         }
 
-        fn write_file(&self, relative_path: &str, content: &str) {
+        fn write_file(&self, relative_path: &str, content: impl AsRef<str>) {
             let path = self.root.join(relative_path);
             if let Some(parent) = path.parent() {
                 fs::create_dir_all(parent).expect("create test file parent directory");
             }
-            fs::write(path, content).expect("write test file");
+            fs::write(path, content.as_ref()).expect("write test file");
         }
     }
 
