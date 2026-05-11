@@ -1343,6 +1343,19 @@ const PYTHON_SECURITY_ANALYZER_CAPABILITIES: &[SecurityAnalyzerCapability] =
         precision: SecurityAnalyzerPrecision::Fallback,
     }];
 
+const JAVASCRIPT_SECURITY_ANALYZER_CAPABILITIES: &[SecurityAnalyzerCapability] = &[
+    SecurityAnalyzerCapability {
+        language: SecurityLanguage::JavaScript,
+        mode: SecurityAnalyzerMode::RegexFallback,
+        precision: SecurityAnalyzerPrecision::Fallback,
+    },
+    SecurityAnalyzerCapability {
+        language: SecurityLanguage::TypeScript,
+        mode: SecurityAnalyzerMode::RegexFallback,
+        precision: SecurityAnalyzerPrecision::Fallback,
+    },
+];
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ShellSecurityAnalyzer;
 
@@ -1355,6 +1368,13 @@ pub struct PythonSecurityAnalyzer;
 
 pub fn python_security_analyzer() -> PythonSecurityAnalyzer {
     PythonSecurityAnalyzer
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct JavaScriptSecurityAnalyzer;
+
+pub fn javascript_security_analyzer() -> JavaScriptSecurityAnalyzer {
+    JavaScriptSecurityAnalyzer
 }
 
 impl SecurityAnalyzer for ShellSecurityAnalyzer {
@@ -1467,6 +1487,67 @@ impl SecurityAnalyzer for PythonSecurityAnalyzer {
         output
             .signals
             .extend(analyze_python_security_text(input.artifact.path, text));
+        output.sort_deterministically();
+        output.signals.dedup();
+        output
+    }
+}
+
+impl SecurityAnalyzer for JavaScriptSecurityAnalyzer {
+    fn id(&self) -> &str {
+        "javascript-security"
+    }
+
+    fn capabilities(&self) -> &[SecurityAnalyzerCapability] {
+        JAVASCRIPT_SECURITY_ANALYZER_CAPABILITIES
+    }
+
+    fn analyze(&self, input: &SecurityAnalyzerInput<'_>) -> SecurityAnalyzerOutput {
+        let mut output = SecurityAnalyzerOutput::default();
+
+        if !matches!(
+            input.artifact.language,
+            SecurityLanguage::JavaScript | SecurityLanguage::TypeScript
+        ) {
+            output.diagnostics.push(regex_analyzer_diagnostic(
+                self.id(),
+                SecurityAnalyzerDiagnosticSeverity::Warning,
+                SecurityAnalyzerDiagnosticKind::UnsupportedLanguage,
+                format!(
+                    "javascript security analyzer does not support {:?} artifacts",
+                    input.artifact.language
+                ),
+                input.artifact.path,
+            ));
+            return output;
+        }
+
+        if input.artifact.content.is_truncated() {
+            output.diagnostics.push(regex_analyzer_diagnostic(
+                self.id(),
+                SecurityAnalyzerDiagnosticSeverity::Warning,
+                SecurityAnalyzerDiagnosticKind::ContentTruncated,
+                "artifact content was truncated; javascript security signals may be incomplete"
+                    .to_owned(),
+                input.artifact.path,
+            ));
+        }
+
+        let Some(text) = input.artifact.content.text else {
+            output.diagnostics.push(regex_analyzer_diagnostic(
+                self.id(),
+                SecurityAnalyzerDiagnosticSeverity::Warning,
+                SecurityAnalyzerDiagnosticKind::TextUnavailable,
+                "artifact text is unavailable for javascript security analysis".to_owned(),
+                input.artifact.path,
+            ));
+            output.sort_deterministically();
+            return output;
+        };
+
+        output
+            .signals
+            .extend(analyze_javascript_security_text(input.artifact.path, text));
         output.sort_deterministically();
         output.signals.dedup();
         output
@@ -1611,6 +1692,397 @@ fn analyze_python_security_text(path: &str, text: &str) -> Vec<SecuritySignal> {
     signals.sort();
     signals.dedup();
     signals
+}
+
+fn analyze_javascript_security_text(path: &str, text: &str) -> Vec<SecuritySignal> {
+    let lines = javascript_uncommented_lines(text);
+    let context = javascript_analysis_context(&lines);
+    let mut signals = Vec::new();
+
+    for (line_index, uncommented) in lines.iter().enumerate() {
+        let line_number = line_index + 1;
+        if uncommented.trim().is_empty() {
+            continue;
+        }
+
+        let original = text.lines().nth(line_index).unwrap_or_default();
+        let evidence = shell_evidence(original);
+        signals.extend(detect_javascript_secret_env_reads(
+            path,
+            line_number,
+            uncommented,
+            &evidence,
+        ));
+        signals.extend(detect_javascript_subprocess_execution(
+            path,
+            line_number,
+            uncommented,
+            &context,
+            &evidence,
+        ));
+        signals.extend(detect_javascript_network_access(
+            path,
+            line_number,
+            uncommented,
+            &evidence,
+        ));
+        signals.extend(detect_javascript_file_writes(
+            path,
+            line_number,
+            uncommented,
+            &evidence,
+        ));
+        signals.extend(detect_javascript_dynamic_code_evaluation(
+            path,
+            line_number,
+            uncommented,
+            &evidence,
+        ));
+        signals.extend(detect_javascript_package_installation(
+            path,
+            line_number,
+            uncommented,
+            &context,
+            &evidence,
+        ));
+    }
+
+    signals.sort();
+    signals.dedup();
+    signals
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct JavaScriptAnalysisContext {
+    child_process_modules: BTreeSet<String>,
+    child_process_functions: BTreeSet<String>,
+}
+
+fn javascript_analysis_context(lines: &[String]) -> JavaScriptAnalysisContext {
+    let mut context = JavaScriptAnalysisContext {
+        child_process_modules: BTreeSet::from(["child_process".to_owned()]),
+        child_process_functions: BTreeSet::new(),
+    };
+
+    for line in lines {
+        collect_javascript_child_process_aliases(line, &mut context);
+    }
+
+    context
+}
+
+fn collect_javascript_child_process_aliases(line: &str, context: &mut JavaScriptAnalysisContext) {
+    if !has_child_process_module_literal(line) {
+        return;
+    }
+
+    let trimmed = line.trim_start();
+    if trimmed.starts_with("import ") {
+        if let Some(imports) = trimmed
+            .strip_prefix("import ")
+            .and_then(|rest| rest.split_once(" from "))
+            .map(|(imports, _)| imports.trim())
+        {
+            collect_javascript_import_aliases(imports, context);
+        }
+        return;
+    }
+
+    if let Some((left, right)) = line.split_once('=') {
+        if !right.contains("require(") {
+            return;
+        }
+        let left = left
+            .trim()
+            .strip_prefix("const ")
+            .or_else(|| left.trim().strip_prefix("let "))
+            .or_else(|| left.trim().strip_prefix("var "))
+            .unwrap_or(left.trim())
+            .trim();
+        if left.starts_with('{') {
+            collect_javascript_named_aliases(left, context, JavaScriptAliasSyntax::Require);
+        } else if let Some(alias) = parse_javascript_identifier(left) {
+            context.child_process_modules.insert(alias);
+        }
+    }
+}
+
+fn collect_javascript_import_aliases(imports: &str, context: &mut JavaScriptAnalysisContext) {
+    if let Some(rest) = imports.strip_prefix("* as ") {
+        if let Some(alias) = parse_javascript_identifier(rest.trim()) {
+            context.child_process_modules.insert(alias);
+        }
+        return;
+    }
+
+    if imports.starts_with('{') {
+        collect_javascript_named_aliases(imports, context, JavaScriptAliasSyntax::Import);
+        return;
+    }
+
+    if let Some((default_alias, named)) = imports.split_once(',') {
+        if let Some(alias) = parse_javascript_identifier(default_alias.trim()) {
+            context.child_process_modules.insert(alias);
+        }
+        collect_javascript_named_aliases(named.trim(), context, JavaScriptAliasSyntax::Import);
+    } else if let Some(alias) = parse_javascript_identifier(imports) {
+        context.child_process_modules.insert(alias);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum JavaScriptAliasSyntax {
+    Import,
+    Require,
+}
+
+fn collect_javascript_named_aliases(
+    text: &str,
+    context: &mut JavaScriptAnalysisContext,
+    syntax: JavaScriptAliasSyntax,
+) {
+    let Some(start) = text.find('{') else {
+        return;
+    };
+    let Some(end) = text[start + 1..].find('}').map(|offset| start + 1 + offset) else {
+        return;
+    };
+
+    for item in text[start + 1..end].split(',') {
+        let item = item.trim();
+        if item.is_empty() {
+            continue;
+        }
+
+        let (property, alias) = match syntax {
+            JavaScriptAliasSyntax::Import => item
+                .split_once(" as ")
+                .map(|(property, alias)| (property.trim(), alias.trim()))
+                .unwrap_or((item, item)),
+            JavaScriptAliasSyntax::Require => item
+                .split_once(':')
+                .map(|(property, alias)| (property.trim(), alias.trim()))
+                .unwrap_or((item, item)),
+        };
+
+        let Some(property) = parse_javascript_identifier(property) else {
+            continue;
+        };
+        if !JAVASCRIPT_CHILD_PROCESS_METHODS.contains(&property.as_str()) {
+            continue;
+        }
+
+        if let Some(alias) = parse_javascript_identifier(alias) {
+            context.child_process_functions.insert(alias);
+        }
+    }
+}
+
+fn has_child_process_module_literal(line: &str) -> bool {
+    [
+        "'child_process'",
+        "\"child_process\"",
+        "'node:child_process'",
+        "\"node:child_process\"",
+    ]
+    .iter()
+    .any(|literal| line.contains(literal))
+}
+
+fn detect_javascript_secret_env_reads(
+    path: &str,
+    line_number: usize,
+    line: &str,
+    evidence: &str,
+) -> Vec<SecuritySignal> {
+    find_javascript_env_reads(line)
+        .into_iter()
+        .filter(|(_, name)| is_secret_like_environment_variable(name))
+        .map(|(column, name)| environment_secret_signal(path, line_number, column, name, evidence))
+        .collect()
+}
+
+fn detect_javascript_subprocess_execution(
+    path: &str,
+    line_number: usize,
+    line: &str,
+    context: &JavaScriptAnalysisContext,
+    evidence: &str,
+) -> Vec<SecuritySignal> {
+    javascript_subprocess_calls(line, context)
+        .into_iter()
+        .map(|call| {
+            shell_signal(
+                path,
+                line_number,
+                call.column,
+                SecuritySignalKind::SubprocessExecution,
+                None,
+                Some(SecuritySink {
+                    kind: SecuritySinkKind::ProcessExecution,
+                    target: Some(call.name),
+                }),
+                SecurityRiskScore::new(65),
+                AnalyzerConfidence::Medium,
+                evidence,
+            )
+        })
+        .collect()
+}
+
+fn detect_javascript_network_access(
+    path: &str,
+    line_number: usize,
+    line: &str,
+    evidence: &str,
+) -> Vec<SecuritySignal> {
+    const NETWORK_CALLS: &[&str] = &[
+        "fetch",
+        "axios.get",
+        "axios.post",
+        "http.request",
+        "http.get",
+        "https.request",
+        "https.get",
+    ];
+
+    find_javascript_calls(line, NETWORK_CALLS)
+        .into_iter()
+        .map(|call| {
+            let target = find_external_urls(call.args)
+                .into_iter()
+                .map(|(_, url)| url)
+                .next()
+                .unwrap_or(call.name);
+            shell_signal(
+                path,
+                line_number,
+                call.column,
+                SecuritySignalKind::NetworkAccess,
+                None,
+                Some(SecuritySink {
+                    kind: SecuritySinkKind::NetworkRequest,
+                    target: Some(target),
+                }),
+                SecurityRiskScore::new(45),
+                AnalyzerConfidence::Medium,
+                evidence,
+            )
+        })
+        .collect()
+}
+
+fn detect_javascript_file_writes(
+    path: &str,
+    line_number: usize,
+    line: &str,
+    evidence: &str,
+) -> Vec<SecuritySignal> {
+    const FILE_WRITE_CALLS: &[&str] = &[
+        "fs.writeFile",
+        "fs.writeFileSync",
+        "fs.appendFile",
+        "fs.appendFileSync",
+        "Deno.writeTextFile",
+        "Deno.writeFile",
+    ];
+
+    find_javascript_calls(line, FILE_WRITE_CALLS)
+        .into_iter()
+        .map(|call| {
+            shell_signal(
+                path,
+                line_number,
+                call.column,
+                SecuritySignalKind::FileWrite,
+                None,
+                Some(SecuritySink {
+                    kind: SecuritySinkKind::FileWrite,
+                    target: Some(call.name),
+                }),
+                SecurityRiskScore::new(50),
+                AnalyzerConfidence::Medium,
+                evidence,
+            )
+        })
+        .collect()
+}
+
+fn detect_javascript_dynamic_code_evaluation(
+    path: &str,
+    line_number: usize,
+    line: &str,
+    evidence: &str,
+) -> Vec<SecuritySignal> {
+    let mut signals = find_javascript_calls(line, &["eval"])
+        .into_iter()
+        .map(|call| {
+            shell_signal(
+                path,
+                line_number,
+                call.column,
+                SecuritySignalKind::DynamicCodeEvaluation,
+                None,
+                Some(SecuritySink {
+                    kind: SecuritySinkKind::DynamicCodeEvaluation,
+                    target: Some(call.name),
+                }),
+                SecurityRiskScore::new(70),
+                AnalyzerConfidence::Medium,
+                evidence,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    for (column, target) in find_javascript_function_constructor_calls(line) {
+        signals.push(shell_signal(
+            path,
+            line_number,
+            column,
+            SecuritySignalKind::DynamicCodeEvaluation,
+            None,
+            Some(SecuritySink {
+                kind: SecuritySinkKind::DynamicCodeEvaluation,
+                target: Some(target),
+            }),
+            SecurityRiskScore::new(70),
+            AnalyzerConfidence::Medium,
+            evidence,
+        ));
+    }
+
+    signals
+}
+
+fn detect_javascript_package_installation(
+    path: &str,
+    line_number: usize,
+    line: &str,
+    context: &JavaScriptAnalysisContext,
+    evidence: &str,
+) -> Vec<SecuritySignal> {
+    javascript_subprocess_calls(line, context)
+        .into_iter()
+        .filter_map(|call| {
+            javascript_package_install_target(call.args).map(|target| (call, target))
+        })
+        .map(|(call, target)| {
+            shell_signal(
+                path,
+                line_number,
+                call.column,
+                SecuritySignalKind::PackageInstallation,
+                None,
+                Some(SecuritySink {
+                    kind: SecuritySinkKind::PackageInstall,
+                    target: Some(target),
+                }),
+                SecurityRiskScore::new(65),
+                AnalyzerConfidence::High,
+                evidence,
+            )
+        })
+        .collect()
 }
 
 fn python_line_without_triple_quoted_strings(line: &str, active_quote: &mut Option<u8>) -> String {
@@ -2863,6 +3335,570 @@ fn python_uncommented_prefix(line: &str) -> &str {
     }
 
     line
+}
+
+fn javascript_uncommented_lines(text: &str) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut state = JavaScriptLineMaskState::default();
+
+    for line in text.lines() {
+        lines.push(javascript_uncommented_line(line, &mut state));
+    }
+
+    lines
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct JavaScriptLineMaskState {
+    in_block_comment: bool,
+    in_template_literal: bool,
+    template_escaped: bool,
+}
+
+fn javascript_uncommented_line(line: &str, state: &mut JavaScriptLineMaskState) -> String {
+    let bytes = line.as_bytes();
+    let mut output = bytes.to_vec();
+    let mut index = 0;
+    let mut quote = None;
+    let mut escaped = false;
+
+    while index < bytes.len() {
+        if state.in_block_comment {
+            if bytes
+                .get(index..index + 2)
+                .is_some_and(|candidate| candidate == b"*/")
+            {
+                output[index] = b' ';
+                output[index + 1] = b' ';
+                state.in_block_comment = false;
+                index += 2;
+            } else {
+                output[index] = b' ';
+                index += 1;
+            }
+            continue;
+        }
+
+        if state.in_template_literal {
+            output[index] = b' ';
+            let byte = bytes[index];
+            if state.template_escaped {
+                state.template_escaped = false;
+            } else if byte == b'\\' {
+                state.template_escaped = true;
+            } else if byte == b'`' {
+                state.in_template_literal = false;
+            }
+            index += 1;
+            continue;
+        }
+
+        let byte = bytes[index];
+        if escaped {
+            escaped = false;
+            index += 1;
+            continue;
+        }
+
+        if quote.is_some() && byte == b'\\' {
+            escaped = true;
+            index += 1;
+            continue;
+        }
+
+        if let Some(active_quote) = quote {
+            if byte == active_quote {
+                quote = None;
+            }
+            index += 1;
+            continue;
+        }
+
+        if matches!(byte, b'\'' | b'"') {
+            quote = Some(byte);
+            index += 1;
+            continue;
+        }
+
+        if byte == b'`' {
+            output[index] = b' ';
+            state.in_template_literal = true;
+            state.template_escaped = false;
+            index += 1;
+            continue;
+        }
+
+        if bytes
+            .get(index..index + 2)
+            .is_some_and(|candidate| candidate == b"//")
+        {
+            mask_byte_range(&mut output, index, bytes.len());
+            break;
+        }
+
+        if bytes
+            .get(index..index + 2)
+            .is_some_and(|candidate| candidate == b"/*")
+        {
+            output[index] = b' ';
+            output[index + 1] = b' ';
+            state.in_block_comment = true;
+            index += 2;
+            continue;
+        }
+
+        index += 1;
+    }
+
+    String::from_utf8(output).expect("masking ASCII bytes preserves UTF-8")
+}
+
+fn find_javascript_env_reads(line: &str) -> Vec<(usize, String)> {
+    let mut reads = Vec::new();
+    let mut search_start = 0;
+
+    while let Some(relative_index) = line[search_start..].find("process.env") {
+        let process_start = search_start + relative_index;
+        if javascript_index_in_string_or_template(line, process_start) {
+            search_start = process_start + "process.env".len();
+            continue;
+        }
+
+        let member_start = process_start + "process.env".len();
+        if line.as_bytes().get(member_start) == Some(&b'.') {
+            let name_start = member_start + 1;
+            if let Some((name, end)) = parse_javascript_identifier_at(line, name_start) {
+                reads.push((name_start + 1, name));
+                search_start = end;
+                continue;
+            }
+        } else if line.as_bytes().get(member_start) == Some(&b'[') {
+            let literal_start = skip_ascii_whitespace(line, member_start + 1);
+            if let Some((name, literal_end)) = parse_javascript_string_literal(line, literal_start)
+            {
+                let close = skip_ascii_whitespace(line, literal_end);
+                if line.as_bytes().get(close) == Some(&b']') {
+                    reads.push((literal_start + 1, name));
+                    search_start = close + 1;
+                    continue;
+                }
+            }
+        }
+
+        search_start = member_start.saturating_add(1);
+    }
+
+    reads.sort();
+    reads.dedup();
+    reads
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct JavaScriptCall<'a> {
+    name: String,
+    start: usize,
+    column: usize,
+    args: &'a str,
+}
+
+const JAVASCRIPT_CHILD_PROCESS_METHODS: &[&str] = &[
+    "exec",
+    "execSync",
+    "spawn",
+    "spawnSync",
+    "execFile",
+    "execFileSync",
+    "fork",
+];
+
+fn javascript_subprocess_calls<'a>(
+    line: &'a str,
+    context: &JavaScriptAnalysisContext,
+) -> Vec<JavaScriptCall<'a>> {
+    let mut names = JAVASCRIPT_CHILD_PROCESS_METHODS
+        .iter()
+        .map(|method| format!("child_process.{method}"))
+        .collect::<Vec<_>>();
+
+    for alias in &context.child_process_modules {
+        for method in JAVASCRIPT_CHILD_PROCESS_METHODS {
+            names.push(format!("{alias}.{method}"));
+        }
+    }
+    for alias in &context.child_process_functions {
+        names.push(alias.clone());
+    }
+
+    let name_refs = names.iter().map(String::as_str).collect::<Vec<_>>();
+    find_javascript_calls(line, &name_refs)
+}
+
+fn find_javascript_calls<'a>(line: &'a str, names: &[&str]) -> Vec<JavaScriptCall<'a>> {
+    let mut calls = Vec::new();
+    let mut index = 0;
+
+    while index < line.len() {
+        let Some((name, name_start, args_start)) = find_next_javascript_call(line, index, names)
+        else {
+            break;
+        };
+        let args_end = find_javascript_call_args_end(line, args_start).unwrap_or(line.len());
+        calls.push(JavaScriptCall {
+            name: name.to_owned(),
+            start: name_start,
+            column: name_start + 1,
+            args: &line[args_start..args_end],
+        });
+        index = args_start.saturating_add(1);
+    }
+
+    calls.sort_by(|left, right| {
+        left.start
+            .cmp(&right.start)
+            .then(left.name.cmp(&right.name))
+    });
+    calls.dedup_by(|left, right| left.start == right.start && left.name == right.name);
+    calls
+}
+
+fn find_next_javascript_call<'a>(
+    line: &'a str,
+    start: usize,
+    names: &[&str],
+) -> Option<(String, usize, usize)> {
+    let mut best = None;
+
+    for &name in names {
+        let mut search_start = start;
+        while let Some(relative_index) = line[search_start..].find(name) {
+            let name_start = search_start + relative_index;
+            let name_end = name_start + name.len();
+            let open_paren = skip_ascii_whitespace(line, name_end);
+
+            if line
+                .as_bytes()
+                .get(open_paren)
+                .is_some_and(|byte| *byte == b'(')
+                && javascript_name_boundary_before(line, name_start)
+                && javascript_name_boundary_after(line, name_end)
+                && !javascript_index_in_string_or_template(line, name_start)
+            {
+                let args_start = open_paren + 1;
+                if best
+                    .as_ref()
+                    .is_none_or(|(_, best_start, _)| name_start < *best_start)
+                {
+                    best = Some((name.to_owned(), name_start, args_start));
+                }
+                break;
+            }
+
+            search_start = name_end;
+        }
+    }
+
+    best
+}
+
+fn find_javascript_call_args_end(line: &str, start: usize) -> Option<usize> {
+    let bytes = line.as_bytes();
+    let mut index = start;
+    let mut depth = 1usize;
+    let mut quote = None;
+    let mut escaped = false;
+
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if escaped {
+            escaped = false;
+            index += 1;
+            continue;
+        }
+
+        if quote.is_some() && byte == b'\\' {
+            escaped = true;
+            index += 1;
+            continue;
+        }
+
+        if matches!(byte, b'\'' | b'"' | b'`') {
+            if quote == Some(byte) {
+                quote = None;
+            } else if quote.is_none() {
+                quote = Some(byte);
+            }
+            index += 1;
+            continue;
+        }
+
+        if quote.is_none() {
+            match byte {
+                b'(' | b'[' | b'{' => depth += 1,
+                b')' | b']' | b'}' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        return Some(index);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        index += 1;
+    }
+
+    None
+}
+
+fn javascript_index_in_string_or_template(line: &str, target: usize) -> bool {
+    let bytes = line.as_bytes();
+    let mut index = 0;
+    let mut quote = None;
+    let mut escaped = false;
+
+    while index < bytes.len() && index < target {
+        let byte = bytes[index];
+        if escaped {
+            escaped = false;
+            index += 1;
+            continue;
+        }
+        if quote.is_some() && byte == b'\\' {
+            escaped = true;
+            index += 1;
+            continue;
+        }
+        if matches!(byte, b'\'' | b'"' | b'`') {
+            if quote == Some(byte) {
+                quote = None;
+            } else if quote.is_none() {
+                quote = Some(byte);
+            }
+        }
+        index += 1;
+    }
+
+    quote.is_some()
+}
+
+fn javascript_name_boundary_before(line: &str, start: usize) -> bool {
+    start == 0
+        || !line
+            .as_bytes()
+            .get(start - 1)
+            .is_some_and(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$'))
+}
+
+fn javascript_name_boundary_after(line: &str, end: usize) -> bool {
+    !line
+        .as_bytes()
+        .get(end)
+        .is_some_and(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$'))
+}
+
+fn find_javascript_new_function_calls(line: &str) -> Vec<(usize, String)> {
+    let mut calls = Vec::new();
+    let mut search_start = 0;
+
+    while let Some(relative_index) = line[search_start..].find("new") {
+        let new_start = search_start + relative_index;
+        let function_start = skip_ascii_whitespace(line, new_start + 3);
+        let function_end = function_start + "Function".len();
+        let open_paren = skip_ascii_whitespace(line, function_end);
+        if line
+            .get(function_start..function_end)
+            .is_some_and(|candidate| candidate == "Function")
+            && line
+                .as_bytes()
+                .get(open_paren)
+                .is_some_and(|byte| *byte == b'(')
+            && javascript_name_boundary_before(line, new_start)
+            && javascript_name_boundary_after(line, function_end)
+            && !javascript_index_in_string_or_template(line, new_start)
+        {
+            calls.push((new_start + 1, "new Function".to_owned()));
+        }
+        search_start = new_start + 3;
+    }
+
+    calls
+}
+
+fn find_javascript_function_constructor_calls(line: &str) -> Vec<(usize, String)> {
+    let mut calls = find_javascript_new_function_calls(line);
+
+    for call in find_javascript_calls(line, &["Function"]) {
+        if javascript_function_call_has_new_prefix(line, call.start) {
+            continue;
+        }
+        calls.push((call.column, "Function".to_owned()));
+    }
+
+    calls.sort();
+    calls.dedup();
+    calls
+}
+
+fn javascript_function_call_has_new_prefix(line: &str, function_start: usize) -> bool {
+    let before_function = line[..function_start].trim_end();
+    let Some(new_start) = before_function.len().checked_sub("new".len()) else {
+        return false;
+    };
+
+    &before_function[new_start..] == "new"
+        && javascript_name_boundary_before(line, new_start)
+        && before_function[new_start + "new".len()..].trim().is_empty()
+}
+
+fn javascript_package_install_target(args: &str) -> Option<String> {
+    let literals = javascript_string_literals(args);
+    for literal in &literals {
+        let normalized = literal.to_ascii_lowercase();
+        for &target in JAVASCRIPT_PACKAGE_INSTALL_COMMANDS {
+            if contains_command_phrase(&normalized, target) {
+                return Some(target.to_owned());
+            }
+        }
+    }
+
+    javascript_package_install_target_from_literals(&literals)
+}
+
+const JAVASCRIPT_PACKAGE_MANAGERS: &[&str] = &["npm", "pnpm", "yarn", "bun"];
+
+const JAVASCRIPT_PACKAGE_INSTALL_COMMANDS: &[&str] = &[
+    "npm install",
+    "npm i",
+    "pnpm add",
+    "pnpm install",
+    "yarn add",
+    "yarn install",
+    "bun add",
+    "bun install",
+];
+
+fn javascript_package_install_target_from_literals(literals: &[String]) -> Option<String> {
+    for window in literals.windows(2) {
+        let manager = window[0].to_ascii_lowercase();
+        let command = window[1].to_ascii_lowercase();
+
+        if !JAVASCRIPT_PACKAGE_MANAGERS.contains(&manager.as_str()) {
+            continue;
+        }
+
+        let command = match command.as_str() {
+            "install" | "add" | "i" => command,
+            _ => continue,
+        };
+        let target = format!("{manager} {command}");
+
+        if JAVASCRIPT_PACKAGE_INSTALL_COMMANDS.contains(&target.as_str()) {
+            return Some(target);
+        }
+    }
+
+    None
+}
+
+fn contains_command_phrase(text: &str, phrase: &str) -> bool {
+    let mut search_start = 0;
+    while let Some(relative_index) = text[search_start..].find(phrase) {
+        let start = search_start + relative_index;
+        let end = start + phrase.len();
+        if command_phrase_boundary_before(text, start) && command_phrase_boundary_after(text, end) {
+            return true;
+        }
+        search_start = end;
+    }
+
+    false
+}
+
+fn command_phrase_boundary_before(text: &str, start: usize) -> bool {
+    start == 0
+        || text
+            .as_bytes()
+            .get(start - 1)
+            .is_some_and(|byte| !byte.is_ascii_alphanumeric() && !matches!(byte, b'_' | b'-'))
+}
+
+fn command_phrase_boundary_after(text: &str, end: usize) -> bool {
+    !text
+        .as_bytes()
+        .get(end)
+        .is_some_and(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+}
+
+fn javascript_string_literals(line: &str) -> Vec<String> {
+    let mut literals = Vec::new();
+    let bytes = line.as_bytes();
+    let mut index = 0;
+
+    while index < bytes.len() {
+        if matches!(bytes[index], b'\'' | b'"' | b'`') {
+            if let Some((literal, end)) = parse_javascript_string_literal(line, index) {
+                literals.push(literal);
+                index = end;
+                continue;
+            }
+        }
+        index += 1;
+    }
+
+    literals
+}
+
+fn parse_javascript_string_literal(line: &str, start: usize) -> Option<(String, usize)> {
+    let bytes = line.as_bytes();
+    let quote = *bytes.get(start)?;
+    if !matches!(quote, b'\'' | b'"' | b'`') {
+        return None;
+    }
+
+    let mut end = start + 1;
+    let mut escaped = false;
+    while end < bytes.len() {
+        let byte = bytes[end];
+        if escaped {
+            escaped = false;
+            end += 1;
+            continue;
+        }
+        if byte == b'\\' {
+            escaped = true;
+            end += 1;
+            continue;
+        }
+        if byte == quote {
+            return Some((line[start + 1..end].to_owned(), end + 1));
+        }
+        end += 1;
+    }
+
+    None
+}
+
+fn parse_javascript_identifier(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+    let (identifier, _) = parse_javascript_identifier_at(trimmed, 0)?;
+    Some(identifier)
+}
+
+fn parse_javascript_identifier_at(text: &str, start: usize) -> Option<(String, usize)> {
+    let bytes = text.as_bytes();
+    let first = *bytes.get(start)?;
+    if !(first.is_ascii_alphabetic() || matches!(first, b'_' | b'$')) {
+        return None;
+    }
+
+    let mut end = start + 1;
+    while end < bytes.len()
+        && (bytes[end].is_ascii_alphanumeric() || matches!(bytes[end], b'_' | b'$'))
+    {
+        end += 1;
+    }
+
+    Some((text[start..end].to_owned(), end))
 }
 
 fn is_secret_like_environment_variable(name: &str) -> bool {
@@ -4579,6 +5615,720 @@ mod tests {
     }
 
     #[test]
+    fn javascript_security_analyzer_exposes_js_and_ts_capabilities() {
+        let analyzer = javascript_security_analyzer();
+
+        assert_eq!(
+            analyzer.supported_languages(),
+            vec![SecurityLanguage::JavaScript, SecurityLanguage::TypeScript]
+        );
+        assert_eq!(
+            analyzer.supported_modes(),
+            vec![SecurityAnalyzerMode::RegexFallback]
+        );
+    }
+
+    #[test]
+    fn javascript_security_analyzer_detects_subprocess_aliases_and_package_installs() {
+        let script = concat!(
+            "const cp = require('node:child_process');\n",
+            "const { execFile, spawn: runTool } = require('child_process');\n",
+            "cp.exec('npm install left-pad');\n",
+            "execFile('node', ['build.js']);\n",
+            "runTool('pnpm add helper');\n",
+        );
+
+        let output = javascript_security_analyzer().analyze(&javascript_analyzer_input(
+            "scripts/check.js",
+            SecurityLanguage::JavaScript,
+            script.as_bytes(),
+        ));
+
+        assert_eq!(
+            output
+                .signals
+                .iter()
+                .map(|signal| (
+                    signal.kind,
+                    signal.sink.as_ref().and_then(|sink| sink.target.as_deref()),
+                    signal.location.line,
+                    signal.location.column,
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    SecuritySignalKind::PackageInstallation,
+                    Some("npm install"),
+                    Some(3),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::SubprocessExecution,
+                    Some("cp.exec"),
+                    Some(3),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::SubprocessExecution,
+                    Some("execFile"),
+                    Some(4),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::PackageInstallation,
+                    Some("pnpm add"),
+                    Some(5),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::SubprocessExecution,
+                    Some("runTool"),
+                    Some(5),
+                    Some(1),
+                ),
+            ]
+        );
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn javascript_security_analyzer_detects_sync_child_process_apis() {
+        let script = concat!(
+            "import { execSync as runInstall } from 'node:child_process';\n",
+            "const child_process = require('child_process');\n",
+            "const { spawnSync: runSync, execFileSync } = require('child_process');\n",
+            "child_process.execSync('npm install left-pad');\n",
+            "runInstall('pnpm add helper');\n",
+            "runSync('yarn add helper');\n",
+            "execFileSync('bun install helper');\n",
+            "child_process.spawnSync('node', ['build.js']);\n",
+        );
+
+        let output = javascript_security_analyzer().analyze(&javascript_analyzer_input(
+            "scripts/check.js",
+            SecurityLanguage::JavaScript,
+            script.as_bytes(),
+        ));
+
+        assert_eq!(
+            output
+                .signals
+                .iter()
+                .map(|signal| (
+                    signal.kind,
+                    signal.sink.as_ref().and_then(|sink| sink.target.as_deref()),
+                    signal.location.line,
+                    signal.location.column,
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    SecuritySignalKind::PackageInstallation,
+                    Some("npm install"),
+                    Some(4),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::SubprocessExecution,
+                    Some("child_process.execSync"),
+                    Some(4),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::PackageInstallation,
+                    Some("pnpm add"),
+                    Some(5),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::SubprocessExecution,
+                    Some("runInstall"),
+                    Some(5),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::PackageInstallation,
+                    Some("yarn add"),
+                    Some(6),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::SubprocessExecution,
+                    Some("runSync"),
+                    Some(6),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::PackageInstallation,
+                    Some("bun install"),
+                    Some(7),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::SubprocessExecution,
+                    Some("execFileSync"),
+                    Some(7),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::SubprocessExecution,
+                    Some("child_process.spawnSync"),
+                    Some(8),
+                    Some(1),
+                ),
+            ]
+        );
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn javascript_security_analyzer_detects_package_installs_in_child_process_arg_arrays() {
+        let script = concat!(
+            "const cp = require('node:child_process');\n",
+            "const { spawnSync, execFileSync } = require('child_process');\n",
+            "spawnSync('npm', ['install', 'left-pad']);\n",
+            "spawnSync('yarn', ['add', 'x']);\n",
+            "execFileSync('bun', ['install']);\n",
+            "cp.spawnSync('pnpm', ['add', 'helper']);\n",
+        );
+
+        let output = javascript_security_analyzer().analyze(&javascript_analyzer_input(
+            "scripts/check.js",
+            SecurityLanguage::JavaScript,
+            script.as_bytes(),
+        ));
+
+        assert_eq!(
+            output
+                .signals
+                .iter()
+                .map(|signal| (
+                    signal.kind,
+                    signal.sink.as_ref().and_then(|sink| sink.target.as_deref()),
+                    signal.location.line,
+                    signal.location.column,
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    SecuritySignalKind::PackageInstallation,
+                    Some("npm install"),
+                    Some(3),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::SubprocessExecution,
+                    Some("spawnSync"),
+                    Some(3),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::PackageInstallation,
+                    Some("yarn add"),
+                    Some(4),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::SubprocessExecution,
+                    Some("spawnSync"),
+                    Some(4),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::PackageInstallation,
+                    Some("bun install"),
+                    Some(5),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::SubprocessExecution,
+                    Some("execFileSync"),
+                    Some(5),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::PackageInstallation,
+                    Some("pnpm add"),
+                    Some(6),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::SubprocessExecution,
+                    Some("cp.spawnSync"),
+                    Some(6),
+                    Some(1),
+                ),
+            ]
+        );
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn javascript_security_analyzer_detects_network_secret_file_and_eval_signals() {
+        let script = concat!(
+            "fetch('https://example.test/data');\n",
+            "axios.post('/local', payload);\n",
+            "https.request(options);\n",
+            "const key = process.env.OPENAI_API_KEY;\n",
+            "const token = process.env[\"SERVICE_TOKEN\"];\n",
+            "fs.writeFileSync('out.txt', data);\n",
+            "Deno.writeTextFile('out.txt', data);\n",
+            "eval(payload);\n",
+            "new Function('payload', payload);\n",
+            "Function('payload', payload);\n",
+        );
+
+        let output = javascript_security_analyzer().analyze(&javascript_analyzer_input(
+            "scripts/check.js",
+            SecurityLanguage::JavaScript,
+            script.as_bytes(),
+        ));
+
+        assert_eq!(
+            output
+                .signals
+                .iter()
+                .map(|signal| (
+                    signal.kind,
+                    signal
+                        .source
+                        .as_ref()
+                        .and_then(|source| source.name.as_deref()),
+                    signal.sink.as_ref().map(|sink| sink.kind),
+                    signal.location.line,
+                    signal.location.column,
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    SecuritySignalKind::NetworkAccess,
+                    None,
+                    Some(SecuritySinkKind::NetworkRequest),
+                    Some(1),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::NetworkAccess,
+                    None,
+                    Some(SecuritySinkKind::NetworkRequest),
+                    Some(2),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::NetworkAccess,
+                    None,
+                    Some(SecuritySinkKind::NetworkRequest),
+                    Some(3),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::SecretRead,
+                    Some("OPENAI_API_KEY"),
+                    None,
+                    Some(4),
+                    Some(25),
+                ),
+                (
+                    SecuritySignalKind::SecretRead,
+                    Some("SERVICE_TOKEN"),
+                    None,
+                    Some(5),
+                    Some(27),
+                ),
+                (
+                    SecuritySignalKind::FileWrite,
+                    None,
+                    Some(SecuritySinkKind::FileWrite),
+                    Some(6),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::FileWrite,
+                    None,
+                    Some(SecuritySinkKind::FileWrite),
+                    Some(7),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::DynamicCodeEvaluation,
+                    None,
+                    Some(SecuritySinkKind::DynamicCodeEvaluation),
+                    Some(8),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::DynamicCodeEvaluation,
+                    None,
+                    Some(SecuritySinkKind::DynamicCodeEvaluation),
+                    Some(9),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::DynamicCodeEvaluation,
+                    None,
+                    Some(SecuritySinkKind::DynamicCodeEvaluation),
+                    Some(10),
+                    Some(1),
+                ),
+            ]
+        );
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn javascript_security_analyzer_reports_dynamic_function_constructor_targets() {
+        let script = concat!(
+            "eval(payload);\n",
+            "new Function('payload', payload);\n",
+            "Function('payload', payload);\n",
+        );
+
+        let output = javascript_security_analyzer().analyze(&javascript_analyzer_input(
+            "scripts/check.js",
+            SecurityLanguage::JavaScript,
+            script.as_bytes(),
+        ));
+
+        assert_eq!(
+            output
+                .signals
+                .iter()
+                .map(|signal| (
+                    signal.sink.as_ref().and_then(|sink| sink.target.as_deref()),
+                    signal.sink.as_ref().map(|sink| sink.kind),
+                    signal.location.line,
+                    signal.location.column,
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    Some("eval"),
+                    Some(SecuritySinkKind::DynamicCodeEvaluation),
+                    Some(1),
+                    Some(1),
+                ),
+                (
+                    Some("new Function"),
+                    Some(SecuritySinkKind::DynamicCodeEvaluation),
+                    Some(2),
+                    Some(1),
+                ),
+                (
+                    Some("Function"),
+                    Some(SecuritySinkKind::DynamicCodeEvaluation),
+                    Some(3),
+                    Some(1),
+                ),
+            ]
+        );
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn typescript_security_analyzer_accepts_ts_syntax() {
+        let script = concat!(
+            "import { spawn as run } from 'node:child_process';\n",
+            "type Options = { url: string };\n",
+            "const options: Options = { url: 'https://example.test' };\n",
+            "run('yarn add helper');\n",
+            "const token: string | undefined = process.env['SERVICE_TOKEN'];\n",
+        );
+
+        let output = javascript_security_analyzer().analyze(&javascript_analyzer_input(
+            "scripts/check.ts",
+            SecurityLanguage::TypeScript,
+            script.as_bytes(),
+        ));
+
+        assert_eq!(
+            output
+                .signals
+                .iter()
+                .map(|signal| (signal.kind, signal.location.line, signal.location.column))
+                .collect::<Vec<_>>(),
+            vec![
+                (SecuritySignalKind::PackageInstallation, Some(4), Some(1)),
+                (SecuritySignalKind::SubprocessExecution, Some(4), Some(1)),
+                (SecuritySignalKind::SecretRead, Some(5), Some(47)),
+            ]
+        );
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn typescript_security_analyzer_detects_network_and_file_write_signals() {
+        let script = concat!(
+            "type Payload = { body: string };\n",
+            "const payload: Payload = { body: 'ok' };\n",
+            "fetch('https://example.test/data', { method: 'POST', body: payload.body });\n",
+            "http.request('http://api.example.test/upload');\n",
+            "fs.writeFileSync('out.txt', payload.body);\n",
+            "Deno.writeTextFile('out.txt', payload.body);\n",
+        );
+
+        let output = javascript_security_analyzer().analyze(&javascript_analyzer_input(
+            "scripts/check.ts",
+            SecurityLanguage::TypeScript,
+            script.as_bytes(),
+        ));
+
+        assert_eq!(
+            output
+                .signals
+                .iter()
+                .map(|signal| (
+                    signal.kind,
+                    signal.sink.as_ref().map(|sink| sink.kind),
+                    signal.sink.as_ref().and_then(|sink| sink.target.as_deref()),
+                    signal.location.line,
+                    signal.location.column,
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    SecuritySignalKind::NetworkAccess,
+                    Some(SecuritySinkKind::NetworkRequest),
+                    Some("https://example.test/data"),
+                    Some(3),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::NetworkAccess,
+                    Some(SecuritySinkKind::NetworkRequest),
+                    Some("http://api.example.test/upload"),
+                    Some(4),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::FileWrite,
+                    Some(SecuritySinkKind::FileWrite),
+                    Some("fs.writeFileSync"),
+                    Some(5),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::FileWrite,
+                    Some(SecuritySinkKind::FileWrite),
+                    Some("Deno.writeTextFile"),
+                    Some(6),
+                    Some(1),
+                ),
+            ]
+        );
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn javascript_security_analyzer_ignores_comments_strings_and_templates() {
+        let script = concat!(
+            "// child_process.exec('npm install demo')\n",
+            "/* fetch('https://example.test') */\n",
+            "const note = \"process.env.OPENAI_API_KEY\";\n",
+            "const doc = 'fs.writeFileSync(\"out\", data)';\n",
+            "const template = `eval(payload) and axios.get('/x')`;\n",
+            "import { exec } from 'child_process';\n",
+            "import { constants } from 'node:child_process';\n",
+            "constants();\n",
+        );
+
+        let output = javascript_security_analyzer().analyze(&javascript_analyzer_input(
+            "scripts/read-only.js",
+            SecurityLanguage::JavaScript,
+            script.as_bytes(),
+        ));
+
+        assert_eq!(output.signals, Vec::new());
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn javascript_security_analyzer_ignores_multiline_template_literal_content() {
+        let script = concat!(
+            "const doc = `\n",
+            "eval(payload)\n",
+            "fetch('https://example.test')\n",
+            "process.env.OPENAI_API_KEY\n",
+            "fs.writeFileSync('out.txt', data)\n",
+            "`; eval(payload);\n",
+            "Function('payload', payload);\n",
+            "fetch('https://after.example/data');\n",
+        );
+
+        let output = javascript_security_analyzer().analyze(&javascript_analyzer_input(
+            "scripts/template.js",
+            SecurityLanguage::JavaScript,
+            script.as_bytes(),
+        ));
+
+        assert_eq!(
+            output
+                .signals
+                .iter()
+                .map(|signal| (
+                    signal.kind,
+                    signal.sink.as_ref().map(|sink| sink.kind),
+                    signal.location.line,
+                    signal.location.column,
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    SecuritySignalKind::DynamicCodeEvaluation,
+                    Some(SecuritySinkKind::DynamicCodeEvaluation),
+                    Some(6),
+                    Some(4),
+                ),
+                (
+                    SecuritySignalKind::DynamicCodeEvaluation,
+                    Some(SecuritySinkKind::DynamicCodeEvaluation),
+                    Some(7),
+                    Some(1),
+                ),
+                (
+                    SecuritySignalKind::NetworkAccess,
+                    Some(SecuritySinkKind::NetworkRequest),
+                    Some(8),
+                    Some(1),
+                ),
+            ]
+        );
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn javascript_security_analyzer_reports_recoverable_input_diagnostics() {
+        let classification_signals = [SecurityArtifactClassificationSignal::Extension];
+        let unsupported_input = SecurityAnalyzerInput {
+            artifact: SecurityAnalyzerArtifactInput {
+                path: "scripts/check.py",
+                kind: SecurityArtifactKind::Script,
+                language: SecurityLanguage::Python,
+                classification_method: SecurityArtifactClassificationMethod::Extension,
+                classification_signals: &classification_signals,
+                executable: true,
+                size_bytes: 11,
+                content: SecurityAnalyzerContent::from_bytes(
+                    b"print('ok')\n",
+                    SecurityArtifactReadStatus::Full,
+                    11,
+                ),
+            },
+            package: SecurityAnalyzerPackageContext {
+                package_root: ".",
+                manifest_path: "SKILL.md",
+                declared_tools: &[],
+                declared_permissions: &[],
+            },
+        };
+        let unavailable_input = SecurityAnalyzerInput {
+            artifact: SecurityAnalyzerArtifactInput {
+                path: "scripts/check.js",
+                kind: SecurityArtifactKind::Script,
+                language: SecurityLanguage::JavaScript,
+                classification_method: SecurityArtifactClassificationMethod::Extension,
+                classification_signals: &classification_signals,
+                executable: true,
+                size_bytes: 2,
+                content: SecurityAnalyzerContent::from_bytes(
+                    &[0xff, 0xfe],
+                    SecurityArtifactReadStatus::Full,
+                    2,
+                ),
+            },
+            package: SecurityAnalyzerPackageContext {
+                package_root: ".",
+                manifest_path: "SKILL.md",
+                declared_tools: &[],
+                declared_permissions: &[],
+            },
+        };
+        let truncated_input = SecurityAnalyzerInput {
+            artifact: SecurityAnalyzerArtifactInput {
+                path: "scripts/check.js",
+                kind: SecurityArtifactKind::Script,
+                language: SecurityLanguage::JavaScript,
+                classification_method: SecurityArtifactClassificationMethod::Extension,
+                classification_signals: &classification_signals,
+                executable: true,
+                size_bytes: 18,
+                content: SecurityAnalyzerContent::from_bytes(
+                    b"eval(payload)",
+                    SecurityArtifactReadStatus::Truncated,
+                    18,
+                ),
+            },
+            package: SecurityAnalyzerPackageContext {
+                package_root: ".",
+                manifest_path: "SKILL.md",
+                declared_tools: &[],
+                declared_permissions: &[],
+            },
+        };
+
+        let unsupported = javascript_security_analyzer().analyze(&unsupported_input);
+        let unavailable = javascript_security_analyzer().analyze(&unavailable_input);
+        let truncated = javascript_security_analyzer().analyze(&truncated_input);
+
+        assert_eq!(unsupported.signals, Vec::new());
+        assert_eq!(
+            unsupported.diagnostics[0].kind,
+            SecurityAnalyzerDiagnosticKind::UnsupportedLanguage
+        );
+        assert_eq!(unavailable.signals, Vec::new());
+        assert_eq!(
+            unavailable.diagnostics[0].kind,
+            SecurityAnalyzerDiagnosticKind::TextUnavailable
+        );
+        assert_eq!(
+            truncated.diagnostics[0].kind,
+            SecurityAnalyzerDiagnosticKind::ContentTruncated
+        );
+        assert!(truncated
+            .signals
+            .iter()
+            .any(|signal| signal.kind == SecuritySignalKind::DynamicCodeEvaluation));
+    }
+
+    #[test]
+    fn javascript_security_analyzer_orders_output_deterministically() {
+        let script = concat!(
+            "fs.writeFile('out.txt', data);\n",
+            "const cp = require('child_process');\n",
+            "cp.exec('npm install demo');\n",
+            "eval(payload);\n",
+            "fetch('https://example.test');\n",
+            "secret = process.env.SERVICE_TOKEN;\n",
+        );
+        let first = javascript_security_analyzer().analyze(&javascript_analyzer_input(
+            "scripts/check.js",
+            SecurityLanguage::JavaScript,
+            script.as_bytes(),
+        ));
+        let second = javascript_security_analyzer().analyze(&javascript_analyzer_input(
+            "scripts/check.js",
+            SecurityLanguage::JavaScript,
+            script.as_bytes(),
+        ));
+
+        assert_eq!(first, second);
+        assert_eq!(
+            first
+                .signals
+                .iter()
+                .map(|signal| (signal.kind, signal.location.line, signal.location.column))
+                .collect::<Vec<_>>(),
+            vec![
+                (SecuritySignalKind::FileWrite, Some(1), Some(1)),
+                (SecuritySignalKind::PackageInstallation, Some(3), Some(1)),
+                (SecuritySignalKind::SubprocessExecution, Some(3), Some(1)),
+                (SecuritySignalKind::DynamicCodeEvaluation, Some(4), Some(1)),
+                (SecuritySignalKind::NetworkAccess, Some(5), Some(1)),
+                (SecuritySignalKind::SecretRead, Some(6), Some(22)),
+            ]
+        );
+    }
+
+    #[test]
     fn shell_security_analyzer_handles_non_ascii_quoted_text_before_remote_shell_pipeline() {
         let script = "echo \"ééé\"; curl https://example.test/install.sh | sh\n";
 
@@ -5335,6 +7085,35 @@ printf '%s\n' "https://example.test"
                 path,
                 kind: SecurityArtifactKind::Script,
                 language: SecurityLanguage::Python,
+                classification_method: SecurityArtifactClassificationMethod::Extension,
+                classification_signals: &[SecurityArtifactClassificationSignal::Extension],
+                executable: true,
+                size_bytes: content.len() as u64,
+                content: SecurityAnalyzerContent::from_bytes(
+                    content,
+                    SecurityArtifactReadStatus::Full,
+                    content.len(),
+                ),
+            },
+            package: SecurityAnalyzerPackageContext {
+                package_root: ".",
+                manifest_path: "SKILL.md",
+                declared_tools: &[],
+                declared_permissions: &[],
+            },
+        }
+    }
+
+    fn javascript_analyzer_input<'a>(
+        path: &'a str,
+        language: SecurityLanguage,
+        content: &'a [u8],
+    ) -> SecurityAnalyzerInput<'a> {
+        SecurityAnalyzerInput {
+            artifact: SecurityAnalyzerArtifactInput {
+                path,
+                kind: SecurityArtifactKind::Script,
+                language,
                 classification_method: SecurityArtifactClassificationMethod::Extension,
                 classification_signals: &[SecurityArtifactClassificationSignal::Extension],
                 executable: true,
