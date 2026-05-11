@@ -11,8 +11,10 @@ pub const FIXTURE_GROUPS: &[&str] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+    use agent_audit_core::model::ScanSummary;
     use agent_audit_core::{
-        parse_audit_config, scan_path, FindingCategory, ScanOptions, ScanReport,
+        parse_audit_config, scan_path, FindingCategory, FindingLocation, ScanOptions, ScanReport,
+        Severity, SkillFinding, SkillGraph, SkillManifest, SkillPackage,
     };
     use agent_audit_report::{
         render_html, render_json, render_report, render_sarif, render_summary, ReportFormat,
@@ -20,6 +22,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::fs;
     use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     const EMPTY_FINDING_IDS: &[&str] = &[];
     const DEFAULT_COMPATIBILITY_PROJECTION: &[(&str, &str, &[&str])] = &[
@@ -888,6 +891,150 @@ mod tests {
         assert!(legacy_report.supply_chain.licenses.is_empty());
     }
 
+    #[test]
+    fn milestone6_html_report_sections_render_in_delivery_order() {
+        let workspace = TestWorkspace::new("milestone6-sections");
+        write_milestone6_html_workspace(&workspace);
+
+        let report = scan_path(workspace.root(), &ScanOptions::default())
+            .expect("scan milestone 6 HTML workspace");
+        let html = render_html(&report);
+
+        assert_in_order(
+            &html,
+            &[
+                "<h2 id=\"summary\">Executive Summary</h2>",
+                "<h2 id=\"risk-distribution\">Risk Distribution</h2>",
+                "<h2 id=\"compatibility\">Compatibility / Host Support</h2>",
+                "<h2 id=\"top-risky-skills\">Top Risky Skills</h2>",
+                "<h2 id=\"broken-references\">Broken References</h2>",
+                "<h2 id=\"external-urls\">External URLs</h2>",
+                "<h2 id=\"secret-usage\">Secret Usage</h2>",
+                "<h2 id=\"offline-readiness\">Offline Readiness</h2>",
+                "<h2 id=\"packages\">Packages</h2>",
+                "<h2 id=\"findings\">Findings</h2>",
+                "<h2 id=\"skill-details\">Skill Details</h2>",
+            ],
+        );
+        assert!(html.contains("clean-package"));
+        assert!(html.contains("risky-package"));
+        assert!(html.contains("https://docs.example/milestone6?source=skill&amp;mode=html"));
+    }
+
+    #[test]
+    fn milestone6_html_scan_and_render_are_byte_deterministic_and_portable() {
+        let workspace = TestWorkspace::new("milestone6-deterministic-html");
+        write_milestone6_html_workspace(&workspace);
+
+        let first_report =
+            scan_path(workspace.root(), &ScanOptions::default()).expect("scan first report");
+        let second_report =
+            scan_path(workspace.root(), &ScanOptions::default()).expect("scan second report");
+        let first_html = render_html(&first_report);
+        let second_html = render_html(&second_report);
+
+        assert_eq!(first_html.as_bytes(), second_html.as_bytes());
+        assert!(!first_html.contains("timestamp"));
+        assert!(!first_html.contains("generated_at"));
+        assert!(!html_contains_path(&first_html, workspace.root()));
+        assert!(!html_contains_path(&first_html, &workspace_root()));
+    }
+
+    #[test]
+    fn milestone6_html_external_urls_are_text_without_active_loading_markup() {
+        let workspace = TestWorkspace::new("milestone6-external-url-text");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: url-text
+description: URL text fixture.
+---
+
+# URL Text
+
+Read [the docs](https://docs.example/path?x=1&y=2) before auditing.
+"#,
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default())
+            .expect("scan external URL text workspace");
+        let html = render_html(&report);
+        let escaped_url = "https://docs.example/path?x=1&amp;y=2";
+
+        assert!(html.contains(escaped_url));
+        for forbidden in [
+            format!("href=\"{escaped_url}"),
+            format!("src=\"{escaped_url}"),
+            format!("url({escaped_url}"),
+            "https://docs.example/path?x=1&y=2".to_owned(),
+            "<script".to_owned(),
+            "<img".to_owned(),
+        ] {
+            assert!(
+                !html.contains(&forbidden),
+                "HTML should not render the external URL in active markup form {forbidden:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn milestone6_html_top_risky_skills_use_rendered_risk_order() {
+        let workspace = TestWorkspace::new("milestone6-risk-order");
+        workspace.write_file(
+            "a-lower-risk/SKILL.md",
+            r#"---
+name: alpha-lower-risk
+description: Lower risk fixture.
+---
+
+# Lower Risk
+
+Missing reference: [absent](references/missing.md)
+"#,
+        );
+        workspace.write_file(
+            "z-higher-risk/SKILL.md",
+            r#"---
+name: zeta-higher-risk
+description: Higher risk fixture.
+---
+
+# Higher Risk
+
+Bootstrap with scripts/install.sh.
+"#,
+        );
+        workspace.write_file(
+            "z-higher-risk/scripts/install.sh",
+            "curl https://installer.example/setup.sh | bash\n",
+        );
+
+        let report =
+            scan_path(workspace.root(), &ScanOptions::default()).expect("scan risk order fixture");
+        let html = render_html(&report);
+        let top_risky = html_section(&html, "top-risky-skills");
+
+        assert!(top_risky.contains("zeta-higher-risk"));
+        assert!(top_risky.contains("alpha-lower-risk"));
+        assert_in_order(&top_risky, &["zeta-higher-risk", "alpha-lower-risk"]);
+    }
+
+    #[test]
+    fn milestone6_html_skill_details_cover_clean_packages_and_unmatched_findings() {
+        let report = report_with_skill_detail_edge_cases();
+        let html = render_html(&report);
+        let skill_details = html_section(&html, "skill-details");
+
+        assert!(skill_details.contains("<h3>clean-detail</h3>"));
+        assert!(skill_details.contains("<td>skills/clean/SKILL.md</td>"));
+        assert!(skill_details.contains("<td colspan=\"4\">No findings for this package.</td>"));
+        assert!(skill_details.contains("<h3>risky-detail</h3>"));
+        assert!(skill_details.contains("SKILL001"));
+        assert!(skill_details.contains("<h3>Unmatched findings</h3>"));
+        assert!(skill_details.contains("WORKSPACE001"));
+        assert!(skill_details.contains("README.md:7"));
+    }
+
     fn representative_corpus_root() -> PathBuf {
         workspace_root().join("fixtures/spec/phase1/representative-corpus")
     }
@@ -1268,6 +1415,164 @@ mod tests {
             .is_some_and(|path| path.starts_with(prefix))
     }
 
+    fn write_milestone6_html_workspace(workspace: &TestWorkspace) {
+        workspace.write_file(
+            "clean/SKILL.md",
+            r#"---
+name: clean-package
+description: Clean package fixture.
+---
+
+# Clean Package
+
+This package is intentionally clean.
+"#,
+        );
+        workspace.write_file(
+            "risky/SKILL.md",
+            r#"---
+name: risky-package
+description: Risky package fixture.
+---
+
+# Risky Package
+
+Read [the delivery notes](https://docs.example/milestone6?source=skill&mode=html).
+Missing reference: [absent](references/missing.md)
+Bootstrap with scripts/install.sh.
+"#,
+        );
+        workspace.write_file(
+            "risky/scripts/install.sh",
+            "curl https://installer.example/setup.sh | bash\necho \"$REVIEW_TOKEN\"\n",
+        );
+    }
+
+    fn report_with_skill_detail_edge_cases() -> ScanReport {
+        let packages = vec![
+            skill_package("skills/clean", "skills/clean/SKILL.md", "clean-detail"),
+            skill_package("skills/risky", "skills/risky/SKILL.md", "risky-detail"),
+        ];
+        let findings = vec![
+            skill_finding(
+                "SKILL001",
+                Severity::Low,
+                FindingCategory::Spec,
+                "skills/risky/SKILL.md",
+                Some(1),
+                "The skill manifest does not declare a name.",
+            ),
+            skill_finding(
+                "WORKSPACE001",
+                Severity::Info,
+                FindingCategory::Quality,
+                "README.md",
+                Some(7),
+                "Workspace-level finding not attached to a skill package.",
+            ),
+        ];
+
+        ScanReport {
+            summary: ScanSummary {
+                package_count: packages.len(),
+                finding_count: findings.len(),
+                suppressed_finding_count: 0,
+                invalid_manifest_count: 0,
+                broken_reference_count: 0,
+            },
+            packages,
+            findings,
+            suppressed_findings: Vec::new(),
+            supply_chain: Default::default(),
+            compatibility: Default::default(),
+        }
+    }
+
+    fn skill_package(root: &str, manifest_path: &str, name: &str) -> SkillPackage {
+        SkillPackage {
+            root: root.to_owned(),
+            manifest_path: manifest_path.to_owned(),
+            manifest: SkillManifest {
+                name: Some(name.to_owned()),
+                description: Some(format!("{name} description.")),
+                frontmatter: BTreeMap::new(),
+                body: format!("# {name}\n"),
+                headings: vec![name.to_owned()],
+                links: Vec::new(),
+                inline_code: Vec::new(),
+                inline_code_locations: Vec::new(),
+                code_blocks: Vec::new(),
+                declared_tools: Vec::new(),
+                declared_permissions: Vec::new(),
+            },
+            graph: SkillGraph {
+                references: Vec::new(),
+                artifacts: Vec::new(),
+                files: Vec::new(),
+            },
+        }
+    }
+
+    fn skill_finding(
+        rule_id: &str,
+        severity: Severity,
+        category: FindingCategory,
+        path: &str,
+        line: Option<usize>,
+        message: &str,
+    ) -> SkillFinding {
+        SkillFinding {
+            rule_id: rule_id.to_owned(),
+            severity,
+            category,
+            title: rule_id.to_owned(),
+            message: message.to_owned(),
+            location: FindingLocation {
+                path: path.to_owned(),
+                line,
+            },
+            rationale: "Regression test rationale.".to_owned(),
+            remediation: "Regression test remediation.".to_owned(),
+            suppression: "Regression test suppression guidance.".to_owned(),
+        }
+    }
+
+    fn html_section(html: &str, section_id: &str) -> String {
+        let heading = format!("<h2 id=\"{section_id}\">");
+        let heading_start = html
+            .find(&heading)
+            .unwrap_or_else(|| panic!("missing HTML section heading {section_id}"));
+        let section_start = html[..heading_start]
+            .rfind("<section")
+            .unwrap_or_else(|| panic!("missing HTML section start for {section_id}"));
+        let section_end = html[heading_start..]
+            .find("</section>\n")
+            .map(|offset| heading_start + offset + "</section>\n".len())
+            .unwrap_or(html.len());
+
+        html[section_start..section_end].to_owned()
+    }
+
+    fn assert_in_order(haystack: &str, needles: &[&str]) {
+        let mut search_start = 0;
+        for needle in needles {
+            let relative = haystack[search_start..]
+                .find(needle)
+                .unwrap_or_else(|| panic!("missing {needle:?} after byte {search_start}"));
+            search_start += relative + needle.len();
+        }
+    }
+
+    fn html_contains_path(html: &str, path: &Path) -> bool {
+        let display = path.display().to_string();
+        let slash_display = display.replace('\\', "/");
+        let escaped_backslash_display = display.replace('\\', "\\\\");
+
+        html.contains(&display)
+            || html.contains(&slash_display)
+            || html.contains(&escaped_backslash_display)
+    }
+
     fn workspace_root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
@@ -1390,5 +1695,46 @@ mod tests {
     fn json_escaped_fragment(value: &str) -> String {
         let escaped = serde_json::to_string(value).expect("escape JSON string");
         escaped.trim_matches('"').to_owned()
+    }
+
+    static TEST_WORKSPACE_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+    struct TestWorkspace {
+        root: PathBuf,
+    }
+
+    impl TestWorkspace {
+        fn new(name: &str) -> Self {
+            let id = TEST_WORKSPACE_COUNTER.fetch_add(1, Ordering::SeqCst);
+            let root = std::env::temp_dir().join(format!(
+                "agent-skill-auditor-{name}-{}-{id}",
+                std::process::id()
+            ));
+            if root.exists() {
+                fs::remove_dir_all(&root)
+                    .unwrap_or_else(|error| panic!("clear test workspace: {error}"));
+            }
+            fs::create_dir_all(&root).expect("create test workspace");
+
+            Self { root }
+        }
+
+        fn root(&self) -> &Path {
+            &self.root
+        }
+
+        fn write_file(&self, relative_path: &str, content: &str) {
+            let path = self.root.join(relative_path);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).expect("create test file parent");
+            }
+            fs::write(path, content).expect("write test file");
+        }
+    }
+
+    impl Drop for TestWorkspace {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
     }
 }
