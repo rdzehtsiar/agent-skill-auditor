@@ -13,6 +13,7 @@ use crate::model::{
 };
 use crate::parse::parse_skill_manifest;
 use crate::trust_manifest::inventory_trust_manifest;
+use crate::url_inventory::{dedup_url_inventory, inventory_manifest_urls, inventory_script_urls};
 use agent_audit_hosts::{
     profile_by_id, CompatibilityStatus, ProfileCompatibilityResult, HOST_PROFILES,
 };
@@ -156,6 +157,14 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
             &manifest,
             &graph,
         )?);
+        merge_supply_chain_inventory(
+            &mut supply_chain,
+            inventory_manifest_urls(&manifest_display, &manifest, &frontmatter_key_lines),
+        );
+        merge_supply_chain_inventory(
+            &mut supply_chain,
+            inventory_script_artifact_urls(root, skill_root, &graph)?,
+        );
 
         let frontmatter_fields = manifest
             .frontmatter
@@ -268,7 +277,7 @@ fn merge_supply_chain_inventory(
     target
         .offline_readiness
         .append(&mut source.offline_readiness);
-    target.sort_deterministically();
+    dedup_url_inventory(target);
 }
 
 fn compatibility_matrix_for_packages(
@@ -1157,6 +1166,33 @@ fn analyze_package_security_artifacts(
     Ok(signals)
 }
 
+fn inventory_script_artifact_urls(
+    scan_root: &Path,
+    skill_root: &Path,
+    graph: &SkillGraph,
+) -> AuditResult<SupplyChainInventory> {
+    let mut inventory = SupplyChainInventory::default();
+
+    for file in graph.files.iter().filter(|file| {
+        file.kind == SkillFileKind::File && file.artifact == SkillArtifactKind::Scripts
+    }) {
+        let artifact_path = skill_root.join(&file.path);
+        let display = display_path(scan_root, &artifact_path);
+        let read = read_security_artifact_bytes(
+            &artifact_path,
+            &display,
+            SecurityArtifactReadPolicy::default(),
+        )
+        .map_err(|error| security_read_error(&artifact_path, error))?;
+        let Some(text) = read.utf8_text() else {
+            continue;
+        };
+        merge_supply_chain_inventory(&mut inventory, inventory_script_urls(&display, text));
+    }
+
+    Ok(inventory)
+}
+
 fn analyze_classified_security_artifact(
     package: &SecurityAnalyzerPackageContext<'_>,
     read: &agent_audit_security::SecurityArtifactRead,
@@ -1295,6 +1331,7 @@ fn empty_skill_manifest() -> SkillManifest {
         headings: Vec::new(),
         links: Vec::new(),
         inline_code: Vec::new(),
+        inline_code_locations: Vec::new(),
         code_blocks: Vec::new(),
         declared_tools: Vec::new(),
         declared_permissions: Vec::new(),
@@ -1313,7 +1350,10 @@ fn empty_skill_graph() -> SkillGraph {
 mod tests {
     use super::*;
     use crate::config::parse_audit_config;
-    use crate::model::{FindingCategory, Severity, SkillFinding};
+    use crate::model::{
+        ExternalUrlKind, FindingCategory, RemoteDependencyKind, Severity, SkillFinding,
+        SupplyChainSourceKind,
+    };
     use crate::test_support::TestWorkspace;
     use agent_audit_hosts::{CompatibilityStatus, HOST_PROFILES};
     use agent_audit_rules::{
@@ -4879,6 +4919,108 @@ description: No artifact directories fixture.
         assert_eq!(report.summary.package_count, 1);
         assert!(report.packages[0].graph.artifacts.is_empty());
         assert!(report.packages[0].graph.files.is_empty());
+    }
+
+    #[test]
+    fn scan_populates_external_url_and_remote_dependency_inventory_from_manifest_and_scripts() {
+        let workspace = TestWorkspace::new("scan-url-inventory");
+        workspace.write_file(
+            "skill/SKILL.md",
+            r#"---
+name: url-inventory
+description: URL inventory fixture.
+homepage: https://docs.example.invalid/url-inventory
+---
+
+# URL Inventory
+
+Fetch [pinned setup](https://raw.githubusercontent.com/example/skill/0123456789abcdef0123456789abcdef01234567/scripts/setup.sh) twice:
+[duplicate pinned setup](https://raw.githubusercontent.com/example/skill/0123456789abcdef0123456789abcdef01234567/scripts/setup.sh).
+"#,
+        );
+        workspace.write_file(
+            "skill/scripts/install.sh",
+            "#!/usr/bin/env sh\ncurl -L https://downloads.example.invalid/tools/helper.exe -o helper.exe\n",
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+        let json = serde_json::to_string_pretty(&report).expect("serialize report");
+
+        assert_eq!(
+            report
+                .supply_chain
+                .external_urls
+                .iter()
+                .map(|url| (
+                    url.path.as_str(),
+                    url.line,
+                    url.source,
+                    url.kind,
+                    url.normalized.as_str(),
+                    url.pinned
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    "skill/SKILL.md",
+                    Some(4),
+                    SupplyChainSourceKind::Frontmatter,
+                    ExternalUrlKind::Documentation,
+                    "https://docs.example.invalid/url-inventory",
+                    None
+                ),
+                (
+                    "skill/SKILL.md",
+                    Some(9),
+                    SupplyChainSourceKind::MarkdownLink,
+                    ExternalUrlKind::GithubRaw,
+                    "https://raw.githubusercontent.com/example/skill/0123456789abcdef0123456789abcdef01234567/scripts/setup.sh",
+                    Some(true)
+                ),
+                (
+                    "skill/scripts/install.sh",
+                    Some(2),
+                    SupplyChainSourceKind::Script,
+                    ExternalUrlKind::DownloadedArtifact,
+                    "https://downloads.example.invalid/tools/helper.exe",
+                    Some(false)
+                )
+            ]
+        );
+        assert_eq!(
+            report
+                .supply_chain
+                .remote_dependencies
+                .iter()
+                .map(|dependency| (
+                    dependency.path.as_str(),
+                    dependency.line,
+                    dependency.kind,
+                    dependency.name.as_deref(),
+                    dependency.version.as_deref(),
+                    dependency.pinned
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    "skill/SKILL.md",
+                    Some(9),
+                    RemoteDependencyKind::Script,
+                    Some("scripts/setup.sh"),
+                    Some("0123456789abcdef0123456789abcdef01234567"),
+                    Some(true)
+                ),
+                (
+                    "skill/scripts/install.sh",
+                    Some(2),
+                    RemoteDependencyKind::Artifact,
+                    Some("helper.exe"),
+                    None,
+                    Some(false)
+                )
+            ]
+        );
+        assert!(!json_contains_workspace_root(&json, workspace.root()));
     }
 
     #[test]

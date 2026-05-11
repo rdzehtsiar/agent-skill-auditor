@@ -6,7 +6,7 @@ use std::path::Path;
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Parser, Tag, TagEnd};
 
 use crate::error::{AuditError, AuditResult};
-use crate::model::{MarkdownCodeBlock, SkillManifest, SkillReference};
+use crate::model::{MarkdownCodeBlock, MarkdownInlineCode, SkillManifest, SkillReference};
 
 const UTF8_BOM: &str = "\u{feff}";
 
@@ -30,6 +30,7 @@ pub fn parse_skill_manifest(path: &Path, content: &str) -> AuditResult<SkillMani
         headings: parsed_markdown.headings,
         links: parsed_markdown.links,
         inline_code: parsed_markdown.inline_code,
+        inline_code_locations: parsed_markdown.inline_code_locations,
         code_blocks: parsed_markdown.code_blocks,
         declared_tools: frontmatter_string_list(&frontmatter, "tools"),
         declared_permissions: frontmatter_string_list(&frontmatter, "permissions"),
@@ -40,6 +41,7 @@ struct ParsedMarkdown {
     headings: Vec<String>,
     links: Vec<SkillReference>,
     inline_code: Vec<String>,
+    inline_code_locations: Vec<MarkdownInlineCode>,
     code_blocks: Vec<MarkdownCodeBlock>,
     first_h1_heading: Option<String>,
     first_paragraph: String,
@@ -62,6 +64,7 @@ impl MarkdownParseState {
                 headings: Vec::new(),
                 links: Vec::new(),
                 inline_code: Vec::new(),
+                inline_code_locations: Vec::new(),
                 code_blocks: Vec::new(),
                 first_h1_heading: None,
                 first_paragraph: String::new(),
@@ -147,8 +150,13 @@ impl MarkdownParseState {
         }
     }
 
-    fn add_inline_code(&mut self, code: impl Into<String>) {
-        self.parsed.inline_code.push(code.into());
+    fn add_inline_code(&mut self, code: impl Into<String>, offset: usize) {
+        let content = code.into();
+        self.parsed.inline_code.push(content.clone());
+        self.parsed.inline_code_locations.push(MarkdownInlineCode {
+            content,
+            line: Some(self.line_index.line_for_offset(offset)),
+        });
     }
 }
 
@@ -167,7 +175,7 @@ fn parse_markdown_body(body: &str, body_start_line: usize) -> ParsedMarkdown {
             Event::Start(Tag::CodeBlock(kind)) => state.start_code_block(kind, range.start),
             Event::End(TagEnd::CodeBlock) => state.end_code_block(),
             Event::Text(text) => state.add_text(&text),
-            Event::Code(code) => state.add_inline_code(code.to_string()),
+            Event::Code(code) => state.add_inline_code(code.to_string(), range.start),
             _ => {}
         }
     }
@@ -619,6 +627,31 @@ Run `first`, inspect `second`, then record `third`.
     }
 
     #[test]
+    fn extracts_inline_code_line_locations() {
+        let content = r#"---
+name: inline-locations
+description: Inline location fixture.
+---
+
+# Inline Code
+
+Run `first`.
+Then inspect `second`.
+"#;
+
+        let manifest = parse(content);
+
+        assert_eq!(
+            manifest
+                .inline_code_locations
+                .iter()
+                .map(|code| (code.content.as_str(), code.line))
+                .collect::<Vec<_>>(),
+            vec![("first", Some(8)), ("second", Some(9))]
+        );
+    }
+
+    #[test]
     fn extracts_fenced_code_blocks_with_language_and_content() {
         let content = r#"---
 name: parser-fixture
@@ -893,6 +926,10 @@ agent-audit scan .
         assert_eq!(first.headings, second.headings);
         assert_eq!(link_targets(&first), link_targets(&second));
         assert_eq!(first.inline_code, second.inline_code);
+        assert_eq!(
+            inline_code_summaries(&first),
+            inline_code_summaries(&second)
+        );
         assert_eq!(code_block_summaries(&first), code_block_summaries(&second));
         assert_eq!(first.declared_tools, second.declared_tools);
         assert_eq!(first.declared_permissions, second.declared_permissions);
@@ -907,6 +944,14 @@ agent-audit scan .
             .links
             .iter()
             .map(|reference| reference.target.as_str())
+            .collect()
+    }
+
+    fn inline_code_summaries(manifest: &SkillManifest) -> Vec<(&str, Option<usize>)> {
+        manifest
+            .inline_code_locations
+            .iter()
+            .map(|code| (code.content.as_str(), code.line))
             .collect()
     }
 

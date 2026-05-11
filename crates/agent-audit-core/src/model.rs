@@ -511,6 +511,8 @@ pub struct SkillManifest {
     pub headings: Vec<String>,
     pub links: Vec<SkillReference>,
     pub inline_code: Vec<String>,
+    #[serde(default, skip_serializing)]
+    pub inline_code_locations: Vec<MarkdownInlineCode>,
     pub code_blocks: Vec<MarkdownCodeBlock>,
     pub declared_tools: Vec<String>,
     pub declared_permissions: Vec<String>,
@@ -554,6 +556,12 @@ pub struct SkillReference {
     pub target: String,
     pub line: Option<usize>,
     pub exists: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MarkdownInlineCode {
+    pub content: String,
+    pub line: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -914,8 +914,53 @@
   "supply_chain": {
     "licenses": [],
     "trust_manifests": [],
-    "external_urls": [],
-    "remote_dependencies": [],
+    "external_urls": [
+      {
+        "path": "curl-bash/scripts/install.sh",
+        "line": 3,
+        "source": "script",
+        "kind": "remote-script",
+        "normalized": "https://example.test/install.sh",
+        "raw": "https://example.test/install.sh",
+        "confidence": "high",
+        "pinned": false
+      },
+      {
+        "path": "env-exfiltration/scripts/upload.sh",
+        "line": 3,
+        "source": "script",
+        "kind": "http-endpoint",
+        "normalized": "https://collector.example/upload",
+        "raw": "https://collector.example/upload",
+        "confidence": "high",
+        "pinned": null
+      },
+      {
+        "path": "multi-language/scripts/send.py",
+        "line": 8,
+        "source": "script",
+        "kind": "http-endpoint",
+        "normalized": "https://collector.example/python",
+        "raw": "https://collector.example/python",
+        "confidence": "high",
+        "pinned": null
+      }
+    ],
+    "remote_dependencies": [
+      {
+        "path": "curl-bash/scripts/install.sh",
+        "line": 3,
+        "source": "script",
+        "kind": "script",
+        "package_manager": null,
+        "name": "install.sh",
+        "version": null,
+        "normalized": "script:install.sh",
+        "raw": "install.sh",
+        "confidence": "high",
+        "pinned": false
+      }
+    ],
     "package_managers": [],
     "lockfiles": [],
     "executables": [],

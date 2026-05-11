@@ -2522,6 +2522,7 @@ mod tests {
                 headings: Vec::new(),
                 links: Vec::<SkillReference>::new(),
                 inline_code: Vec::new(),
+                inline_code_locations: Vec::new(),
                 code_blocks: Vec::new(),
                 declared_tools: Vec::new(),
                 declared_permissions: Vec::new(),

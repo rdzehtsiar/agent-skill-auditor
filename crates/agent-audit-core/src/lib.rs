@@ -10,6 +10,7 @@ pub mod scan;
 #[cfg(test)]
 mod test_support;
 pub mod trust_manifest;
+mod url_inventory;
 
 pub use config::{
     parse_audit_config, parse_severity, AuditConfig, ConfigIgnoreEntry, CONFIG_FILENAME,
