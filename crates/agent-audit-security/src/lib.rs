@@ -4776,48 +4776,18 @@ fn javascript_top_level_arguments(args: &str) -> Vec<&str> {
     let bytes = args.as_bytes();
     let mut arguments = Vec::new();
     let mut start = 0;
-    let mut index = 0;
     let mut depth = 0usize;
-    let mut quote = None;
-    let mut escaped = false;
+    let mut quote_state = JavaScriptQuoteState::default();
 
-    while index < bytes.len() {
-        let byte = bytes[index];
-        if escaped {
-            escaped = false;
-            index += 1;
+    for (index, byte) in bytes.iter().enumerate() {
+        if javascript_argument_byte_is_nested(*byte, &mut quote_state, &mut depth) {
             continue;
         }
 
-        if quote.is_some() && byte == b'\\' {
-            escaped = true;
-            index += 1;
-            continue;
+        if *byte == b',' {
+            arguments.push(&args[start..index]);
+            start = index + 1;
         }
-
-        if matches!(byte, b'\'' | b'"' | b'`') {
-            if quote == Some(byte) {
-                quote = None;
-            } else if quote.is_none() {
-                quote = Some(byte);
-            }
-            index += 1;
-            continue;
-        }
-
-        if quote.is_none() {
-            match byte {
-                b'(' | b'[' | b'{' => depth += 1,
-                b')' | b']' | b'}' => depth = depth.saturating_sub(1),
-                b',' if depth == 0 => {
-                    arguments.push(&args[start..index]);
-                    start = index + 1;
-                }
-                _ => {}
-            }
-        }
-
-        index += 1;
     }
 
     if start < args.len() || args.ends_with(',') {
@@ -4825,6 +4795,32 @@ fn javascript_top_level_arguments(args: &str) -> Vec<&str> {
     }
 
     arguments
+}
+
+fn javascript_argument_byte_is_nested(
+    byte: u8,
+    quote_state: &mut JavaScriptQuoteState,
+    depth: &mut usize,
+) -> bool {
+    if quote_state.consume(byte) {
+        return true;
+    }
+
+    quote_state.is_quoted() || update_javascript_argument_depth(byte, depth) || *depth > 0
+}
+
+fn update_javascript_argument_depth(byte: u8, depth: &mut usize) -> bool {
+    match byte {
+        b'(' | b'[' | b'{' => {
+            *depth += 1;
+            true
+        }
+        b')' | b']' | b'}' => {
+            *depth = depth.saturating_sub(1);
+            true
+        }
+        _ => false,
+    }
 }
 
 fn javascript_string_literals(line: &str) -> Vec<String> {
@@ -6769,6 +6765,22 @@ mod tests {
                 r#" dict(mode="w,plus", nested=[1, (2, 3)])"#,
                 r#" "escaped \", comma""#,
                 " mode='w'",
+            ]
+        );
+    }
+
+    #[test]
+    fn javascript_top_level_arguments_ignore_nested_quoted_and_template_commas() {
+        let args = r#"'out,side.txt', { mode: "w,plus", nested: [1, (2, 3)] }, `escaped \`, comma`, fn("x,y"),"#;
+
+        assert_eq!(
+            javascript_top_level_arguments(args),
+            vec![
+                "'out,side.txt'",
+                r#" { mode: "w,plus", nested: [1, (2, 3)] }"#,
+                r#" `escaped \`, comma`"#,
+                r#" fn("x,y")"#,
+                "",
             ]
         );
     }
