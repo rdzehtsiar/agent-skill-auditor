@@ -248,13 +248,13 @@ pub const STRUCTURAL_RULE_IDS: &[&str] = &[
 ];
 
 pub const ACTIVE_RULE_IDS: &[&str] = &[
-    "SEC001", "SKILL001", "SKILL002", "SKILL010", "SKILL020", "SKILL030", "SKILL040", "SKILL041",
-    "SKILL050",
+    "SEC001", "SEC002", "SKILL001", "SKILL002", "SKILL010", "SKILL020", "SKILL030", "SKILL040",
+    "SKILL041", "SKILL050",
 ];
 
 pub const RESERVED_RULE_IDS: &[&str] = &[
-    "SEC002", "SEC003", "SEC004", "SEC005", "SEC006", "SEC007", "SEC008", "SEC009", "SEC010",
-    "SEC011", "SEC012",
+    "SEC003", "SEC004", "SEC005", "SEC006", "SEC007", "SEC008", "SEC009", "SEC010", "SEC011",
+    "SEC012",
 ];
 
 pub const ALL_HOST_PROFILES: &[&str] = HOST_PROFILES;
@@ -408,7 +408,7 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
     },
     RuleMetadata {
         id: RuleId::Sec002,
-        status: RuleStatus::Reserved,
+        status: RuleStatus::Active,
         title: "Secret-like environment variable access",
         severity: RuleSeverity::Medium,
         category: RuleCategory::Security,
@@ -417,7 +417,7 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
         rationale: "Reading token-, key-, password-, or credential-like environment variables can expose secrets to scripts, logs, prompts, or external services.",
         remediation: "Avoid broad secret reads; require explicit user-provided configuration for the narrow credential needed and keep it out of logs and generated reports.",
         suppression_guidance:
-            "`SEC002` is reserved and cannot be suppressed until an evaluator emits it. When active, suppress only for a reviewed credential access path with least-privilege scope and documented handling.",
+            "Suppress `SEC002` only for a reviewed credential access path with least-privilege scope, documented handling, and no logging or unintended disclosure.",
         examples: SEC002_EXAMPLES,
     },
     RuleMetadata {
@@ -784,11 +784,16 @@ pub fn evaluate_structural_rules(packages: &[RulePackageFacts]) -> Vec<Evaluated
 }
 
 pub fn evaluate_security_signal_rules(signals: &[SecuritySignal]) -> Vec<EvaluatedRuleFinding> {
-    let mut findings = signals
-        .iter()
-        .filter(|signal| is_remote_content_piped_to_shell_signal(signal))
-        .map(remote_content_piped_to_shell_finding)
-        .collect::<Vec<_>>();
+    let mut findings = Vec::new();
+
+    for signal in signals {
+        if is_remote_content_piped_to_shell_signal(signal) {
+            findings.push(remote_content_piped_to_shell_finding(signal));
+        }
+        if is_secret_like_environment_read_signal(signal) {
+            findings.push(secret_like_environment_read_finding(signal));
+        }
+    }
 
     sort_evaluated_findings(&mut findings);
     findings
@@ -811,6 +816,36 @@ fn remote_content_piped_to_shell_finding(signal: &SecuritySignal) -> EvaluatedRu
     EvaluatedRuleFinding {
         rule_id: RuleId::Sec001,
         message: "Remote content is piped directly into a shell, so unreviewed network content can execute on the user's machine.".to_owned(),
+        location: RuleFindingLocation {
+            path: signal.location.path.clone(),
+            line: signal.location.line,
+        },
+    }
+}
+
+fn is_secret_like_environment_read_signal(signal: &SecuritySignal) -> bool {
+    signal.kind == SecuritySignalKind::SecretRead
+        && matches!(
+            signal.confidence,
+            AnalyzerConfidence::Medium | AnalyzerConfidence::High
+        )
+        && signal
+            .source
+            .as_ref()
+            .is_some_and(|source| source.kind == SecuritySourceKind::EnvironmentVariable)
+}
+
+fn secret_like_environment_read_finding(signal: &SecuritySignal) -> EvaluatedRuleFinding {
+    let variable = signal
+        .source
+        .as_ref()
+        .and_then(|source| source.name.as_deref())
+        .unwrap_or("a secret-like environment variable");
+    EvaluatedRuleFinding {
+        rule_id: RuleId::Sec002,
+        message: format!(
+            "The artifact reads secret-like environment variable `{variable}`. This may be legitimate, but it needs review, declaration, and careful handling to avoid accidental disclosure."
+        ),
         location: RuleFindingLocation {
             path: signal.location.path.clone(),
             line: signal.location.line,
@@ -1109,7 +1144,7 @@ mod tests {
     use std::path::Path;
 
     use agent_audit_security::{
-        shell_security_analyzer, ClassificationMethod, SecurityAnalyzer,
+        python_security_analyzer, shell_security_analyzer, ClassificationMethod, SecurityAnalyzer,
         SecurityAnalyzerArtifactInput, SecurityAnalyzerContent, SecurityAnalyzerInput,
         SecurityAnalyzerPackageContext, SecurityArtifactClassificationMethod,
         SecurityArtifactClassificationSignal, SecurityArtifactKind, SecurityArtifactReadStatus,
@@ -1410,7 +1445,7 @@ mod tests {
     }
 
     #[test]
-    fn reserved_security_rules_sec002_through_sec012_are_metadata_only_and_not_suppressible() {
+    fn reserved_security_rules_sec003_through_sec012_are_metadata_only_and_not_suppressible() {
         for rule_id in RESERVED_RULE_IDS {
             let metadata = rule_metadata(rule_id).expect("reserved metadata exists");
 
@@ -1442,6 +1477,21 @@ mod tests {
 
         assert_eq!(metadata.status, RuleStatus::Active);
         assert_eq!(metadata.severity, RuleSeverity::High);
+        assert_eq!(metadata.category, RuleCategory::Security);
+        assert!(!metadata
+            .suppression_guidance
+            .contains("cannot be suppressed"));
+    }
+
+    #[test]
+    fn sec002_is_active_and_removed_from_reserved_rules() {
+        assert!(ACTIVE_RULE_IDS.contains(&"SEC002"));
+        assert!(!RESERVED_RULE_IDS.contains(&"SEC002"));
+
+        let metadata = active_rule_metadata("SEC002").expect("SEC002 must be active");
+
+        assert_eq!(metadata.status, RuleStatus::Active);
+        assert_eq!(metadata.severity, RuleSeverity::Medium);
         assert_eq!(metadata.category, RuleCategory::Security);
         assert!(!metadata
             .suppression_guidance
@@ -1541,6 +1591,125 @@ mod tests {
         assert_eq!(
             finding_projection(&findings),
             vec![(RuleId::Sec001, "scripts/install.sh", Some(1))]
+        );
+    }
+
+    #[test]
+    fn sec002_reports_shell_secret_like_environment_reads() {
+        let cases = [
+            ("echo $OPENAI_API_KEY\n", "OPENAI_API_KEY"),
+            ("echo ${GITHUB_TOKEN}\n", "GITHUB_TOKEN"),
+            ("echo ${PASSWORD:-}\n", "PASSWORD"),
+            ("export TOKEN=$SERVICE_TOKEN\n", "SERVICE_TOKEN"),
+            ("echo $service_ToKeN\n", "service_ToKeN"),
+        ];
+
+        for (script, variable) in cases {
+            let output = shell_security_analyzer().analyze(&shell_analyzer_input(
+                "scripts/install.sh",
+                script.as_bytes(),
+            ));
+            let findings = evaluate_security_signal_rules(&output.signals);
+
+            assert_eq!(
+                findings,
+                vec![finding(
+                    RuleId::Sec002,
+                    &format!(
+                        "The artifact reads secret-like environment variable `{variable}`. This may be legitimate, but it needs review, declaration, and careful handling to avoid accidental disclosure."
+                    ),
+                    "scripts/install.sh",
+                    Some(1),
+                )],
+                "script: {script}"
+            );
+        }
+    }
+
+    #[test]
+    fn sec002_reports_python_secret_like_environment_reads() {
+        let script = concat!(
+            "import os\n",
+            "api_key = os.environ[\"OPENAI_API_KEY\"]\n",
+            "token = os.getenv('SERVICE_TOKEN')\n",
+            "password = environ.get(\"PASSWORD\")\n",
+        );
+
+        let output = python_security_analyzer().analyze(&python_analyzer_input(
+            "scripts/check.py",
+            script.as_bytes(),
+        ));
+        let findings = evaluate_security_signal_rules(&output.signals);
+
+        assert_eq!(
+            finding_projection(&findings),
+            vec![
+                (RuleId::Sec002, "scripts/check.py", Some(2)),
+                (RuleId::Sec002, "scripts/check.py", Some(3)),
+                (RuleId::Sec002, "scripts/check.py", Some(4)),
+            ]
+        );
+        assert!(findings
+            .iter()
+            .all(|finding| finding.message.contains("may be legitimate")));
+    }
+
+    #[test]
+    fn sec002_does_not_report_benign_environment_reads() {
+        let shell_output = shell_security_analyzer().analyze(&shell_analyzer_input(
+            "scripts/install.sh",
+            b"echo $PATH ${HOME} ${CI:-false}\n",
+        ));
+        let python_output = python_security_analyzer().analyze(&python_analyzer_input(
+            "scripts/check.py",
+            b"path = os.environ[\"PATH\"]\nhome = os.getenv('HOME')\nci = environ.get(\"CI\")\n",
+        ));
+
+        assert!(evaluate_security_signal_rules(&shell_output.signals).is_empty());
+        assert!(evaluate_security_signal_rules(&python_output.signals).is_empty());
+    }
+
+    #[test]
+    fn sec002_matches_only_environment_secret_reads() {
+        let matching_signal = security_signal_with_source_name(
+            SecuritySignalKind::SecretRead,
+            Some(SecuritySourceKind::EnvironmentVariable),
+            None,
+            AnalyzerConfidence::High,
+            Some("OPENAI_API_KEY"),
+        );
+        let credential_store_signal = security_signal_with_source_name(
+            SecuritySignalKind::SecretRead,
+            Some(SecuritySourceKind::CredentialStore),
+            None,
+            AnalyzerConfidence::High,
+            Some("OPENAI_API_KEY"),
+        );
+        let env_variable_only_signal = security_signal_with_source_name(
+            SecuritySignalKind::EnvironmentVariableRead,
+            Some(SecuritySourceKind::EnvironmentVariable),
+            None,
+            AnalyzerConfidence::High,
+            Some("OPENAI_API_KEY"),
+        );
+        let low_confidence_signal = security_signal_with_source_name(
+            SecuritySignalKind::SecretRead,
+            Some(SecuritySourceKind::EnvironmentVariable),
+            None,
+            AnalyzerConfidence::Low,
+            Some("OPENAI_API_KEY"),
+        );
+
+        let findings = evaluate_security_signal_rules(&[
+            credential_store_signal,
+            env_variable_only_signal,
+            low_confidence_signal,
+            matching_signal,
+        ]);
+
+        assert_eq!(
+            finding_projection(&findings),
+            vec![(RuleId::Sec002, "scripts/install.sh", Some(1))]
         );
     }
 
@@ -2081,11 +2250,46 @@ mod tests {
         }
     }
 
+    fn python_analyzer_input<'a>(path: &'a str, content: &'a [u8]) -> SecurityAnalyzerInput<'a> {
+        SecurityAnalyzerInput {
+            artifact: SecurityAnalyzerArtifactInput {
+                path,
+                kind: SecurityArtifactKind::Script,
+                language: SecurityLanguage::Python,
+                classification_method: SecurityArtifactClassificationMethod::Extension,
+                classification_signals: &[SecurityArtifactClassificationSignal::Extension],
+                executable: true,
+                size_bytes: content.len() as u64,
+                content: SecurityAnalyzerContent::from_bytes(
+                    content,
+                    SecurityArtifactReadStatus::Full,
+                    content.len(),
+                ),
+            },
+            package: SecurityAnalyzerPackageContext {
+                package_root: ".",
+                manifest_path: "SKILL.md",
+                declared_tools: &[],
+                declared_permissions: &[],
+            },
+        }
+    }
+
     fn security_signal(
         kind: SecuritySignalKind,
         source: Option<SecuritySourceKind>,
         sink: Option<SecuritySinkKind>,
         confidence: AnalyzerConfidence,
+    ) -> SecuritySignal {
+        security_signal_with_source_name(kind, source, sink, confidence, None)
+    }
+
+    fn security_signal_with_source_name(
+        kind: SecuritySignalKind,
+        source: Option<SecuritySourceKind>,
+        sink: Option<SecuritySinkKind>,
+        confidence: AnalyzerConfidence,
+        source_name: Option<&str>,
     ) -> SecuritySignal {
         SecuritySignal {
             location: agent_audit_security::SecurityLocation {
@@ -2095,7 +2299,10 @@ mod tests {
                 byte_offset: None,
             },
             kind,
-            source: source.map(|kind| SecuritySource { kind, name: None }),
+            source: source.map(|kind| SecuritySource {
+                kind,
+                name: source_name.map(str::to_owned),
+            }),
             sink: sink.map(|kind| SecuritySink { kind, target: None }),
             risk: SecurityRiskScore::new(90),
             confidence,

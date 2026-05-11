@@ -11,7 +11,7 @@ Rule status is explicit: `active` rules may emit findings and be suppressed, whi
 | Rule | Status | Severity | Category | Title |
 | --- | --- | --- | --- | --- |
 | [SEC001](#sec001-remote-content-piped-into-shell) | `active` | `high` | `security` | Remote content piped into shell |
-| [SEC002](#sec002-secret-like-environment-variable-access) | `reserved` | `medium` | `security` | Secret-like environment variable access |
+| [SEC002](#sec002-secret-like-environment-variable-access) | `active` | `medium` | `security` | Secret-like environment variable access |
 | [SEC003](#sec003-data-sent-to-external-url) | `reserved` | `medium` | `security` | Data sent to external URL |
 | [SEC004](#sec004-unpinned-remote-script-execution) | `reserved` | `high` | `security` | Unpinned remote script execution |
 | [SEC005](#sec005-use-of-sudo) | `reserved` | `medium` | `security` | Use of sudo |
@@ -71,7 +71,7 @@ sh scripts/install.sh
 
 ## SEC002: Secret-like environment variable access
 
-- Status: `reserved` (reserved; not emitted)
+- Status: `active`
 - Severity: `medium`
 - Category: `security`
 - Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
@@ -87,7 +87,7 @@ Avoid broad secret reads; require explicit user-provided configuration for the n
 
 ### Safe Suppression
 
-`SEC002` is reserved and cannot be suppressed until an evaluator emits it. When active, suppress only for a reviewed credential access path with least-privilege scope and documented handling.
+Suppress `SEC002` only for a reviewed credential access path with least-privilege scope, documented handling, and no logging or unintended disclosure.
 
 ### Examples
 

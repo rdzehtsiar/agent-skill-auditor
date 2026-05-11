@@ -1336,11 +1336,25 @@ const SHELL_SECURITY_ANALYZER_CAPABILITIES: &[SecurityAnalyzerCapability] =
         precision: SecurityAnalyzerPrecision::Fallback,
     }];
 
+const PYTHON_SECURITY_ANALYZER_CAPABILITIES: &[SecurityAnalyzerCapability] =
+    &[SecurityAnalyzerCapability {
+        language: SecurityLanguage::Python,
+        mode: SecurityAnalyzerMode::RegexFallback,
+        precision: SecurityAnalyzerPrecision::Fallback,
+    }];
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ShellSecurityAnalyzer;
 
 pub fn shell_security_analyzer() -> ShellSecurityAnalyzer {
     ShellSecurityAnalyzer
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PythonSecurityAnalyzer;
+
+pub fn python_security_analyzer() -> PythonSecurityAnalyzer {
+    PythonSecurityAnalyzer
 }
 
 impl SecurityAnalyzer for ShellSecurityAnalyzer {
@@ -1356,7 +1370,7 @@ impl SecurityAnalyzer for ShellSecurityAnalyzer {
         let mut output = SecurityAnalyzerOutput::default();
 
         if input.artifact.language != SecurityLanguage::Shell {
-            output.diagnostics.push(shell_analyzer_diagnostic(
+            output.diagnostics.push(regex_analyzer_diagnostic(
                 self.id(),
                 SecurityAnalyzerDiagnosticSeverity::Warning,
                 SecurityAnalyzerDiagnosticKind::UnsupportedLanguage,
@@ -1370,7 +1384,7 @@ impl SecurityAnalyzer for ShellSecurityAnalyzer {
         }
 
         if input.artifact.content.is_truncated() {
-            output.diagnostics.push(shell_analyzer_diagnostic(
+            output.diagnostics.push(regex_analyzer_diagnostic(
                 self.id(),
                 SecurityAnalyzerDiagnosticSeverity::Warning,
                 SecurityAnalyzerDiagnosticKind::ContentTruncated,
@@ -1381,7 +1395,7 @@ impl SecurityAnalyzer for ShellSecurityAnalyzer {
         }
 
         let Some(text) = input.artifact.content.text else {
-            output.diagnostics.push(shell_analyzer_diagnostic(
+            output.diagnostics.push(regex_analyzer_diagnostic(
                 self.id(),
                 SecurityAnalyzerDiagnosticSeverity::Warning,
                 SecurityAnalyzerDiagnosticKind::TextUnavailable,
@@ -1401,7 +1415,65 @@ impl SecurityAnalyzer for ShellSecurityAnalyzer {
     }
 }
 
-fn shell_analyzer_diagnostic(
+impl SecurityAnalyzer for PythonSecurityAnalyzer {
+    fn id(&self) -> &str {
+        "python-security"
+    }
+
+    fn capabilities(&self) -> &[SecurityAnalyzerCapability] {
+        PYTHON_SECURITY_ANALYZER_CAPABILITIES
+    }
+
+    fn analyze(&self, input: &SecurityAnalyzerInput<'_>) -> SecurityAnalyzerOutput {
+        let mut output = SecurityAnalyzerOutput::default();
+
+        if input.artifact.language != SecurityLanguage::Python {
+            output.diagnostics.push(regex_analyzer_diagnostic(
+                self.id(),
+                SecurityAnalyzerDiagnosticSeverity::Warning,
+                SecurityAnalyzerDiagnosticKind::UnsupportedLanguage,
+                format!(
+                    "python security analyzer does not support {:?} artifacts",
+                    input.artifact.language
+                ),
+                input.artifact.path,
+            ));
+            return output;
+        }
+
+        if input.artifact.content.is_truncated() {
+            output.diagnostics.push(regex_analyzer_diagnostic(
+                self.id(),
+                SecurityAnalyzerDiagnosticSeverity::Warning,
+                SecurityAnalyzerDiagnosticKind::ContentTruncated,
+                "artifact content was truncated; python security signals may be incomplete"
+                    .to_owned(),
+                input.artifact.path,
+            ));
+        }
+
+        let Some(text) = input.artifact.content.text else {
+            output.diagnostics.push(regex_analyzer_diagnostic(
+                self.id(),
+                SecurityAnalyzerDiagnosticSeverity::Warning,
+                SecurityAnalyzerDiagnosticKind::TextUnavailable,
+                "artifact text is unavailable for python security analysis".to_owned(),
+                input.artifact.path,
+            ));
+            output.sort_deterministically();
+            return output;
+        };
+
+        output
+            .signals
+            .extend(analyze_python_security_text(input.artifact.path, text));
+        output.sort_deterministically();
+        output.signals.dedup();
+        output
+    }
+}
+
+fn regex_analyzer_diagnostic(
     analyzer_id: &str,
     severity: SecurityAnalyzerDiagnosticSeverity,
     kind: SecurityAnalyzerDiagnosticKind,
@@ -1444,6 +1516,12 @@ fn analyze_shell_security_text(path: &str, text: &str) -> Vec<SecuritySignal> {
             &code,
             &evidence,
         ));
+        signals.extend(detect_shell_secret_env_reads(
+            path,
+            line_number,
+            uncommented,
+            &evidence,
+        ));
         if let Some(signal) =
             detect_remote_shell_execution(path, line_number, line, uncommented, &code)
         {
@@ -1477,6 +1555,62 @@ fn analyze_shell_security_text(path: &str, text: &str) -> Vec<SecuritySignal> {
     signals.sort();
     signals.dedup();
     signals
+}
+
+fn analyze_python_security_text(path: &str, text: &str) -> Vec<SecuritySignal> {
+    let mut signals = Vec::new();
+
+    for (line_index, line) in text.lines().enumerate() {
+        let line_number = line_index + 1;
+        let uncommented = python_uncommented_prefix(line);
+        if uncommented.trim().is_empty() {
+            continue;
+        }
+
+        let evidence = shell_evidence(line);
+        signals.extend(detect_python_secret_env_reads(
+            path,
+            line_number,
+            uncommented,
+            &evidence,
+        ));
+    }
+
+    signals.sort();
+    signals.dedup();
+    signals
+}
+
+fn detect_shell_secret_env_reads(
+    path: &str,
+    line_number: usize,
+    line: &str,
+    evidence: &str,
+) -> Vec<SecuritySignal> {
+    find_shell_environment_expansions(line)
+        .into_iter()
+        .filter(|(_, name)| is_secret_like_environment_variable(name))
+        .map(|(column, name)| environment_secret_signal(path, line_number, column, name, evidence))
+        .collect()
+}
+
+fn detect_python_secret_env_reads(
+    path: &str,
+    line_number: usize,
+    line: &str,
+    evidence: &str,
+) -> Vec<SecuritySignal> {
+    let mut reads = Vec::new();
+
+    reads.extend(find_python_env_index_reads(line, "os.environ["));
+    reads.extend(find_python_env_call_reads(line, "os.getenv("));
+    reads.extend(find_python_env_call_reads(line, "environ.get("));
+
+    reads
+        .into_iter()
+        .filter(|(_, name)| is_secret_like_environment_variable(name))
+        .map(|(column, name)| environment_secret_signal(path, line_number, column, name, evidence))
+        .collect()
 }
 
 fn detect_external_urls(
@@ -1832,6 +1966,29 @@ fn detect_executable_download(
     ))
 }
 
+fn environment_secret_signal(
+    path: &str,
+    line: usize,
+    column: usize,
+    name: String,
+    evidence: &str,
+) -> SecuritySignal {
+    shell_signal(
+        path,
+        line,
+        column,
+        SecuritySignalKind::SecretRead,
+        Some(SecuritySource {
+            kind: SecuritySourceKind::EnvironmentVariable,
+            name: Some(name),
+        }),
+        None,
+        SecurityRiskScore::new(60),
+        AnalyzerConfidence::High,
+        evidence,
+    )
+}
+
 fn shell_signal(
     path: &str,
     line: usize,
@@ -1858,6 +2015,220 @@ fn shell_signal(
         classification: ClassificationMethod::RegexFallback,
         evidence: evidence.to_owned(),
     }
+}
+
+fn find_shell_environment_expansions(line: &str) -> Vec<(usize, String)> {
+    let bytes = line.as_bytes();
+    let mut reads = Vec::new();
+    let mut index = 0;
+    let mut in_single_quote = false;
+    let mut escaped = false;
+
+    while index < bytes.len() {
+        let byte = bytes[index];
+
+        if escaped {
+            escaped = false;
+            index += 1;
+            continue;
+        }
+
+        if byte == b'\\' && !in_single_quote {
+            escaped = true;
+            index += 1;
+            continue;
+        }
+
+        if byte == b'\'' {
+            in_single_quote = !in_single_quote;
+            index += 1;
+            continue;
+        }
+
+        if in_single_quote || byte != b'$' {
+            index += 1;
+            continue;
+        }
+
+        if bytes.get(index + 1) == Some(&b'{') {
+            if let Some((name, end)) = parse_braced_shell_variable(line, index + 2) {
+                reads.push((index + 1, name));
+                index = end;
+                continue;
+            }
+        } else if let Some((name, end)) = parse_plain_shell_variable(line, index + 1) {
+            reads.push((index + 1, name));
+            index = end;
+            continue;
+        }
+
+        index += 1;
+    }
+
+    reads.sort();
+    reads.dedup();
+    reads
+}
+
+fn parse_braced_shell_variable(line: &str, start: usize) -> Option<(String, usize)> {
+    let (name, end) = parse_plain_shell_variable(line, start)?;
+    if line.as_bytes().get(end).is_some_and(|byte| {
+        matches!(
+            byte,
+            b'}' | b':' | b'-' | b'+' | b'=' | b'?' | b'%' | b'#' | b'/' | b'^' | b','
+        )
+    }) {
+        Some((name, end + 1))
+    } else {
+        None
+    }
+}
+
+fn parse_plain_shell_variable(line: &str, start: usize) -> Option<(String, usize)> {
+    let bytes = line.as_bytes();
+    let first = *bytes.get(start)?;
+    if !(first.is_ascii_alphabetic() || first == b'_') {
+        return None;
+    }
+
+    let mut end = start + 1;
+    while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
+        end += 1;
+    }
+
+    Some((line[start..end].to_owned(), end))
+}
+
+fn find_python_env_index_reads(line: &str, prefix: &str) -> Vec<(usize, String)> {
+    let mut reads = Vec::new();
+    let mut search_start = 0;
+
+    while let Some(relative_index) = line[search_start..].find(prefix) {
+        let prefix_start = search_start + relative_index;
+        let literal_start = prefix_start + prefix.len();
+        if let Some((name, _)) = parse_python_string_literal(line, literal_start) {
+            reads.push((literal_start + 1, name));
+        }
+        search_start = literal_start.saturating_add(1);
+    }
+
+    reads
+}
+
+fn find_python_env_call_reads(line: &str, prefix: &str) -> Vec<(usize, String)> {
+    let mut reads = Vec::new();
+    let mut search_start = 0;
+
+    while let Some(relative_index) = line[search_start..].find(prefix) {
+        let prefix_start = search_start + relative_index;
+        let literal_start = skip_ascii_whitespace(line, prefix_start + prefix.len());
+        if let Some((name, _)) = parse_python_string_literal(line, literal_start) {
+            reads.push((literal_start + 1, name));
+        }
+        search_start = literal_start.saturating_add(1);
+    }
+
+    reads
+}
+
+fn parse_python_string_literal(line: &str, start: usize) -> Option<(String, usize)> {
+    let bytes = line.as_bytes();
+    let quote = *bytes.get(start)?;
+    if !matches!(quote, b'\'' | b'"') {
+        return None;
+    }
+
+    let mut end = start + 1;
+    let mut escaped = false;
+    while end < bytes.len() {
+        let byte = bytes[end];
+        if escaped {
+            escaped = false;
+            end += 1;
+            continue;
+        }
+        if byte == b'\\' {
+            escaped = true;
+            end += 1;
+            continue;
+        }
+        if byte == quote {
+            return Some((line[start + 1..end].to_owned(), end + 1));
+        }
+        end += 1;
+    }
+
+    None
+}
+
+fn skip_ascii_whitespace(line: &str, start: usize) -> usize {
+    let bytes = line.as_bytes();
+    let mut index = start;
+    while index < bytes.len() && bytes[index].is_ascii_whitespace() {
+        index += 1;
+    }
+    index
+}
+
+fn python_uncommented_prefix(line: &str) -> &str {
+    let bytes = line.as_bytes();
+    let mut index = 0;
+    let mut quote = None;
+    let mut escaped = false;
+
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if escaped {
+            escaped = false;
+            index += 1;
+            continue;
+        }
+
+        if quote.is_some() && byte == b'\\' {
+            escaped = true;
+            index += 1;
+            continue;
+        }
+
+        if matches!(byte, b'\'' | b'"') {
+            if quote == Some(byte) {
+                quote = None;
+            } else if quote.is_none() {
+                quote = Some(byte);
+            }
+            index += 1;
+            continue;
+        }
+
+        if byte == b'#' && quote.is_none() {
+            return &line[..index];
+        }
+
+        index += 1;
+    }
+
+    line
+}
+
+fn is_secret_like_environment_variable(name: &str) -> bool {
+    let normalized = name.to_ascii_lowercase();
+    if matches!(
+        normalized.as_str(),
+        "path" | "home" | "ci" | "user" | "shell" | "pwd" | "oldpwd" | "tmp" | "temp" | "term"
+    ) {
+        return false;
+    }
+
+    normalized.contains("token")
+        || normalized.contains("password")
+        || normalized.contains("passwd")
+        || normalized.contains("secret")
+        || normalized.contains("credential")
+        || normalized.contains("private_key")
+        || normalized.contains("privatekey")
+        || normalized.contains("api_key")
+        || normalized.ends_with("_key")
+        || normalized == "key"
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3012,6 +3383,153 @@ mod tests {
     }
 
     #[test]
+    fn shell_security_analyzer_detects_secret_like_environment_reads() {
+        let script = concat!(
+            "echo $OPENAI_API_KEY\n",
+            "printf '%s' ${GITHUB_TOKEN}\n",
+            "echo ${PASSWORD:-}\n",
+            "export TOKEN=$SERVICE_TOKEN\n",
+        );
+
+        let output = shell_security_analyzer().analyze(&analyzer_input(
+            "scripts/install.sh",
+            script.as_bytes(),
+            &[SecurityArtifactClassificationSignal::Extension],
+            &[],
+            &[],
+        ));
+        let secret_reads = output
+            .signals
+            .iter()
+            .filter(|signal| signal.kind == SecuritySignalKind::SecretRead)
+            .collect::<Vec<_>>();
+
+        assert_eq!(secret_reads.len(), 4);
+        assert_eq!(
+            secret_reads
+                .iter()
+                .map(|signal| signal
+                    .source
+                    .as_ref()
+                    .and_then(|source| source.name.as_deref())
+                    .expect("secret source name"))
+                .collect::<Vec<_>>(),
+            vec![
+                "OPENAI_API_KEY",
+                "GITHUB_TOKEN",
+                "PASSWORD",
+                "SERVICE_TOKEN",
+            ]
+        );
+        assert!(secret_reads.iter().all(|signal| {
+            signal.source.as_ref().is_some_and(|source| {
+                source.kind == SecuritySourceKind::EnvironmentVariable
+                    && source.name.as_deref().is_some()
+            }) && signal.sink.is_none()
+                && signal.confidence == AnalyzerConfidence::High
+                && signal.location.column.is_some()
+                && !signal.evidence.is_empty()
+        }));
+    }
+
+    #[test]
+    fn shell_security_analyzer_ignores_benign_environment_reads() {
+        let script = "echo $PATH ${HOME} ${CI:-false} $USER $SHELL\n";
+
+        let output = shell_security_analyzer().analyze(&analyzer_input(
+            "scripts/install.sh",
+            script.as_bytes(),
+            &[SecurityArtifactClassificationSignal::Extension],
+            &[],
+            &[],
+        ));
+
+        assert!(!output
+            .signals
+            .iter()
+            .any(|signal| signal.kind == SecuritySignalKind::SecretRead));
+    }
+
+    #[test]
+    fn shell_security_analyzer_matches_secret_names_case_insensitively() {
+        let output = shell_security_analyzer().analyze(&analyzer_input(
+            "scripts/install.sh",
+            b"echo $service_ToKeN\n",
+            &[SecurityArtifactClassificationSignal::Extension],
+            &[],
+            &[],
+        ));
+
+        let signal = output
+            .signals
+            .iter()
+            .find(|signal| signal.kind == SecuritySignalKind::SecretRead)
+            .expect("case-insensitive secret env read");
+        assert_eq!(
+            signal
+                .source
+                .as_ref()
+                .and_then(|source| source.name.as_deref()),
+            Some("service_ToKeN")
+        );
+    }
+
+    #[test]
+    fn python_security_analyzer_detects_secret_like_environment_reads() {
+        let script = concat!(
+            "import os\n",
+            "api_key = os.environ[\"OPENAI_API_KEY\"]\n",
+            "token = os.getenv('SERVICE_TOKEN')\n",
+            "password = environ.get(\"PASSWORD\")\n",
+        );
+
+        let output = python_security_analyzer().analyze(&python_analyzer_input(
+            "scripts/check.py",
+            script.as_bytes(),
+        ));
+        let secret_reads = output
+            .signals
+            .iter()
+            .filter(|signal| signal.kind == SecuritySignalKind::SecretRead)
+            .collect::<Vec<_>>();
+
+        assert_eq!(secret_reads.len(), 3);
+        assert_eq!(
+            secret_reads
+                .iter()
+                .map(|signal| signal
+                    .source
+                    .as_ref()
+                    .and_then(|source| source.name.as_deref())
+                    .expect("secret source name"))
+                .collect::<Vec<_>>(),
+            vec!["OPENAI_API_KEY", "SERVICE_TOKEN", "PASSWORD"]
+        );
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn python_security_analyzer_ignores_benign_environment_reads() {
+        let script = concat!(
+            "import os\n",
+            "path = os.environ[\"PATH\"]\n",
+            "home = os.getenv('HOME')\n",
+            "ci = environ.get(\"CI\")\n",
+        );
+
+        let output = python_security_analyzer().analyze(&python_analyzer_input(
+            "scripts/check.py",
+            script.as_bytes(),
+        ));
+
+        assert!(!output
+            .signals
+            .iter()
+            .any(|signal| signal.kind == SecuritySignalKind::SecretRead));
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
     fn shell_security_analyzer_handles_non_ascii_quoted_text_before_remote_shell_pipeline() {
         let script = "echo \"ééé\"; curl https://example.test/install.sh | sh\n";
 
@@ -3758,6 +4276,31 @@ printf '%s\n' "https://example.test"
                 manifest_path: "SKILL.md",
                 declared_tools,
                 declared_permissions,
+            },
+        }
+    }
+
+    fn python_analyzer_input<'a>(path: &'a str, content: &'a [u8]) -> SecurityAnalyzerInput<'a> {
+        SecurityAnalyzerInput {
+            artifact: SecurityAnalyzerArtifactInput {
+                path,
+                kind: SecurityArtifactKind::Script,
+                language: SecurityLanguage::Python,
+                classification_method: SecurityArtifactClassificationMethod::Extension,
+                classification_signals: &[SecurityArtifactClassificationSignal::Extension],
+                executable: true,
+                size_bytes: content.len() as u64,
+                content: SecurityAnalyzerContent::from_bytes(
+                    content,
+                    SecurityArtifactReadStatus::Full,
+                    content.len(),
+                ),
+            },
+            package: SecurityAnalyzerPackageContext {
+                package_root: ".",
+                manifest_path: "SKILL.md",
+                declared_tools: &[],
+                declared_permissions: &[],
             },
         }
     }
