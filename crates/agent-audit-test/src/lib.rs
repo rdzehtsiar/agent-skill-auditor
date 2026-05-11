@@ -5,7 +5,9 @@ pub const FIXTURE_GROUPS: &[&str] = &["spec", "compatibility", "security", "beha
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agent_audit_core::{parse_audit_config, scan_path, FindingCategory, ScanOptions};
+    use agent_audit_core::{
+        parse_audit_config, scan_path, FindingCategory, ScanOptions, ScanReport,
+    };
     use agent_audit_report::{
         render_html, render_json, render_report, render_sarif, render_summary, ReportFormat,
     };
@@ -250,12 +252,295 @@ mod tests {
         }
     }
 
+    #[test]
+    fn phase3_compatibility_fixtures_exercise_profile_outcomes() {
+        let spec_basic = scan_compatibility_fixture("valid/spec-basic", ScanOptions::default());
+        assert_eq!(spec_basic.summary.finding_count, 0);
+        assert_compatibility_profile_projection(
+            &spec_basic,
+            "SKILL.md",
+            &[
+                ("agent-skills-spec", "pass", &[]),
+                ("claude-code", "warn", &[]),
+                ("codex", "warn", &[]),
+                ("github-copilot", "warn", &[]),
+                ("vscode-copilot", "warn", &[]),
+                ("generic", "pass", &[]),
+            ],
+        );
+
+        let missing_description =
+            scan_compatibility_fixture("invalid/missing-description", ScanOptions::default());
+        assert_eq!(rule_ids(&missing_description), vec!["SKILL002"]);
+        assert!(
+            compatibility_projection_for_path(&missing_description, "SKILL.md")
+                .iter()
+                .all(|(_, status, finding_ids)| {
+                    status == "fail" && finding_ids == &vec!["SKILL002".to_owned()]
+                })
+        );
+
+        let claude_extra =
+            scan_compatibility_fixture("host/claude-extra-field", ScanOptions::default());
+        assert_eq!(rule_ids(&claude_extra), vec!["SKILL050"]);
+        assert_compatibility_profile_projection(
+            &claude_extra,
+            ".claude/skills/claude-extra-field/SKILL.md",
+            &[
+                ("agent-skills-spec", "pass", &[]),
+                ("claude-code", "warn", &["SKILL050"]),
+                ("codex", "warn", &[]),
+                ("github-copilot", "warn", &[]),
+                ("vscode-copilot", "warn", &[]),
+                ("generic", "pass", &[]),
+            ],
+        );
+
+        let copilot_path =
+            scan_compatibility_fixture("host/copilot-path-layout", ScanOptions::default());
+        assert_eq!(copilot_path.summary.finding_count, 0);
+        assert_compatibility_profile_projection(
+            &copilot_path,
+            "SKILL.md",
+            &[
+                ("agent-skills-spec", "pass", &[]),
+                ("claude-code", "warn", &[]),
+                ("codex", "warn", &[]),
+                ("github-copilot", "warn", &[]),
+                ("vscode-copilot", "warn", &[]),
+                ("generic", "pass", &[]),
+            ],
+        );
+
+        let codex_script =
+            scan_compatibility_fixture("host/codex-script-reference", ScanOptions::default());
+        assert_eq!(codex_script.summary.finding_count, 0);
+        assert_compatibility_profile_projection(
+            &codex_script,
+            ".agents/skills/codex-script-reference/SKILL.md",
+            &[
+                ("agent-skills-spec", "pass", &[]),
+                ("claude-code", "warn", &[]),
+                ("codex", "warn", &[]),
+                ("github-copilot", "warn", &[]),
+                ("vscode-copilot", "warn", &[]),
+                ("generic", "pass", &[]),
+            ],
+        );
+
+        let vscode_ignored =
+            scan_compatibility_fixture("host/vscode-ignored-metadata", ScanOptions::default());
+        assert_eq!(rule_ids(&vscode_ignored), vec!["SKILL050", "SKILL050"]);
+        assert_compatibility_profile_projection(
+            &vscode_ignored,
+            ".github/skills/vscode-ignored-metadata/SKILL.md",
+            &[
+                ("agent-skills-spec", "pass", &[]),
+                ("claude-code", "warn", &[]),
+                ("codex", "warn", &[]),
+                ("github-copilot", "warn", &["SKILL050"]),
+                ("vscode-copilot", "warn", &["SKILL050"]),
+                ("generic", "pass", &[]),
+            ],
+        );
+
+        let permissions =
+            scan_compatibility_fixture("host/unsupported-permissions", ScanOptions::default());
+        assert_eq!(permissions.summary.finding_count, 0);
+        assert_compatibility_profile_projection(
+            &permissions,
+            ".github/skills/unsupported-permissions/SKILL.md",
+            &[
+                ("agent-skills-spec", "pass", &[]),
+                ("claude-code", "warn", &[]),
+                ("codex", "warn", &[]),
+                ("github-copilot", "warn", &[]),
+                ("vscode-copilot", "warn", &[]),
+                ("generic", "pass", &[]),
+            ],
+        );
+
+        let generic_unknown =
+            scan_compatibility_fixture("host/generic-unknown-behavior", ScanOptions::default());
+        assert_eq!(rule_ids(&generic_unknown), vec!["SKILL040"]);
+        let generic_row = compatibility_projection_for_path(&generic_unknown, "SKILL.md");
+        assert!(generic_row.iter().all(|(_, status, _)| status == "warn"));
+        assert_eq!(
+            generic_row
+                .iter()
+                .find(|(profile, _, _)| profile == "generic")
+                .expect("generic profile")
+                .2,
+            vec!["SKILL040".to_owned()]
+        );
+
+        let mixed_root = compatibility_root().join("host/mixed-profile-metadata");
+        let mixed_config = parse_audit_config(
+            &fs::read_to_string(mixed_root.join("agent-audit.yaml")).expect("read config"),
+        )
+        .expect("parse mixed profile config");
+        let mixed = scan_path(
+            &mixed_root,
+            &ScanOptions {
+                config: Some(mixed_config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan mixed profile compatibility fixture");
+        assert_eq!(
+            mixed.compatibility.profiles,
+            vec!["agent-skills-spec", "codex"]
+        );
+        assert_eq!(rule_ids(&mixed), vec!["SKILL050", "SKILL040"]);
+        assert_compatibility_profile_projection(
+            &mixed,
+            ".agents/skills/mixed-profile-metadata/SKILL.md",
+            &[
+                ("agent-skills-spec", "warn", &["SKILL040"]),
+                ("codex", "warn", &["SKILL050"]),
+            ],
+        );
+    }
+
+    #[test]
+    fn phase3_compatibility_matrix_fixture_has_stable_projection() {
+        let matrix = scan_compatibility_fixture("matrix", ScanOptions::default());
+        let first_projection = compatibility_snapshot_projection(&matrix);
+        let second_projection = compatibility_snapshot_projection(&scan_compatibility_fixture(
+            "matrix",
+            ScanOptions::default(),
+        ));
+
+        let expected = serde_json::json!({
+            "summary": {
+                "package_count": 6,
+                "finding_count": 2,
+                "suppressed_finding_count": 0,
+                "invalid_manifest_count": 1,
+                "broken_reference_count": 0
+            },
+            "findings": [
+                {
+                    "path": "generic/missing-description/SKILL.md",
+                    "line": 1,
+                    "rule_id": "SKILL002"
+                },
+                {
+                    "path": "generic/unknown-frontmatter/SKILL.md",
+                    "line": 4,
+                    "rule_id": "SKILL040"
+                }
+            ],
+            "compatibility": {
+                "profiles": [
+                    "agent-skills-spec",
+                    "claude-code",
+                    "codex",
+                    "github-copilot",
+                    "vscode-copilot",
+                    "generic"
+                ],
+                "matrix": [
+                    {
+                        "path": ".agents/skills/codex-pass/SKILL.md",
+                        "name": "codex-pass",
+                        "profiles": [
+                            {"profile": "agent-skills-spec", "status": "pass", "finding_ids": []},
+                            {"profile": "claude-code", "status": "warn", "finding_ids": []},
+                            {"profile": "codex", "status": "pass", "finding_ids": []},
+                            {"profile": "github-copilot", "status": "warn", "finding_ids": []},
+                            {"profile": "vscode-copilot", "status": "warn", "finding_ids": []},
+                            {"profile": "generic", "status": "pass", "finding_ids": []}
+                        ]
+                    },
+                    {
+                        "path": ".agents/skills/codex-script/SKILL.md",
+                        "name": "codex-script",
+                        "profiles": [
+                            {"profile": "agent-skills-spec", "status": "pass", "finding_ids": []},
+                            {"profile": "claude-code", "status": "warn", "finding_ids": []},
+                            {"profile": "codex", "status": "warn", "finding_ids": []},
+                            {"profile": "github-copilot", "status": "warn", "finding_ids": []},
+                            {"profile": "vscode-copilot", "status": "warn", "finding_ids": []},
+                            {"profile": "generic", "status": "pass", "finding_ids": []}
+                        ]
+                    },
+                    {
+                        "path": ".claude/skills/claude-pass/SKILL.md",
+                        "name": "claude-pass",
+                        "profiles": [
+                            {"profile": "agent-skills-spec", "status": "pass", "finding_ids": []},
+                            {"profile": "claude-code", "status": "pass", "finding_ids": []},
+                            {"profile": "codex", "status": "warn", "finding_ids": []},
+                            {"profile": "github-copilot", "status": "warn", "finding_ids": []},
+                            {"profile": "vscode-copilot", "status": "warn", "finding_ids": []},
+                            {"profile": "generic", "status": "pass", "finding_ids": []}
+                        ]
+                    },
+                    {
+                        "path": ".github/skills/copilot-pass/SKILL.md",
+                        "name": "copilot-pass",
+                        "profiles": [
+                            {"profile": "agent-skills-spec", "status": "pass", "finding_ids": []},
+                            {"profile": "claude-code", "status": "warn", "finding_ids": []},
+                            {"profile": "codex", "status": "warn", "finding_ids": []},
+                            {"profile": "github-copilot", "status": "pass", "finding_ids": []},
+                            {"profile": "vscode-copilot", "status": "pass", "finding_ids": []},
+                            {"profile": "generic", "status": "pass", "finding_ids": []}
+                        ]
+                    },
+                    {
+                        "path": "generic/missing-description/SKILL.md",
+                        "name": "matrix-missing-description",
+                        "profiles": [
+                            {"profile": "agent-skills-spec", "status": "fail", "finding_ids": ["SKILL002"]},
+                            {"profile": "claude-code", "status": "fail", "finding_ids": ["SKILL002"]},
+                            {"profile": "codex", "status": "fail", "finding_ids": ["SKILL002"]},
+                            {"profile": "github-copilot", "status": "fail", "finding_ids": ["SKILL002"]},
+                            {"profile": "vscode-copilot", "status": "fail", "finding_ids": ["SKILL002"]},
+                            {"profile": "generic", "status": "fail", "finding_ids": ["SKILL002"]}
+                        ]
+                    },
+                    {
+                        "path": "generic/unknown-frontmatter/SKILL.md",
+                        "name": "matrix-unknown-frontmatter",
+                        "profiles": [
+                            {"profile": "agent-skills-spec", "status": "warn", "finding_ids": ["SKILL040"]},
+                            {"profile": "claude-code", "status": "warn", "finding_ids": ["SKILL040"]},
+                            {"profile": "codex", "status": "warn", "finding_ids": ["SKILL040"]},
+                            {"profile": "github-copilot", "status": "warn", "finding_ids": ["SKILL040"]},
+                            {"profile": "vscode-copilot", "status": "warn", "finding_ids": ["SKILL040"]},
+                            {"profile": "generic", "status": "warn", "finding_ids": ["SKILL040"]}
+                        ]
+                    }
+                ]
+            }
+        });
+
+        assert_eq!(first_projection, second_projection);
+        assert_eq!(first_projection, expected);
+
+        let rendered = render_json(&matrix).expect("render compatibility matrix JSON");
+        assert!(!json_contains_path(&rendered, &workspace_root()));
+        assert!(!rendered.contains("timestamp"));
+        assert!(!rendered.contains("generated_at"));
+    }
+
     fn representative_corpus_root() -> PathBuf {
         workspace_root().join("fixtures/spec/phase1/representative-corpus")
     }
 
+    fn compatibility_root() -> PathBuf {
+        workspace_root().join("fixtures/compatibility")
+    }
+
     fn phase2_root() -> PathBuf {
         workspace_root().join("fixtures/spec/phase2")
+    }
+
+    fn scan_compatibility_fixture(relative_path: &str, options: ScanOptions) -> ScanReport {
+        scan_path(&compatibility_root().join(relative_path), &options)
+            .unwrap_or_else(|error| panic!("scan compatibility fixture {relative_path}: {error}"))
     }
 
     fn rule_doc_example_scan_options(rule_id: &str) -> ScanOptions {
@@ -288,6 +573,85 @@ mod tests {
         expected.strip_suffix('\n').unwrap_or(expected)
     }
 
+    fn assert_compatibility_profile_projection(
+        report: &ScanReport,
+        path: &str,
+        expected: &[(&str, &str, &[&str])],
+    ) {
+        let expected = expected
+            .iter()
+            .map(|(profile, status, finding_ids)| {
+                (
+                    (*profile).to_owned(),
+                    (*status).to_owned(),
+                    finding_ids
+                        .iter()
+                        .map(|finding_id| (*finding_id).to_owned())
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(compatibility_projection_for_path(report, path), expected);
+    }
+
+    fn compatibility_projection_for_path(
+        report: &ScanReport,
+        path: &str,
+    ) -> Vec<(String, String, Vec<String>)> {
+        report
+            .compatibility
+            .matrix
+            .iter()
+            .find(|row| row.path == path)
+            .unwrap_or_else(|| panic!("missing compatibility row for {path}"))
+            .profiles
+            .iter()
+            .map(|profile| {
+                (
+                    profile.profile.clone(),
+                    profile.status.as_str().to_owned(),
+                    profile.finding_ids.clone(),
+                )
+            })
+            .collect()
+    }
+
+    fn compatibility_snapshot_projection(report: &ScanReport) -> serde_json::Value {
+        serde_json::json!({
+            "summary": {
+                "package_count": report.summary.package_count,
+                "finding_count": report.summary.finding_count,
+                "suppressed_finding_count": report.summary.suppressed_finding_count,
+                "invalid_manifest_count": report.summary.invalid_manifest_count,
+                "broken_reference_count": report.summary.broken_reference_count,
+            },
+            "findings": report.findings.iter().map(|finding| {
+                serde_json::json!({
+                    "path": finding.location.path,
+                    "line": finding.location.line,
+                    "rule_id": finding.rule_id,
+                })
+            }).collect::<Vec<_>>(),
+            "compatibility": {
+                "profiles": report.compatibility.profiles,
+                "matrix": report.compatibility.matrix.iter().map(|row| {
+                    serde_json::json!({
+                        "path": row.path,
+                        "name": row.name,
+                        "profiles": row.profiles.iter().map(|profile| {
+                            serde_json::json!({
+                                "profile": profile.profile,
+                                "status": profile.status.as_str(),
+                                "finding_ids": profile.finding_ids,
+                            })
+                        }).collect::<Vec<_>>(),
+                    })
+                }).collect::<Vec<_>>(),
+            },
+        })
+    }
+
     fn workspace_root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
@@ -310,6 +674,14 @@ mod tests {
             *counts.entry(finding.rule_id.clone()).or_insert(0) += 1;
         }
         counts
+    }
+
+    fn rule_ids(report: &ScanReport) -> Vec<&str> {
+        report
+            .findings
+            .iter()
+            .map(|finding| finding.rule_id.as_str())
+            .collect()
     }
 
     fn category_counts(report: &agent_audit_core::ScanReport) -> BTreeMap<FindingCategory, usize> {
