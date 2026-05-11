@@ -23,6 +23,10 @@ use agent_audit_rules::{
 };
 
 const UTF8_BOM: &str = "\u{feff}";
+const COMPATIBILITY_FAIL_RULES: &[&str] = &["SKILL001", "SKILL002", "SKILL041"];
+const COMPATIBILITY_BASELINE_WARN_RULES: &[&str] = &["SKILL010", "SKILL020", "SKILL030"];
+const COMPATIBILITY_FINDING_RULE: &str = "SKILL050";
+const UNKNOWN_FRONTMATTER_RULE: &str = "SKILL040";
 
 #[derive(Debug, Clone)]
 pub struct ScanOptions {
@@ -244,46 +248,17 @@ fn evaluate_claude_code_profile(
     package: &SkillPackage,
     findings: &[SkillFinding],
 ) -> ProfileCompatibilityResult {
-    const FAIL_RULES: &[&str] = &["SKILL001", "SKILL002", "SKILL041"];
-    const BASELINE_WARN_RULES: &[&str] = &["SKILL010", "SKILL020", "SKILL030"];
-    const COMPATIBILITY_WARN_RULES: &[&str] = &["SKILL050"];
-
-    let mut rule_order = FAIL_RULES
-        .iter()
-        .chain(BASELINE_WARN_RULES)
-        .chain(COMPATIBILITY_WARN_RULES)
-        .copied()
-        .collect::<Vec<_>>();
-    if has_claude_unknown_frontmatter_field(package) {
-        rule_order.push("SKILL040");
-    }
-    rule_order.sort_unstable();
-    rule_order.dedup();
-
-    let finding_ids = compatibility_finding_ids_for_package_matching(
-        &package.manifest_path,
+    evaluate_host_profile(
+        HostProfileEvaluation {
+            profile,
+            compatibility_message_prefix: "Claude Code ",
+            has_unknown_frontmatter_field: has_claude_unknown_frontmatter_field(package),
+            has_matrix_warning: !is_claude_preferred_manifest_path(&package.manifest_path)
+                || has_script_reference_or_artifact(package),
+        },
+        package,
         findings,
-        rule_order.iter(),
-        |finding| finding.rule_id != "SKILL050" || finding.message.starts_with("Claude Code "),
-    );
-    let has_fail = finding_ids
-        .iter()
-        .any(|rule_id| FAIL_RULES.contains(&rule_id.as_str()));
-    let has_matrix_warning = !is_claude_preferred_manifest_path(&package.manifest_path)
-        || has_script_reference_or_artifact(package);
-    let status = if has_fail {
-        CompatibilityStatus::Fail
-    } else if finding_ids.is_empty() && !has_matrix_warning {
-        CompatibilityStatus::Pass
-    } else {
-        CompatibilityStatus::Warn
-    };
-
-    ProfileCompatibilityResult {
-        profile: profile.to_owned(),
-        status,
-        finding_ids,
-    }
+    )
 }
 
 fn evaluate_codex_profile(
@@ -291,47 +266,18 @@ fn evaluate_codex_profile(
     package: &SkillPackage,
     findings: &[SkillFinding],
 ) -> ProfileCompatibilityResult {
-    const FAIL_RULES: &[&str] = &["SKILL001", "SKILL002", "SKILL041"];
-    const BASELINE_WARN_RULES: &[&str] = &["SKILL010", "SKILL020", "SKILL030"];
-    const COMPATIBILITY_WARN_RULES: &[&str] = &["SKILL050"];
-
-    let mut rule_order = FAIL_RULES
-        .iter()
-        .chain(BASELINE_WARN_RULES)
-        .chain(COMPATIBILITY_WARN_RULES)
-        .copied()
-        .collect::<Vec<_>>();
-    if has_codex_unknown_frontmatter_field(package) {
-        rule_order.push("SKILL040");
-    }
-    rule_order.sort_unstable();
-    rule_order.dedup();
-
-    let finding_ids = compatibility_finding_ids_for_package_matching(
-        &package.manifest_path,
+    evaluate_host_profile(
+        HostProfileEvaluation {
+            profile,
+            compatibility_message_prefix: "Codex ",
+            has_unknown_frontmatter_field: has_codex_unknown_frontmatter_field(package),
+            has_matrix_warning: !is_codex_preferred_manifest_path(&package.manifest_path)
+                || has_script_reference_or_artifact(package)
+                || has_permission_metadata(package),
+        },
+        package,
         findings,
-        rule_order.iter(),
-        |finding| finding.rule_id != "SKILL050" || finding.message.starts_with("Codex "),
-    );
-    let has_fail = finding_ids
-        .iter()
-        .any(|rule_id| FAIL_RULES.contains(&rule_id.as_str()));
-    let has_matrix_warning = !is_codex_preferred_manifest_path(&package.manifest_path)
-        || has_script_reference_or_artifact(package)
-        || has_codex_permission_metadata(package);
-    let status = if has_fail {
-        CompatibilityStatus::Fail
-    } else if finding_ids.is_empty() && !has_matrix_warning {
-        CompatibilityStatus::Pass
-    } else {
-        CompatibilityStatus::Warn
-    };
-
-    ProfileCompatibilityResult {
-        profile: profile.to_owned(),
-        status,
-        finding_ids,
-    }
+    )
 }
 
 fn evaluate_github_copilot_profile(
@@ -339,47 +285,18 @@ fn evaluate_github_copilot_profile(
     package: &SkillPackage,
     findings: &[SkillFinding],
 ) -> ProfileCompatibilityResult {
-    const FAIL_RULES: &[&str] = &["SKILL001", "SKILL002", "SKILL041"];
-    const BASELINE_WARN_RULES: &[&str] = &["SKILL010", "SKILL020", "SKILL030"];
-    const COMPATIBILITY_WARN_RULES: &[&str] = &["SKILL050"];
-
-    let mut rule_order = FAIL_RULES
-        .iter()
-        .chain(BASELINE_WARN_RULES)
-        .chain(COMPATIBILITY_WARN_RULES)
-        .copied()
-        .collect::<Vec<_>>();
-    if has_github_copilot_unknown_frontmatter_field(package) {
-        rule_order.push("SKILL040");
-    }
-    rule_order.sort_unstable();
-    rule_order.dedup();
-
-    let finding_ids = compatibility_finding_ids_for_package_matching(
-        &package.manifest_path,
+    evaluate_host_profile(
+        HostProfileEvaluation {
+            profile,
+            compatibility_message_prefix: "GitHub Copilot ",
+            has_unknown_frontmatter_field: has_github_copilot_unknown_frontmatter_field(package),
+            has_matrix_warning: !is_github_copilot_preferred_manifest_path(&package.manifest_path)
+                || has_script_reference_or_artifact(package)
+                || has_permission_metadata(package),
+        },
+        package,
         findings,
-        rule_order.iter(),
-        |finding| finding.rule_id != "SKILL050" || finding.message.starts_with("GitHub Copilot "),
-    );
-    let has_fail = finding_ids
-        .iter()
-        .any(|rule_id| FAIL_RULES.contains(&rule_id.as_str()));
-    let has_matrix_warning = !is_github_copilot_preferred_manifest_path(&package.manifest_path)
-        || has_script_reference_or_artifact(package)
-        || has_github_copilot_unsupported_global_metadata(package);
-    let status = if has_fail {
-        CompatibilityStatus::Fail
-    } else if finding_ids.is_empty() && !has_matrix_warning {
-        CompatibilityStatus::Pass
-    } else {
-        CompatibilityStatus::Warn
-    };
-
-    ProfileCompatibilityResult {
-        profile: profile.to_owned(),
-        status,
-        finding_ids,
-    }
+    )
 }
 
 fn evaluate_vscode_copilot_profile(
@@ -387,41 +304,33 @@ fn evaluate_vscode_copilot_profile(
     package: &SkillPackage,
     findings: &[SkillFinding],
 ) -> ProfileCompatibilityResult {
-    const FAIL_RULES: &[&str] = &["SKILL001", "SKILL002", "SKILL041"];
-    const BASELINE_WARN_RULES: &[&str] = &["SKILL010", "SKILL020", "SKILL030"];
-    const COMPATIBILITY_WARN_RULES: &[&str] = &["SKILL050"];
+    evaluate_host_profile(
+        HostProfileEvaluation {
+            profile,
+            compatibility_message_prefix: "VS Code Copilot ",
+            has_unknown_frontmatter_field: has_vscode_copilot_unknown_frontmatter_field(package),
+            has_matrix_warning: !is_vscode_copilot_preferred_manifest_path(&package.manifest_path)
+                || has_script_reference_or_artifact(package)
+                || has_permission_metadata(package),
+        },
+        package,
+        findings,
+    )
+}
 
-    let mut rule_order = FAIL_RULES
-        .iter()
-        .chain(BASELINE_WARN_RULES)
-        .chain(COMPATIBILITY_WARN_RULES)
-        .copied()
-        .collect::<Vec<_>>();
-    if has_vscode_copilot_unknown_frontmatter_field(package) {
-        rule_order.push("SKILL040");
-    }
-    rule_order.sort_unstable();
-    rule_order.dedup();
+fn evaluate_baseline_structural_profile(
+    profile: &str,
+    package: &SkillPackage,
+    findings: &[SkillFinding],
+) -> ProfileCompatibilityResult {
+    const WARN_RULES: &[&str] = &["SKILL010", "SKILL020", "SKILL030", "SKILL040"];
 
-    let finding_ids = compatibility_finding_ids_for_package_matching(
+    let finding_ids = compatibility_finding_ids_for_package(
         &package.manifest_path,
         findings,
-        rule_order.iter(),
-        |finding| finding.rule_id != "SKILL050" || finding.message.starts_with("VS Code Copilot "),
+        COMPATIBILITY_FAIL_RULES.iter().chain(WARN_RULES),
     );
-    let has_fail = finding_ids
-        .iter()
-        .any(|rule_id| FAIL_RULES.contains(&rule_id.as_str()));
-    let has_matrix_warning = !is_vscode_copilot_preferred_manifest_path(&package.manifest_path)
-        || has_script_reference_or_artifact(package)
-        || has_vscode_copilot_unsupported_global_metadata(package);
-    let status = if has_fail {
-        CompatibilityStatus::Fail
-    } else if finding_ids.is_empty() && !has_matrix_warning {
-        CompatibilityStatus::Pass
-    } else {
-        CompatibilityStatus::Warn
-    };
+    let status = compatibility_status(&finding_ids, false);
 
     ProfileCompatibilityResult {
         profile: profile.to_owned(),
@@ -430,35 +339,69 @@ fn evaluate_vscode_copilot_profile(
     }
 }
 
-fn evaluate_baseline_structural_profile(
-    profile: &str,
+struct HostProfileEvaluation<'a> {
+    profile: &'a str,
+    compatibility_message_prefix: &'a str,
+    has_unknown_frontmatter_field: bool,
+    has_matrix_warning: bool,
+}
+
+fn evaluate_host_profile(
+    evaluation: HostProfileEvaluation<'_>,
     package: &SkillPackage,
     findings: &[SkillFinding],
 ) -> ProfileCompatibilityResult {
-    const FAIL_RULES: &[&str] = &["SKILL001", "SKILL002", "SKILL041"];
-    const WARN_RULES: &[&str] = &["SKILL010", "SKILL020", "SKILL030", "SKILL040"];
-
-    let finding_ids = compatibility_finding_ids_for_package(
+    let rule_order = host_profile_rule_order(evaluation.has_unknown_frontmatter_field);
+    let finding_ids = compatibility_finding_ids_for_package_matching(
         &package.manifest_path,
         findings,
-        FAIL_RULES.iter().chain(WARN_RULES),
+        rule_order.iter(),
+        |finding| {
+            finding.rule_id != COMPATIBILITY_FINDING_RULE
+                || finding
+                    .message
+                    .starts_with(evaluation.compatibility_message_prefix)
+        },
     );
-    let has_fail = finding_ids
+
+    ProfileCompatibilityResult {
+        profile: evaluation.profile.to_owned(),
+        status: compatibility_status(&finding_ids, evaluation.has_matrix_warning),
+        finding_ids,
+    }
+}
+
+fn host_profile_rule_order(include_unknown_frontmatter_rule: bool) -> Vec<&'static str> {
+    let mut rule_order = COMPATIBILITY_FAIL_RULES
         .iter()
-        .any(|rule_id| FAIL_RULES.contains(&rule_id.as_str()));
-    let status = if has_fail {
+        .chain(COMPATIBILITY_BASELINE_WARN_RULES)
+        .copied()
+        .chain([COMPATIBILITY_FINDING_RULE])
+        .collect::<Vec<_>>();
+
+    if include_unknown_frontmatter_rule {
+        rule_order.push(UNKNOWN_FRONTMATTER_RULE);
+    }
+
+    rule_order.sort_unstable();
+    rule_order.dedup();
+    rule_order
+}
+
+fn compatibility_status(finding_ids: &[String], has_matrix_warning: bool) -> CompatibilityStatus {
+    if has_compatibility_failure(finding_ids) {
         CompatibilityStatus::Fail
-    } else if finding_ids.is_empty() {
+    } else if finding_ids.is_empty() && !has_matrix_warning {
         CompatibilityStatus::Pass
     } else {
         CompatibilityStatus::Warn
-    };
-
-    ProfileCompatibilityResult {
-        profile: profile.to_owned(),
-        status,
-        finding_ids,
     }
+}
+
+fn has_compatibility_failure(finding_ids: &[String]) -> bool {
+    finding_ids
+        .iter()
+        .any(|rule_id| COMPATIBILITY_FAIL_RULES.contains(&rule_id.as_str()))
 }
 
 fn compatibility_finding_ids_for_package<'a>(
@@ -556,52 +499,47 @@ fn claude_code_metadata_findings(package: &SkillPackage) -> Vec<SkillFinding> {
 }
 
 fn codex_metadata_findings(package: &SkillPackage) -> Vec<SkillFinding> {
-    let ignored_fields = profile_by_id("codex")
-        .expect("codex profile definition must exist")
-        .known_ignored_fields;
-
-    package
-        .manifest
-        .frontmatter
-        .keys()
-        .filter(|field| {
-            ignored_fields
-                .iter()
-                .any(|ignored_field| ignored_field.name == field.as_str())
-        })
-        .map(|field| {
-            compatibility_finding(
-                "SKILL050",
-                format!(
-                    "Codex is likely to ignore the `{field}` frontmatter field; document Codex tool or permission expectations with portable `tools` metadata or in the Markdown body."
-                ),
-                package.manifest_path.clone(),
-                Some(1),
+    ignored_frontmatter_findings(package, "codex", |field| {
+        format!(
+                "Codex is likely to ignore the `{field}` frontmatter field; document Codex tool or permission expectations with portable `tools` metadata or in the Markdown body."
             )
-        })
-        .collect()
+    })
 }
 
 fn github_copilot_metadata_findings(package: &SkillPackage) -> Vec<SkillFinding> {
-    let ignored_fields = profile_by_id("github-copilot")
-        .expect("github-copilot profile definition must exist")
+    ignored_frontmatter_findings(package, "github-copilot", |field| {
+        format!(
+                "GitHub Copilot is likely to ignore the `{field}` frontmatter field; document GitHub Copilot tool expectations with portable `tools` metadata or in the Markdown body."
+            )
+    })
+}
+
+fn vscode_copilot_metadata_findings(package: &SkillPackage) -> Vec<SkillFinding> {
+    ignored_frontmatter_findings(package, "vscode-copilot", |field| {
+        format!(
+                "VS Code Copilot is likely to ignore the `{field}` frontmatter field; document VS Code Copilot tool expectations with portable `tools` metadata or in the Markdown body."
+            )
+    })
+}
+
+fn ignored_frontmatter_findings(
+    package: &SkillPackage,
+    profile: &str,
+    message_for_field: impl Fn(&str) -> String,
+) -> Vec<SkillFinding> {
+    let ignored_fields = profile_by_id(profile)
+        .unwrap_or_else(|| panic!("{profile} profile definition must exist"))
         .known_ignored_fields;
 
     package
         .manifest
         .frontmatter
         .keys()
-        .filter(|field| {
-            ignored_fields
-                .iter()
-                .any(|ignored_field| ignored_field.name == field.as_str())
-        })
+        .filter(|field| is_ignored_frontmatter_field(ignored_fields, field))
         .map(|field| {
             compatibility_finding(
-                "SKILL050",
-                format!(
-                    "GitHub Copilot is likely to ignore the `{field}` frontmatter field; document GitHub Copilot tool expectations with portable `tools` metadata or in the Markdown body."
-                ),
+                COMPATIBILITY_FINDING_RULE,
+                message_for_field(field),
                 package.manifest_path.clone(),
                 Some(1),
             )
@@ -609,31 +547,13 @@ fn github_copilot_metadata_findings(package: &SkillPackage) -> Vec<SkillFinding>
         .collect()
 }
 
-fn vscode_copilot_metadata_findings(package: &SkillPackage) -> Vec<SkillFinding> {
-    let ignored_fields = profile_by_id("vscode-copilot")
-        .expect("vscode-copilot profile definition must exist")
-        .known_ignored_fields;
-
-    package
-        .manifest
-        .frontmatter
-        .keys()
-        .filter(|field| {
-            ignored_fields
-                .iter()
-                .any(|ignored_field| ignored_field.name == field.as_str())
-        })
-        .map(|field| {
-            compatibility_finding(
-                "SKILL050",
-                format!(
-                    "VS Code Copilot is likely to ignore the `{field}` frontmatter field; document VS Code Copilot tool expectations with portable `tools` metadata or in the Markdown body."
-                ),
-                package.manifest_path.clone(),
-                Some(1),
-            )
-        })
-        .collect()
+fn is_ignored_frontmatter_field(
+    ignored_fields: &[agent_audit_hosts::ManifestField],
+    field: &str,
+) -> bool {
+    ignored_fields
+        .iter()
+        .any(|ignored_field| ignored_field.name == field)
 }
 
 fn compatibility_finding(
@@ -680,45 +600,41 @@ fn has_claude_unknown_frontmatter_field(package: &SkillPackage) -> bool {
 }
 
 fn has_codex_unknown_frontmatter_field(package: &SkillPackage) -> bool {
-    let codex = profile_by_id("codex").expect("codex profile definition must exist");
-
-    package.manifest.frontmatter.keys().any(|field| {
-        !codex
-            .required_fields
-            .iter()
-            .chain(codex.accepted_optional_fields)
-            .chain(codex.known_ignored_fields)
-            .any(|known_field| known_field.name == field.as_str())
-            && field != "permissions"
-    })
+    has_unknown_profile_frontmatter_field(package, "codex", &["permissions"])
 }
 
 fn has_github_copilot_unknown_frontmatter_field(package: &SkillPackage) -> bool {
-    let github_copilot =
-        profile_by_id("github-copilot").expect("github-copilot profile definition must exist");
-
-    package.manifest.frontmatter.keys().any(|field| {
-        !github_copilot
-            .required_fields
-            .iter()
-            .chain(github_copilot.accepted_optional_fields)
-            .chain(github_copilot.known_ignored_fields)
-            .any(|known_field| known_field.name == field.as_str())
-    })
+    has_unknown_profile_frontmatter_field(package, "github-copilot", &[])
 }
 
 fn has_vscode_copilot_unknown_frontmatter_field(package: &SkillPackage) -> bool {
-    let vscode_copilot =
-        profile_by_id("vscode-copilot").expect("vscode-copilot profile definition must exist");
+    has_unknown_profile_frontmatter_field(package, "vscode-copilot", &[])
+}
+
+fn has_unknown_profile_frontmatter_field(
+    package: &SkillPackage,
+    profile: &str,
+    additionally_known_fields: &[&str],
+) -> bool {
+    let profile =
+        profile_by_id(profile).unwrap_or_else(|| panic!("{profile} profile definition must exist"));
 
     package.manifest.frontmatter.keys().any(|field| {
-        !vscode_copilot
-            .required_fields
-            .iter()
-            .chain(vscode_copilot.accepted_optional_fields)
-            .chain(vscode_copilot.known_ignored_fields)
-            .any(|known_field| known_field.name == field.as_str())
+        !is_known_profile_frontmatter_field(profile, field)
+            && !additionally_known_fields.contains(&field.as_str())
     })
+}
+
+fn is_known_profile_frontmatter_field(
+    profile: &agent_audit_hosts::HostProfile,
+    field: &str,
+) -> bool {
+    profile
+        .required_fields
+        .iter()
+        .chain(profile.accepted_optional_fields)
+        .chain(profile.known_ignored_fields)
+        .any(|known_field| known_field.name == field)
 }
 
 fn is_profile_accepted_frontmatter_field(profiles: &[String], field: &str) -> bool {
@@ -730,44 +646,24 @@ fn is_claude_accepted_frontmatter_field(profiles: &[String], field: &str) -> boo
 }
 
 fn is_claude_preferred_manifest_path(path: &str) -> bool {
-    let path = normalize_report_path(path);
-    let Some(skill_path) = path.strip_prefix(".claude/skills/") else {
-        return false;
-    };
-    let Some(skill_name) = skill_path.strip_suffix("/SKILL.md") else {
-        return false;
-    };
-
-    !skill_name.is_empty() && !skill_name.contains('/')
+    is_direct_skill_manifest_under(path, ".claude/skills/")
 }
 
 fn is_codex_preferred_manifest_path(path: &str) -> bool {
-    let path = normalize_report_path(path);
-    let Some(skill_path) = path.strip_prefix(".agents/skills/") else {
-        return false;
-    };
-    let Some(skill_name) = skill_path.strip_suffix("/SKILL.md") else {
-        return false;
-    };
-
-    !skill_name.is_empty() && !skill_name.contains('/')
+    is_direct_skill_manifest_under(path, ".agents/skills/")
 }
 
 fn is_github_copilot_preferred_manifest_path(path: &str) -> bool {
-    let path = normalize_report_path(path);
-    let Some(skill_path) = path.strip_prefix(".github/skills/") else {
-        return false;
-    };
-    let Some(skill_name) = skill_path.strip_suffix("/SKILL.md") else {
-        return false;
-    };
-
-    !skill_name.is_empty() && !skill_name.contains('/')
+    is_direct_skill_manifest_under(path, ".github/skills/")
 }
 
 fn is_vscode_copilot_preferred_manifest_path(path: &str) -> bool {
+    is_direct_skill_manifest_under(path, ".github/skills/")
+}
+
+fn is_direct_skill_manifest_under(path: &str, prefix: &str) -> bool {
     let path = normalize_report_path(path);
-    let Some(skill_path) = path.strip_prefix(".github/skills/") else {
+    let Some(skill_path) = path.strip_prefix(prefix) else {
         return false;
     };
     let Some(skill_name) = skill_path.strip_suffix("/SKILL.md") else {
@@ -777,15 +673,7 @@ fn is_vscode_copilot_preferred_manifest_path(path: &str) -> bool {
     !skill_name.is_empty() && !skill_name.contains('/')
 }
 
-fn has_codex_permission_metadata(package: &SkillPackage) -> bool {
-    package.manifest.frontmatter.contains_key("permissions")
-}
-
-fn has_github_copilot_unsupported_global_metadata(package: &SkillPackage) -> bool {
-    package.manifest.frontmatter.contains_key("permissions")
-}
-
-fn has_vscode_copilot_unsupported_global_metadata(package: &SkillPackage) -> bool {
+fn has_permission_metadata(package: &SkillPackage) -> bool {
     package.manifest.frontmatter.contains_key("permissions")
 }
 

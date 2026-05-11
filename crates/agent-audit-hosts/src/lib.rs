@@ -618,42 +618,11 @@ mod tests {
     #[test]
     fn profile_documentation_fields_are_non_empty() {
         for profile in profiles() {
-            assert_not_blank(profile.id, "id", profile.id);
-            assert_not_blank(profile.id, "display_name", profile.display_name);
-
-            for field in profile.required_fields {
-                assert_manifest_field_documented(profile.id, "required_fields", field);
-            }
-
-            for field in profile.accepted_optional_fields {
-                assert_manifest_field_documented(profile.id, "accepted_optional_fields", field);
-            }
-
-            for field in profile.known_ignored_fields {
-                assert_manifest_field_documented(profile.id, "known_ignored_fields", field);
-            }
-
-            for field in profile.metadata_fields {
-                assert_not_blank(profile.id, "metadata field name", field.field);
-                assert_not_blank(profile.id, "metadata field description", field.description);
-                if let Some(namespace) = field.namespace {
-                    assert_not_blank(profile.id, "metadata field namespace", namespace);
-                }
-            }
-
-            for namespace in profile.metadata_namespaces {
-                assert_not_blank(profile.id, "metadata namespace", namespace);
-            }
-
-            assert_not_blank(
-                profile.id,
-                "manifest size limit description",
-                profile.recommended_manifest_size_limit.description,
-            );
-
-            for note in profile.documentation_notes {
-                assert_not_blank(profile.id, "documentation note", note);
-            }
+            assert_profile_identity_documented(profile);
+            assert_profile_manifest_fields_documented(profile);
+            assert_profile_metadata_documented(profile);
+            assert_profile_limit_documented(profile);
+            assert_profile_documentation_notes_present(profile);
         }
     }
 
@@ -779,6 +748,58 @@ mod tests {
     fn assert_manifest_field_documented(profile_id: &str, category: &str, field: &ManifestField) {
         assert_not_blank(profile_id, category, field.name);
         assert_not_blank(profile_id, category, field.description);
+    }
+
+    fn assert_profile_identity_documented(profile: &HostProfile) {
+        assert_not_blank(profile.id, "id", profile.id);
+        assert_not_blank(profile.id, "display_name", profile.display_name);
+    }
+
+    fn assert_profile_manifest_fields_documented(profile: &HostProfile) {
+        for field in profile.required_fields {
+            assert_manifest_field_documented(profile.id, "required_fields", field);
+        }
+
+        for field in profile.accepted_optional_fields {
+            assert_manifest_field_documented(profile.id, "accepted_optional_fields", field);
+        }
+
+        for field in profile.known_ignored_fields {
+            assert_manifest_field_documented(profile.id, "known_ignored_fields", field);
+        }
+    }
+
+    fn assert_profile_metadata_documented(profile: &HostProfile) {
+        for field in profile.metadata_fields {
+            assert_metadata_field_documented(profile.id, field);
+        }
+
+        for namespace in profile.metadata_namespaces {
+            assert_not_blank(profile.id, "metadata namespace", namespace);
+        }
+    }
+
+    fn assert_metadata_field_documented(profile_id: &str, field: &HostMetadataField) {
+        assert_not_blank(profile_id, "metadata field name", field.field);
+        assert_not_blank(profile_id, "metadata field description", field.description);
+
+        if let Some(namespace) = field.namespace {
+            assert_not_blank(profile_id, "metadata field namespace", namespace);
+        }
+    }
+
+    fn assert_profile_limit_documented(profile: &HostProfile) {
+        assert_not_blank(
+            profile.id,
+            "manifest size limit description",
+            profile.recommended_manifest_size_limit.description,
+        );
+    }
+
+    fn assert_profile_documentation_notes_present(profile: &HostProfile) {
+        for note in profile.documentation_notes {
+            assert_not_blank(profile.id, "documentation note", note);
+        }
     }
 
     fn assert_capability_expectation_documented(
