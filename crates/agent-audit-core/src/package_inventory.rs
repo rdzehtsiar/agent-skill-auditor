@@ -961,7 +961,6 @@ mod tests {
             "pnpm-lock.yaml",
             "Cargo.lock",
             "Poetry.lock",
-            "poetry.lock",
             "Pipfile.lock",
             "uv.lock",
             "requirements.txt",
