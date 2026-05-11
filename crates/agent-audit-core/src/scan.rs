@@ -3919,6 +3919,117 @@ Read [parent](../outside.md), [absolute](/outside.md), and [windows](C:/outside.
     }
 
     #[test]
+    fn scan_security_fixture_corpus_emits_active_sec_findings_by_default() {
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("fixtures/security");
+        let report = scan_path(&fixture_root, &ScanOptions::default())
+            .expect("scan security fixture corpus");
+
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.category == FindingCategory::Security
+                    && finding.rule_id.starts_with("SEC")),
+            "security corpus emitted no active SEC findings: {:#?}",
+            report.findings
+        );
+        assert!(report
+            .findings
+            .iter()
+            .any(|finding| finding.rule_id == "SEC009"));
+        assert!(report
+            .findings
+            .iter()
+            .any(|finding| finding.rule_id == "SEC011"));
+        assert!(report
+            .findings
+            .iter()
+            .any(|finding| finding.rule_id == "SEC012"));
+    }
+
+    #[test]
+    fn scan_security_analysis_does_not_execute_artifact_scripts() {
+        let workspace = TestWorkspace::new("scan-security-static-only");
+        workspace.write_file("SKILL.md", security_package_install_skill());
+        workspace.write_file(
+            "scripts/install.sh",
+            "# SPDX-License-Identifier: Apache-2.0\n\nnpm install left-pad\ntouch executed-marker\n",
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_security_finding(&report, "SEC009", "scripts/install.sh", Some(3));
+        assert!(!workspace.root().join("executed-marker").exists());
+    }
+
+    #[test]
+    fn scan_unsuppressed_security_findings_trigger_fail_on_by_severity() {
+        let workspace = TestWorkspace::new("scan-security-fail-on");
+        workspace.write_file("SKILL.md", security_package_install_skill());
+        workspace.write_file(
+            "scripts/install.sh",
+            "# SPDX-License-Identifier: Apache-2.0\n\nnpm install left-pad\n",
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_security_finding(&report, "SEC009", "scripts/install.sh", Some(3));
+        assert!(crate::fail::report_matches_fail_on(
+            &report,
+            &[Severity::Low]
+        ));
+        assert!(!crate::fail::report_matches_fail_on(
+            &report,
+            &[Severity::Medium]
+        ));
+    }
+
+    #[test]
+    fn scan_security_findings_can_be_suppressed_by_exact_rule_and_path() {
+        let workspace = TestWorkspace::new("scan-security-suppression");
+        workspace.write_file("SKILL.md", security_package_install_skill());
+        workspace.write_file(
+            "scripts/install.sh",
+            "# SPDX-License-Identifier: Apache-2.0\n\nnpm install left-pad\n",
+        );
+        let config = parse_audit_config(
+            r#"
+ignore:
+  - rule: SEC009
+    path: scripts/install.sh
+    reason: Package install command is reviewed in this fixture.
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(report.summary.finding_count, 0);
+        assert_eq!(report.summary.suppressed_finding_count, 1);
+        assert_eq!(
+            suppressed_finding_projection(&report.suppressed_findings),
+            vec![("scripts/install.sh", "SEC009")]
+        );
+        assert_eq!(
+            report.suppressed_findings[0].finding.category,
+            FindingCategory::Security
+        );
+        assert!(!crate::fail::report_matches_fail_on(
+            &report,
+            &[Severity::Low]
+        ));
+    }
+
+    #[test]
     fn reports_skill001_missing_name_with_complete_finding_metadata() {
         let workspace = TestWorkspace::new("scan-skill001");
         workspace.write_file(
@@ -6194,6 +6305,18 @@ Read [guidance](references/guidance.md).
 
     fn string_vec(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_owned()).collect()
+    }
+
+    fn security_package_install_skill() -> &'static str {
+        r#"---
+name: security-package-install
+description: Security package install fixture.
+---
+
+# Security Package Install
+
+Run scripts/install.sh during setup.
+"#
     }
 
     fn report_json_value(report: &ScanReport) -> (String, serde_json::Value) {

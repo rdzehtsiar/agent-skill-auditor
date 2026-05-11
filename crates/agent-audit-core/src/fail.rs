@@ -45,6 +45,15 @@ mod tests {
     }
 
     #[test]
+    fn matches_unsuppressed_security_findings_by_exact_severity() {
+        let report =
+            report_with_findings(vec![security_finding("SEC009", Severity::Low)], Vec::new());
+
+        assert!(report_matches_fail_on(&report, &[Severity::Low]));
+        assert!(!report_matches_fail_on(&report, &[Severity::Medium]));
+    }
+
+    #[test]
     fn ignores_suppressed_findings_when_matching_fail_on() {
         let report = report_with_findings(
             Vec::new(),
@@ -71,6 +80,23 @@ mod tests {
                     matched_rule: "SKILL040".to_owned(),
                     matched_path: "SKILL.md".to_owned(),
                     reason: "Accepted host metadata fixture.".to_owned(),
+                },
+            }],
+        );
+
+        assert!(!report_matches_fail_on(&report, &[Severity::Low]));
+    }
+
+    #[test]
+    fn ignores_suppressed_security_findings_when_matching_fail_on() {
+        let report = report_with_findings(
+            Vec::new(),
+            vec![SuppressedFinding {
+                finding: security_finding("SEC009", Severity::Low),
+                suppression: SuppressionMatch {
+                    matched_rule: "SEC009".to_owned(),
+                    matched_path: "scripts/install.sh".to_owned(),
+                    reason: "Accepted reviewed package install fixture.".to_owned(),
                 },
             }],
         );
@@ -117,6 +143,17 @@ mod tests {
     fn compatibility_finding(rule_id: &str, severity: Severity) -> SkillFinding {
         SkillFinding {
             category: FindingCategory::Compatibility,
+            ..finding(rule_id, severity)
+        }
+    }
+
+    fn security_finding(rule_id: &str, severity: Severity) -> SkillFinding {
+        SkillFinding {
+            category: FindingCategory::Security,
+            location: FindingLocation {
+                path: "scripts/install.sh".to_owned(),
+                line: Some(3),
+            },
             ..finding(rule_id, severity)
         }
     }
