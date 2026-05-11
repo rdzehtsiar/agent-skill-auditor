@@ -22,7 +22,7 @@ The scanner does not execute skill scripts, install packages, call remote regist
 
 The workspace keeps responsibilities separated:
 
-- `agent-audit-cli` owns command-line parsing, explicit config loading, CLI override behavior, report rendering selection, and `fail_on` exit behavior.
+- `agent-audit-cli` owns command-line parsing, explicit config loading, CLI override behavior, report rendering selection, output file writing, `fail_on` exit behavior, and opening written HTML reports when requested.
 - `agent-audit-core` owns filesystem discovery, manifest parsing, artifact inventory, config validation, supply-chain inventory collection, security signal orchestration, suppression application, compatibility matrix construction, and the public `ScanReport` model.
 - `agent-audit-rules` owns rule metadata, active/reserved rule status, deterministic rule evaluation, and generated rule documentation inputs.
 - `agent-audit-hosts` owns host profile definitions and compatibility assumptions.
@@ -51,7 +51,7 @@ Rendering lives in `agent-audit-report`:
 - JSON serializes the full `supply_chain` inventory from `ScanReport`.
 - Summary output renders compact supply-chain counts and offline readiness status.
 - SARIF renders supply-chain findings as normal rule results.
-- HTML renders findings and report context without introducing remote dependencies.
+- HTML renders a self-contained offline report without hosted assets. It is responsible for the executive summary, risk distribution, host support, top risky skills, broken references, external URLs, secret usage, offline readiness, package inventory, findings, and per-skill detail sections. External URLs are rendered as text and are not fetched or embedded.
 
 ## Trust Manifest Boundary
 
@@ -73,6 +73,8 @@ compatibility
 ```
 
 The JSON schema in `docs/report.schema.json` documents the supply-chain inventory shape. SARIF intentionally carries supply-chain findings as normal rule results rather than embedding the full inventory.
+
+The CLI chooses the requested format, writes `--output PATH` when provided, and owns the `--open` workflow. Opening is only valid for explicit HTML output files and happens after rendering and after `fail_on` checks pass.
 
 ## Security Risk Model
 

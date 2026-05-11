@@ -16,7 +16,7 @@ It is not a generic Markdown or YAML linter. It is intended for maintainers, sec
 
 Agent Skill Auditor currently provides a local CLI scanner for skill packages.
 
-The implemented CLI can discover `SKILL.md` manifests, parse frontmatter and Markdown content, extract normalized package metadata, evaluate metadata-backed deterministic rules, evaluate local host compatibility profiles, inventory local supply-chain evidence, load explicit audit config, apply documented suppressions, and render summary, JSON, SARIF, and HTML reports. It runs offline and does not execute skill scripts.
+The v0.6.0 CLI can discover `SKILL.md` manifests, parse frontmatter and Markdown content, extract normalized package metadata, evaluate metadata-backed deterministic rules, evaluate local host compatibility profiles, inventory local supply-chain evidence, load explicit audit config, apply documented suppressions, and render summary, JSON, SARIF, and self-contained offline HTML reports. It runs offline and does not execute skill scripts.
 
 The v0.5.0 supply-chain capability reports local evidence for licenses, trust manifests, external URLs, remote dependencies, package manager files, lockfiles, executable and binary artifacts, checksums, observed permissions, and offline readiness. It does not contact repositories or registries, verify repository ownership, or prove that a remote source is trustworthy.
 
@@ -40,12 +40,14 @@ cargo run -q -p agent-audit-cli -- scan fixtures/spec/basic
 ## CLI Usage
 
 ```text
-agent-audit scan [PATH] [--format FORMAT] [--config PATH] [--fail-on SEVERITY] [--profile PROFILE] [--supply-chain] [--strict-supply-chain]
+agent-audit scan [PATH] [--format FORMAT] [--output PATH] [--open] [--config PATH] [--fail-on SEVERITY] [--profile PROFILE] [--supply-chain] [--strict-supply-chain]
 ```
 
 - `PATH` defaults to `.`.
 - `--format` defaults to `summary`.
 - Supported formats are `summary`, `json`, `sarif`, and `html`.
+- `--output PATH` writes the selected report format to a file instead of standard output.
+- `--open` opens an HTML report after it is written. It applies only with `--format html --output PATH`, and only after `fail_on` checks pass.
 - `--config PATH` explicitly reads and validates a YAML audit config before scanning.
 - `--fail-on SEVERITY` fails after rendering the report when any unsuppressed finding exactly matches that severity. Repeat it to match more than one severity.
 - Supported severities are `info`, `low`, `medium`, `high`, and `critical`.
@@ -64,6 +66,8 @@ agent-audit scan fixtures/compatibility/host/mixed-profile-metadata --profile co
 agent-audit scan fixtures/spec/basic --format json
 agent-audit scan fixtures/spec/basic --format sarif
 agent-audit scan fixtures/spec/basic --format html
+agent-audit scan fixtures/spec/basic --format html --output report.html
+agent-audit scan fixtures/spec/basic --format html --output report.html --open
 agent-audit scan fixtures/supply-chain/trust-manifest-valid --format json
 agent-audit scan fixtures/spec/basic --strict-supply-chain
 agent-audit scan fixtures/spec/basic --config .agent-audit.yaml
@@ -180,10 +184,13 @@ HTML output is intended for self-contained human-readable reports:
 
 ```bash
 cargo run -q -p agent-audit-cli -- scan fixtures/compatibility/host/mixed-profile-metadata --profile codex --format html
-cargo run -q -p agent-audit-cli -- scan fixtures/compatibility/host/mixed-profile-metadata --profile codex --format html > report.html
+cargo run -q -p agent-audit-cli -- scan fixtures/compatibility/host/mixed-profile-metadata --profile codex --format html --output report.html
+cargo run -q -p agent-audit-cli -- scan fixtures/compatibility/host/mixed-profile-metadata --profile codex --format html --output report.html --open
 ```
 
-SARIF stores compatibility matrix data under run properties and adds profile context to compatibility findings. HTML renders a matrix and per-skill compatibility detail alongside the normal finding table.
+SARIF stores compatibility matrix data under run properties and adds profile context to compatibility findings. HTML reports are single files that use no hosted assets and can be reviewed offline. External URLs are rendered as text for review rather than fetched or embedded.
+
+The HTML report renders an executive summary, risk distribution, host support, top risky skills, broken references, external URLs, secret usage, offline readiness, packages, findings, and per-skill detail sections. `--open` is limited to explicit HTML file output: the CLI writes the report first, evaluates `fail_on`, and opens the file only when the scan result passes.
 
 ## Current Checks
 
@@ -277,7 +284,7 @@ Matrix cells use `pass`, `warn`, `fail`, or `unknown`. Compatibility findings ex
 | Deterministic structural rule engine | Implemented for initial `SKILL001` through `SKILL041` rules. |
 | JSON output | Implemented. |
 | Terminal summary | Implemented. |
-| SARIF and HTML output | Implemented initial report formats. |
+| SARIF and HTML output | Implemented, including v0.6.0 self-contained offline HTML reports. |
 | Fixture and snapshot-style tests | Implemented for current scanner and report behavior. |
 | Host compatibility profiles | Implemented initial offline matrix. |
 | Static script security analyzers | Implemented initial offline checks for selected script and artifact risks. |

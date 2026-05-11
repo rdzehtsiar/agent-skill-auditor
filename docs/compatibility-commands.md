@@ -103,8 +103,9 @@ host-fit reasons without a finding ID in the current matrix.
 ## SARIF And HTML Rendering
 
 ```bash
-cargo run -q -p agent-audit-cli -- scan fixtures/compatibility/host/mixed-profile-metadata --profile codex --format sarif
-cargo run -q -p agent-audit-cli -- scan fixtures/compatibility/host/mixed-profile-metadata --profile codex --format html
+cargo run -q -p agent-audit-cli -- scan fixtures/compatibility/host/mixed-profile-metadata --profile codex --format sarif --output report.sarif
+cargo run -q -p agent-audit-cli -- scan fixtures/compatibility/host/mixed-profile-metadata --profile codex --format html --output report.html
+cargo run -q -p agent-audit-cli -- scan fixtures/compatibility/host/mixed-profile-metadata --profile codex --format html --output report.html --open
 ```
 
 Expected behavior:
@@ -112,10 +113,18 @@ Expected behavior:
 - SARIF stores compatibility matrix data under run properties.
 - SARIF emits active compatibility findings as normal results with rule
   descriptors and report-relative artifact URIs.
+- `--output` writes SARIF or HTML to the requested path instead of standard
+  output.
 - Compatibility findings that map to selected profile cells include profile
   context in result properties.
-- HTML renders the summary, package table, compatibility matrix,
-  compatibility detail table, and active finding table.
+- HTML renders a self-contained offline report with no hosted assets. It
+  includes the executive summary, risk distribution, host support, top risky
+  skills, broken references, external URLs, secret usage, offline readiness,
+  packages, findings, and per-skill detail sections.
+- External URLs in HTML are rendered as text for review; the report does not
+  fetch or embed remote content.
+- `--open` applies only to `--format html --output PATH`. The CLI opens the
+  file only after the report is written and `fail_on` checks pass.
 
 ## Fail-On And Suppression Behavior
 
@@ -143,4 +152,3 @@ Expected behavior:
 - Applies the exact-path suppression before fail-on matching.
 - Reports zero active findings, one suppressed finding, and exits zero.
 - Still renders compatibility profile totals for the scanned package.
-
