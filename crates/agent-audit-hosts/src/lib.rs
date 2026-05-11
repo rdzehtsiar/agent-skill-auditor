@@ -11,8 +11,46 @@ pub const HOST_PROFILES: &[&str] = &[
     "generic",
 ];
 
+macro_rules! host_profile {
+    (
+        $id:expr,
+        $display_name:expr,
+        $required_fields:expr,
+        $accepted_optional_fields:expr,
+        $known_ignored_fields:expr,
+        $metadata_fields:expr,
+        $metadata_namespaces:expr,
+        $path_conventions:expr,
+        $recommended_manifest_size_limit:expr,
+        $tool_expectation:expr,
+        $script_support:expr,
+        $artifact_support:expr,
+        $known_incompatibilities:expr,
+        $warnings:expr,
+        $documentation_notes:expr $(,)?
+    ) => {
+        host_profile(HostProfileDefinition {
+            id: $id,
+            display_name: $display_name,
+            required_fields: $required_fields,
+            accepted_optional_fields: $accepted_optional_fields,
+            known_ignored_fields: $known_ignored_fields,
+            metadata_fields: $metadata_fields,
+            metadata_namespaces: $metadata_namespaces,
+            path_conventions: $path_conventions,
+            recommended_manifest_size_limit: $recommended_manifest_size_limit,
+            tool_expectation: $tool_expectation,
+            script_support: $script_support,
+            artifact_support: $artifact_support,
+            known_incompatibilities: $known_incompatibilities,
+            warnings: $warnings,
+            documentation_notes: $documentation_notes,
+        })
+    };
+}
+
 pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
-    host_profile(
+    host_profile!(
         "agent-skills-spec",
         "Agent Skills Specification",
         &[
@@ -80,7 +118,7 @@ pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
         )],
         &["Use this profile as the portable baseline for deterministic skill package checks."],
     ),
-    host_profile(
+    host_profile!(
         "claude-code",
         "Claude Code",
         &[manifest_field("name", "Skill name used to identify the package.")],
@@ -142,7 +180,7 @@ pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
         )],
         &["Model this profile around Claude Code skill packaging and permission metadata."],
     ),
-    host_profile(
+    host_profile!(
         "codex",
         "Codex",
         &[manifest_field(
@@ -207,7 +245,7 @@ pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
         )],
         &["Use this profile for Codex-compatible offline skill package review."],
     ),
-    host_profile(
+    host_profile!(
         "github-copilot",
         "GitHub Copilot",
         &[manifest_field("name", "Skill or instruction package name.")],
@@ -268,7 +306,7 @@ pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
         )],
         &["Use this profile for GitHub-hosted skill package compatibility notes."],
     ),
-    host_profile(
+    host_profile!(
         "vscode-copilot",
         "VS Code Copilot",
         &[manifest_field("name", "Skill or instruction package name.")],
@@ -320,7 +358,7 @@ pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
         )],
         &["Use this profile for editor-oriented Copilot compatibility checks."],
     ),
-    host_profile(
+    host_profile!(
         "generic",
         "Generic Agent",
         &[manifest_field("name", "Portable skill name.")],
@@ -377,7 +415,7 @@ pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
     ),
 ];
 
-const fn host_profile(
+struct HostProfileDefinition {
     id: &'static str,
     display_name: &'static str,
     required_fields: &'static [ManifestField],
@@ -393,23 +431,25 @@ const fn host_profile(
     known_incompatibilities: &'static [ProfileNotice],
     warnings: &'static [ProfileNotice],
     documentation_notes: &'static [&'static str],
-) -> HostProfile {
+}
+
+const fn host_profile(definition: HostProfileDefinition) -> HostProfile {
     HostProfile {
-        id,
-        display_name,
-        required_fields,
-        accepted_optional_fields,
-        known_ignored_fields,
-        metadata_fields,
-        metadata_namespaces,
-        path_conventions,
-        recommended_manifest_size_limit,
-        tool_expectation,
-        script_support,
-        artifact_support,
-        known_incompatibilities,
-        warnings,
-        documentation_notes,
+        id: definition.id,
+        display_name: definition.display_name,
+        required_fields: definition.required_fields,
+        accepted_optional_fields: definition.accepted_optional_fields,
+        known_ignored_fields: definition.known_ignored_fields,
+        metadata_fields: definition.metadata_fields,
+        metadata_namespaces: definition.metadata_namespaces,
+        path_conventions: definition.path_conventions,
+        recommended_manifest_size_limit: definition.recommended_manifest_size_limit,
+        tool_expectation: definition.tool_expectation,
+        script_support: definition.script_support,
+        artifact_support: definition.artifact_support,
+        known_incompatibilities: definition.known_incompatibilities,
+        warnings: definition.warnings,
+        documentation_notes: definition.documentation_notes,
     }
 }
 
