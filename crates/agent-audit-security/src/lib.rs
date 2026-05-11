@@ -2290,62 +2290,75 @@ fn analyze_shell_security_text(path: &str, text: &str) -> Vec<SecuritySignal> {
     let mut signals = Vec::new();
 
     for (line_index, line) in text.lines().enumerate() {
-        let line_number = line_index + 1;
-        let uncommented = shell_uncommented_prefix(line);
-        let code = mask_shell_quoted_content(uncommented);
-        if code.trim().is_empty() {
-            continue;
-        }
-
-        let tokens = shell_tokens(&code);
-        let evidence = shell_evidence(line);
-
-        signals.extend(detect_external_urls(
-            path,
-            line_number,
-            uncommented,
-            &code,
-            &evidence,
-        ));
-        signals.extend(detect_shell_secret_env_reads(
-            path,
-            line_number,
-            uncommented,
-            &evidence,
-        ));
-        if let Some(signal) =
-            detect_remote_shell_execution(path, line_number, line, uncommented, &code)
-        {
-            signals.push(signal);
-        }
-        if let Some(signal) = detect_package_installation(path, line_number, line, &code, &tokens) {
-            signals.push(signal);
-        }
-        if let Some(signal) = detect_privilege_escalation(path, line_number, line, &code, &tokens) {
-            signals.push(signal);
-        }
-        if let Some(signal) = detect_destructive_command(path, line_number, line, &code, &tokens) {
-            signals.push(signal);
-        }
-        if let Some(signal) =
-            detect_git_history_modification(path, line_number, line, &code, &tokens)
-        {
-            signals.push(signal);
-        }
-        if let Some(signal) = detect_obfuscated_command(path, line_number, line, &code, &tokens) {
-            signals.push(signal);
-        }
-        signals.extend(detect_file_writes(path, line_number, line, &code, &tokens));
-        if let Some(signal) =
-            detect_executable_download(path, line_number, line, uncommented, &code, &tokens)
-        {
-            signals.push(signal);
-        }
+        signals.extend(analyze_shell_security_line(path, line_index + 1, line));
     }
 
     signals.sort();
     signals.dedup();
     signals
+}
+
+fn analyze_shell_security_line(path: &str, line_number: usize, line: &str) -> Vec<SecuritySignal> {
+    let uncommented = shell_uncommented_prefix(line);
+    let code = mask_shell_quoted_content(uncommented);
+    if code.trim().is_empty() {
+        return Vec::new();
+    }
+
+    let tokens = shell_tokens(&code);
+    let evidence = shell_evidence(line);
+    let mut signals = Vec::new();
+
+    signals.extend(detect_external_urls(
+        path,
+        line_number,
+        uncommented,
+        &code,
+        &evidence,
+    ));
+    signals.extend(detect_shell_secret_env_reads(
+        path,
+        line_number,
+        uncommented,
+        &evidence,
+    ));
+    push_optional_signal(
+        &mut signals,
+        detect_remote_shell_execution(path, line_number, line, uncommented, &code),
+    );
+    push_optional_signal(
+        &mut signals,
+        detect_package_installation(path, line_number, line, &code, &tokens),
+    );
+    push_optional_signal(
+        &mut signals,
+        detect_privilege_escalation(path, line_number, line, &code, &tokens),
+    );
+    push_optional_signal(
+        &mut signals,
+        detect_destructive_command(path, line_number, line, &code, &tokens),
+    );
+    push_optional_signal(
+        &mut signals,
+        detect_git_history_modification(path, line_number, line, &code, &tokens),
+    );
+    push_optional_signal(
+        &mut signals,
+        detect_obfuscated_command(path, line_number, line, &code, &tokens),
+    );
+    signals.extend(detect_file_writes(path, line_number, line, &code, &tokens));
+    push_optional_signal(
+        &mut signals,
+        detect_executable_download(path, line_number, line, uncommented, &code, &tokens),
+    );
+
+    signals
+}
+
+fn push_optional_signal(signals: &mut Vec<SecuritySignal>, signal: Option<SecuritySignal>) {
+    if let Some(signal) = signal {
+        signals.push(signal);
+    }
 }
 
 fn analyze_python_security_text(path: &str, text: &str) -> Vec<SecuritySignal> {
