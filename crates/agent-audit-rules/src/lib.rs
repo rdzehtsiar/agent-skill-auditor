@@ -1293,174 +1293,266 @@ pub fn evaluate_supply_chain_rules(facts: &RuleSupplyChainFacts) -> Vec<Evaluate
     let mut findings = BTreeMap::new();
 
     for package in &facts.packages {
-        let scope = SupplyPackageScope::new(package, &facts.packages);
-        if facts.policy.require_repository_license && !has_repository_license(facts) {
-            findings.insert(
-                supply_dedup_key(RuleId::Supply001, &package.manifest_path, None, ""),
-                missing_repository_license_finding(package),
-            );
-        }
-        if facts.policy.require_skill_license && !has_skill_license(facts, &scope) {
-            findings.insert(
-                supply_dedup_key(RuleId::Supply002, &package.manifest_path, None, "missing"),
-                missing_skill_license_finding(package),
-            );
-        }
-        if facts.policy.require_trust_manifest && !has_trust_manifest(facts, &scope) {
-            findings.insert(
-                supply_dedup_key(RuleId::Supply011, &package.manifest_path, None, ""),
-                missing_trust_manifest_finding(package),
-            );
-        }
-        for license in facts
-            .licenses
-            .iter()
-            .filter(|license| scope.contains(&license.path))
-            .filter(|license| license.scope == RuleSupplyChainLicenseScope::Skill)
-            .filter(|license| license.normalized == "unknown")
-        {
-            findings.insert(
-                supply_dedup_key(
-                    RuleId::Supply002,
-                    &license.path,
-                    license.line,
-                    &license.normalized,
-                ),
-                unknown_skill_license_finding(license),
-            );
-        }
-        for manager in facts
-            .package_managers
-            .iter()
-            .filter(|manager| scope.contains(&manager.path))
-            .filter(|manager| manager.source == RuleSupplyChainSourceKind::Script)
-            .filter(|manager| !has_matching_lockfile(facts, &scope, manager.manager))
-        {
-            findings.insert(
-                supply_dedup_key(RuleId::Supply003, &manager.path, manager.line, ""),
-                install_without_lockfile_supply_finding(manager),
-            );
-        }
-        for dependency in facts
-            .remote_dependencies
-            .iter()
-            .filter(|dependency| scope.contains(&dependency.path))
-        {
-            if dependency.kind == RuleSupplyChainRemoteDependencyKind::Package
-                && dependency.pinned == Some(false)
-            {
-                findings.insert(
-                    supply_dedup_key(
-                        RuleId::Supply004,
-                        &dependency.path,
-                        dependency.line,
-                        &dependency.normalized,
-                    ),
-                    unpinned_package_dependency_finding(dependency),
-                );
-            } else if matches!(
-                dependency.kind,
-                RuleSupplyChainRemoteDependencyKind::Script
-                    | RuleSupplyChainRemoteDependencyKind::Artifact
-            ) && dependency.pinned == Some(false)
-                && !is_downloaded_executable_without_checksum(facts, &scope, dependency)
-            {
-                findings.insert(
-                    supply_dedup_key(
-                        RuleId::Supply005,
-                        &dependency.path,
-                        dependency.line,
-                        &dependency.normalized,
-                    ),
-                    unpinned_remote_dependency_finding(dependency),
-                );
-            }
-            if is_downloaded_executable_without_checksum(facts, &scope, dependency) {
-                findings.insert(
-                    supply_dedup_key(
-                        RuleId::Supply006,
-                        &dependency.path,
-                        dependency.line,
-                        &dependency.normalized,
-                    ),
-                    downloaded_executable_without_checksum_finding(dependency),
-                );
-            }
-        }
-        for url in facts
-            .external_urls
-            .iter()
-            .filter(|url| scope.contains(&url.path))
-            .filter(|url| url.pinned == Some(false))
-            .filter(|url| {
-                matches!(
-                    url.kind,
-                    RuleSupplyChainUrlKind::GithubRaw
-                        | RuleSupplyChainUrlKind::RemoteScript
-                        | RuleSupplyChainUrlKind::DownloadedArtifact
-                )
-            })
-            .filter(|url| !has_matching_remote_dependency_for_url(facts, &scope, url))
-        {
-            findings.insert(
-                supply_dedup_key(RuleId::Supply005, &url.path, url.line, &url.normalized),
-                unpinned_external_url_finding(url),
-            );
-        }
-        for binary in facts
-            .binaries
-            .iter()
-            .filter(|binary| scope.contains(&binary.path))
-            .filter(|binary| binary.kind == RuleSupplyChainBinaryKind::Executable)
-            .filter(|binary| !has_binary_provenance(facts, &scope, binary))
-        {
-            findings.insert(
-                supply_dedup_key(RuleId::Supply007, &binary.path, binary.line, ""),
-                binary_without_provenance_finding(binary),
-            );
-        }
-        if declares_network_false(facts, &scope) {
-            for permission in facts
-                .permissions
-                .iter()
-                .filter(|permission| scope.contains(&permission.path))
-                .filter(|permission| permission.kind == RuleSupplyChainPermissionKind::Network)
-                .filter(|permission| {
-                    permission.evidence == RuleSupplyChainPermissionEvidenceKind::Observed
-                })
-            {
-                findings.insert(
-                    supply_dedup_key(
-                        RuleId::Supply009,
-                        &permission.path,
-                        permission.line,
-                        &permission.normalized,
-                    ),
-                    permission_conflict_finding(permission),
-                );
-            }
-        }
-        for diagnostic in facts
-            .trust_manifests
-            .iter()
-            .filter(|manifest| scope.contains(&manifest.path))
-            .flat_map(|manifest| manifest.diagnostics.iter())
-        {
-            findings.insert(
-                supply_dedup_key(
-                    RuleId::Supply012,
-                    &diagnostic.path,
-                    diagnostic.line,
-                    &diagnostic.message,
-                ),
-                trust_manifest_diagnostic_finding(diagnostic),
-            );
-        }
+        evaluate_supply_chain_package_rules(facts, package, &mut findings);
     }
 
     let mut findings = findings.into_values().collect::<Vec<_>>();
     sort_evaluated_findings(&mut findings);
     findings
+}
+
+fn evaluate_supply_chain_package_rules(
+    facts: &RuleSupplyChainFacts,
+    package: &RuleSupplyChainPackageFact,
+    findings: &mut BTreeMap<SupplyFindingKey, EvaluatedRuleFinding>,
+) {
+    let scope = SupplyPackageScope::new(package, &facts.packages);
+
+    add_missing_supply_metadata_findings(facts, package, &scope, findings);
+    add_unknown_skill_license_findings(facts, &scope, findings);
+    add_install_without_lockfile_findings(facts, &scope, findings);
+    add_remote_dependency_findings(facts, &scope, findings);
+    add_unpinned_external_url_findings(facts, &scope, findings);
+    add_binary_provenance_findings(facts, &scope, findings);
+    add_permission_conflict_findings(facts, &scope, findings);
+    add_trust_manifest_diagnostic_findings(facts, &scope, findings);
+}
+
+fn add_missing_supply_metadata_findings(
+    facts: &RuleSupplyChainFacts,
+    package: &RuleSupplyChainPackageFact,
+    scope: &SupplyPackageScope<'_>,
+    findings: &mut BTreeMap<SupplyFindingKey, EvaluatedRuleFinding>,
+) {
+    if facts.policy.require_repository_license && !has_repository_license(facts) {
+        findings.insert(
+            supply_dedup_key(RuleId::Supply001, &package.manifest_path, None, ""),
+            missing_repository_license_finding(package),
+        );
+    }
+    if facts.policy.require_skill_license && !has_skill_license(facts, scope) {
+        findings.insert(
+            supply_dedup_key(RuleId::Supply002, &package.manifest_path, None, "missing"),
+            missing_skill_license_finding(package),
+        );
+    }
+    if facts.policy.require_trust_manifest && !has_trust_manifest(facts, scope) {
+        findings.insert(
+            supply_dedup_key(RuleId::Supply011, &package.manifest_path, None, ""),
+            missing_trust_manifest_finding(package),
+        );
+    }
+}
+
+fn add_unknown_skill_license_findings(
+    facts: &RuleSupplyChainFacts,
+    scope: &SupplyPackageScope<'_>,
+    findings: &mut BTreeMap<SupplyFindingKey, EvaluatedRuleFinding>,
+) {
+    for license in facts
+        .licenses
+        .iter()
+        .filter(|license| scope.contains(&license.path))
+        .filter(|license| license.scope == RuleSupplyChainLicenseScope::Skill)
+        .filter(|license| license.normalized == "unknown")
+    {
+        findings.insert(
+            supply_dedup_key(
+                RuleId::Supply002,
+                &license.path,
+                license.line,
+                &license.normalized,
+            ),
+            unknown_skill_license_finding(license),
+        );
+    }
+}
+
+fn add_install_without_lockfile_findings(
+    facts: &RuleSupplyChainFacts,
+    scope: &SupplyPackageScope<'_>,
+    findings: &mut BTreeMap<SupplyFindingKey, EvaluatedRuleFinding>,
+) {
+    for manager in facts
+        .package_managers
+        .iter()
+        .filter(|manager| scope.contains(&manager.path))
+        .filter(|manager| manager.source == RuleSupplyChainSourceKind::Script)
+        .filter(|manager| !has_matching_lockfile(facts, scope, manager.manager))
+    {
+        findings.insert(
+            supply_dedup_key(RuleId::Supply003, &manager.path, manager.line, ""),
+            install_without_lockfile_supply_finding(manager),
+        );
+    }
+}
+
+fn add_remote_dependency_findings(
+    facts: &RuleSupplyChainFacts,
+    scope: &SupplyPackageScope<'_>,
+    findings: &mut BTreeMap<SupplyFindingKey, EvaluatedRuleFinding>,
+) {
+    for dependency in facts
+        .remote_dependencies
+        .iter()
+        .filter(|dependency| scope.contains(&dependency.path))
+    {
+        add_remote_dependency_finding(facts, scope, findings, dependency);
+    }
+}
+
+fn add_remote_dependency_finding(
+    facts: &RuleSupplyChainFacts,
+    scope: &SupplyPackageScope<'_>,
+    findings: &mut BTreeMap<SupplyFindingKey, EvaluatedRuleFinding>,
+    dependency: &RuleSupplyChainRemoteDependencyFact,
+) {
+    let downloaded_executable_without_checksum =
+        is_downloaded_executable_without_checksum(facts, scope, dependency);
+
+    if dependency.kind == RuleSupplyChainRemoteDependencyKind::Package
+        && dependency.pinned == Some(false)
+    {
+        findings.insert(
+            supply_dedup_key(
+                RuleId::Supply004,
+                &dependency.path,
+                dependency.line,
+                &dependency.normalized,
+            ),
+            unpinned_package_dependency_finding(dependency),
+        );
+    } else if is_unpinned_remote_script_or_artifact(dependency)
+        && !downloaded_executable_without_checksum
+    {
+        findings.insert(
+            supply_dedup_key(
+                RuleId::Supply005,
+                &dependency.path,
+                dependency.line,
+                &dependency.normalized,
+            ),
+            unpinned_remote_dependency_finding(dependency),
+        );
+    }
+
+    if downloaded_executable_without_checksum {
+        findings.insert(
+            supply_dedup_key(
+                RuleId::Supply006,
+                &dependency.path,
+                dependency.line,
+                &dependency.normalized,
+            ),
+            downloaded_executable_without_checksum_finding(dependency),
+        );
+    }
+}
+
+fn is_unpinned_remote_script_or_artifact(dependency: &RuleSupplyChainRemoteDependencyFact) -> bool {
+    matches!(
+        dependency.kind,
+        RuleSupplyChainRemoteDependencyKind::Script | RuleSupplyChainRemoteDependencyKind::Artifact
+    ) && dependency.pinned == Some(false)
+}
+
+fn add_unpinned_external_url_findings(
+    facts: &RuleSupplyChainFacts,
+    scope: &SupplyPackageScope<'_>,
+    findings: &mut BTreeMap<SupplyFindingKey, EvaluatedRuleFinding>,
+) {
+    for url in facts
+        .external_urls
+        .iter()
+        .filter(|url| scope.contains(&url.path))
+        .filter(|url| url.pinned == Some(false))
+        .filter(|url| is_supply_chain_remote_url_kind(url.kind))
+        .filter(|url| !has_matching_remote_dependency_for_url(facts, scope, url))
+    {
+        findings.insert(
+            supply_dedup_key(RuleId::Supply005, &url.path, url.line, &url.normalized),
+            unpinned_external_url_finding(url),
+        );
+    }
+}
+
+fn is_supply_chain_remote_url_kind(kind: RuleSupplyChainUrlKind) -> bool {
+    matches!(
+        kind,
+        RuleSupplyChainUrlKind::GithubRaw
+            | RuleSupplyChainUrlKind::RemoteScript
+            | RuleSupplyChainUrlKind::DownloadedArtifact
+    )
+}
+
+fn add_binary_provenance_findings(
+    facts: &RuleSupplyChainFacts,
+    scope: &SupplyPackageScope<'_>,
+    findings: &mut BTreeMap<SupplyFindingKey, EvaluatedRuleFinding>,
+) {
+    for binary in facts
+        .binaries
+        .iter()
+        .filter(|binary| scope.contains(&binary.path))
+        .filter(|binary| binary.kind == RuleSupplyChainBinaryKind::Executable)
+        .filter(|binary| !has_binary_provenance(facts, scope, binary))
+    {
+        findings.insert(
+            supply_dedup_key(RuleId::Supply007, &binary.path, binary.line, ""),
+            binary_without_provenance_finding(binary),
+        );
+    }
+}
+
+fn add_permission_conflict_findings(
+    facts: &RuleSupplyChainFacts,
+    scope: &SupplyPackageScope<'_>,
+    findings: &mut BTreeMap<SupplyFindingKey, EvaluatedRuleFinding>,
+) {
+    if !declares_network_false(facts, scope) {
+        return;
+    }
+
+    for permission in facts
+        .permissions
+        .iter()
+        .filter(|permission| scope.contains(&permission.path))
+        .filter(|permission| permission.kind == RuleSupplyChainPermissionKind::Network)
+        .filter(|permission| permission.evidence == RuleSupplyChainPermissionEvidenceKind::Observed)
+    {
+        findings.insert(
+            supply_dedup_key(
+                RuleId::Supply009,
+                &permission.path,
+                permission.line,
+                &permission.normalized,
+            ),
+            permission_conflict_finding(permission),
+        );
+    }
+}
+
+fn add_trust_manifest_diagnostic_findings(
+    facts: &RuleSupplyChainFacts,
+    scope: &SupplyPackageScope<'_>,
+    findings: &mut BTreeMap<SupplyFindingKey, EvaluatedRuleFinding>,
+) {
+    for diagnostic in facts
+        .trust_manifests
+        .iter()
+        .filter(|manifest| scope.contains(&manifest.path))
+        .flat_map(|manifest| manifest.diagnostics.iter())
+    {
+        findings.insert(
+            supply_dedup_key(
+                RuleId::Supply012,
+                &diagnostic.path,
+                diagnostic.line,
+                &diagnostic.message,
+            ),
+            trust_manifest_diagnostic_finding(diagnostic),
+        );
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
