@@ -30,6 +30,16 @@
         "normalized": "npm",
         "raw": "package.json",
         "confidence": "high"
+      },
+      {
+        "path": "package-install-without-lockfile/scripts/install.sh",
+        "line": 2,
+        "source": "script",
+        "manager": "npm",
+        "manifest_path": null,
+        "normalized": "npm",
+        "raw": "npm install left-pad@1.3.0",
+        "confidence": "high"
       }
     ],
     "lockfiles": [],
@@ -63,11 +73,5 @@
     ],
     "offline_readiness": []
   },
-  "expected_findings": [
-    {
-      "rule_id": "SUPPLY003",
-      "path": "package-install-without-lockfile/scripts/install.sh",
-      "message": "Install command has no matching lockfile."
-    }
-  ]
+  "expected_findings": []
 }

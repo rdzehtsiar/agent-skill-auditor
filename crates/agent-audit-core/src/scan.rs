@@ -11,6 +11,10 @@ use crate::model::{
     SkillFile, SkillFileKind, SkillFinding, SkillGraph, SkillManifest, SkillPackage,
     SkillReference, SupplyChainInventory, SuppressedFinding, SuppressionMatch,
 };
+use crate::package_inventory::{
+    inventory_package_files, inventory_package_installs_from_scripts,
+    inventory_package_installs_from_signals,
+};
 use crate::parse::parse_skill_manifest;
 use crate::trust_manifest::inventory_trust_manifest;
 use crate::url_inventory::{dedup_url_inventory, inventory_manifest_urls, inventory_script_urls};
@@ -77,6 +81,7 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
             &mut supply_chain,
             inventory_trust_manifest(root, skill_root)?,
         );
+        merge_supply_chain_inventory(&mut supply_chain, inventory_package_files(root, skill_root)?);
 
         if metadata.len() > options.max_manifest_bytes {
             package_facts.push(RulePackageFacts {
@@ -165,6 +170,10 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
             &mut supply_chain,
             inventory_script_artifact_urls(root, skill_root, &graph)?,
         );
+        merge_supply_chain_inventory(
+            &mut supply_chain,
+            inventory_package_installs_from_scripts(root, skill_root, &graph)?,
+        );
 
         let frontmatter_fields = manifest
             .frontmatter
@@ -223,6 +232,10 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
             .into_iter()
             .map(skill_finding_from_evaluated_rule),
     );
+    merge_supply_chain_inventory(
+        &mut supply_chain,
+        inventory_package_installs_from_signals(&security_signals),
+    );
     findings.extend(evaluate_compatibility_findings(
         &packages,
         options.config.as_ref(),
@@ -278,6 +291,22 @@ fn merge_supply_chain_inventory(
         .offline_readiness
         .append(&mut source.offline_readiness);
     dedup_url_inventory(target);
+    dedup_supply_chain_inventory(target);
+}
+
+fn dedup_supply_chain_inventory(inventory: &mut SupplyChainInventory) {
+    inventory.sort_deterministically();
+    inventory.licenses.dedup();
+    inventory.trust_manifests.dedup();
+    inventory.external_urls.dedup();
+    inventory.remote_dependencies.dedup();
+    inventory.package_managers.dedup();
+    inventory.lockfiles.dedup();
+    inventory.executables.dedup();
+    inventory.binaries.dedup();
+    inventory.checksums.dedup();
+    inventory.permissions.dedup();
+    inventory.offline_readiness.dedup();
 }
 
 fn compatibility_matrix_for_packages(

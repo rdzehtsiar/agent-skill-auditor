@@ -41,6 +41,16 @@
         "normalized": "npm",
         "raw": "package.json",
         "confidence": "high"
+      },
+      {
+        "path": "package-install-with-lockfile/scripts/install.sh",
+        "line": 2,
+        "source": "script",
+        "manager": "npm",
+        "manifest_path": null,
+        "normalized": "npm",
+        "raw": "npm ci",
+        "confidence": "high"
       }
     ],
     "lockfiles": [

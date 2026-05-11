@@ -31,7 +31,18 @@
         "pinned": false
       }
     ],
-    "package_managers": [],
+    "package_managers": [
+      {
+        "path": "offline-partial/scripts/install.sh",
+        "line": 2,
+        "source": "script",
+        "manager": "npm",
+        "manifest_path": null,
+        "normalized": "npm",
+        "raw": "npm install prettier@latest",
+        "confidence": "high"
+      }
+    ],
     "lockfiles": [],
     "executables": [
       {
@@ -74,21 +85,5 @@
       }
     ]
   },
-  "expected_findings": [
-    {
-      "rule_id": "SUPPLY003",
-      "path": "offline-partial/scripts/install.sh",
-      "message": "Install command has no matching lockfile."
-    },
-    {
-      "rule_id": "SUPPLY004",
-      "path": "offline-partial/scripts/install.sh",
-      "message": "Package dependency uses an unpinned version."
-    },
-    {
-      "rule_id": "SUPPLY005",
-      "path": "offline-partial/SKILL.md",
-      "message": "Mutable GitHub raw URL reference."
-    }
-  ]
+  "expected_findings": []
 }

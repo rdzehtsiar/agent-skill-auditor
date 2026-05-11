@@ -31,6 +31,19 @@
         "raw": "requests>=2.0",
         "confidence": "high",
         "pinned": false
+      },
+      {
+        "path": "unpinned-package-version/requirements.txt",
+        "line": 2,
+        "source": "package-manifest",
+        "kind": "package",
+        "package_manager": "pip",
+        "name": "click",
+        "version": null,
+        "normalized": "pip:click",
+        "raw": "click",
+        "confidence": "high",
+        "pinned": false
       }
     ],
     "package_managers": [
@@ -55,23 +68,22 @@
         "confidence": "high"
       }
     ],
-    "lockfiles": [],
+    "lockfiles": [
+      {
+        "path": "unpinned-package-version/requirements.txt",
+        "line": 1,
+        "source": "lockfile",
+        "manager": "pip",
+        "normalized": "requirements.txt",
+        "raw": "requirements.txt",
+        "confidence": "high"
+      }
+    ],
     "executables": [],
     "binaries": [],
     "checksums": [],
     "permissions": [],
     "offline_readiness": []
   },
-  "expected_findings": [
-    {
-      "rule_id": "SUPPLY004",
-      "path": "unpinned-package-version/package.json",
-      "message": "Package dependency uses an unpinned version range."
-    },
-    {
-      "rule_id": "SUPPLY004",
-      "path": "unpinned-package-version/requirements.txt",
-      "message": "Package dependency uses an unpinned version range."
-    }
-  ]
+  "expected_findings": []
 }

@@ -959,10 +959,225 @@
         "raw": "install.sh",
         "confidence": "high",
         "pinned": false
+      },
+      {
+        "path": "package-install-lockfile-backed/scripts/install.sh",
+        "line": 3,
+        "source": "script",
+        "kind": "package",
+        "package_manager": "npm",
+        "name": "left-pad",
+        "version": null,
+        "normalized": "npm:left-pad",
+        "raw": "left-pad",
+        "confidence": "high",
+        "pinned": false
+      },
+      {
+        "path": "package-install-pinned/scripts/install.sh",
+        "line": 3,
+        "source": "script",
+        "kind": "package",
+        "package_manager": "npm",
+        "name": "left-pad",
+        "version": "1.3.0",
+        "normalized": "npm:left-pad@1.3.0",
+        "raw": "left-pad@1.3.0",
+        "confidence": "high",
+        "pinned": true
+      },
+      {
+        "path": "package-install-pinned/scripts/install.sh",
+        "line": 4,
+        "source": "script",
+        "kind": "package",
+        "package_manager": "pip",
+        "name": "demo",
+        "version": "1.2.3",
+        "normalized": "pip:demo@1.2.3",
+        "raw": "demo==1.2.3",
+        "confidence": "high",
+        "pinned": true
+      },
+      {
+        "path": "package-install-pinned/scripts/install.sh",
+        "line": 5,
+        "source": "script",
+        "kind": "package",
+        "package_manager": "cargo",
+        "name": "ripgrep",
+        "version": "14.1.0",
+        "normalized": "cargo:ripgrep@14.1.0",
+        "raw": "ripgrep --version 14.1.0",
+        "confidence": "high",
+        "pinned": true
+      },
+      {
+        "path": "package-install-pinned/scripts/install.sh",
+        "line": 6,
+        "source": "script",
+        "kind": "package",
+        "package_manager": "gem",
+        "name": "rake",
+        "version": "13.1.0",
+        "normalized": "gem:rake@13.1.0",
+        "raw": "rake -v 13.1.0",
+        "confidence": "high",
+        "pinned": true
+      },
+      {
+        "path": "package-install-unpinned/scripts/install.sh",
+        "line": 4,
+        "source": "script",
+        "kind": "package",
+        "package_manager": "pip",
+        "name": "demo",
+        "version": null,
+        "normalized": "pip:demo",
+        "raw": "demo",
+        "confidence": "high",
+        "pinned": false
+      },
+      {
+        "path": "package-install-unpinned/scripts/install.sh",
+        "line": 5,
+        "source": "script",
+        "kind": "package",
+        "package_manager": "cargo",
+        "name": "ripgrep",
+        "version": null,
+        "normalized": "cargo:ripgrep",
+        "raw": "ripgrep",
+        "confidence": "high",
+        "pinned": false
+      },
+      {
+        "path": "package-install-unpinned/scripts/install.sh",
+        "line": 6,
+        "source": "script",
+        "kind": "package",
+        "package_manager": "gem",
+        "name": "rake",
+        "version": null,
+        "normalized": "gem:rake",
+        "raw": "rake",
+        "confidence": "high",
+        "pinned": false
       }
     ],
-    "package_managers": [],
-    "lockfiles": [],
+    "package_managers": [
+      {
+        "path": "package-install-lockfile-backed/scripts/install.sh",
+        "line": 3,
+        "source": "script",
+        "manager": "npm",
+        "manifest_path": null,
+        "normalized": "npm",
+        "raw": "npm install left-pad",
+        "confidence": "high"
+      },
+      {
+        "path": "package-install-pinned/scripts/install.sh",
+        "line": 3,
+        "source": "script",
+        "manager": "npm",
+        "manifest_path": null,
+        "normalized": "npm",
+        "raw": "npm install left-pad@1.3.0",
+        "confidence": "high"
+      },
+      {
+        "path": "package-install-pinned/scripts/install.sh",
+        "line": 4,
+        "source": "script",
+        "manager": "pip",
+        "manifest_path": null,
+        "normalized": "pip",
+        "raw": "pip install demo==1.2.3",
+        "confidence": "high"
+      },
+      {
+        "path": "package-install-pinned/scripts/install.sh",
+        "line": 5,
+        "source": "script",
+        "manager": "cargo",
+        "manifest_path": null,
+        "normalized": "cargo",
+        "raw": "cargo install ripgrep --version 14.1.0",
+        "confidence": "high"
+      },
+      {
+        "path": "package-install-pinned/scripts/install.sh",
+        "line": 6,
+        "source": "script",
+        "manager": "gem",
+        "manifest_path": null,
+        "normalized": "gem",
+        "raw": "gem install rake -v 13.1.0",
+        "confidence": "high"
+      },
+      {
+        "path": "package-install-unpinned/scripts/install.sh",
+        "line": 3,
+        "source": "script",
+        "manager": "npm",
+        "manifest_path": null,
+        "normalized": "npm",
+        "raw": "npm install left-pad",
+        "confidence": "high"
+      },
+      {
+        "path": "package-install-unpinned/scripts/install.sh",
+        "line": 4,
+        "source": "script",
+        "manager": "pip",
+        "manifest_path": null,
+        "normalized": "pip",
+        "raw": "pip install demo",
+        "confidence": "high"
+      },
+      {
+        "path": "package-install-unpinned/scripts/install.sh",
+        "line": 5,
+        "source": "script",
+        "manager": "cargo",
+        "manifest_path": null,
+        "normalized": "cargo",
+        "raw": "cargo install ripgrep",
+        "confidence": "high"
+      },
+      {
+        "path": "package-install-unpinned/scripts/install.sh",
+        "line": 6,
+        "source": "script",
+        "manager": "gem",
+        "manifest_path": null,
+        "normalized": "gem",
+        "raw": "gem install rake",
+        "confidence": "high"
+      },
+      {
+        "path": "suppressed-package-install/scripts/install.sh",
+        "line": 3,
+        "source": "script",
+        "manager": "npm",
+        "manifest_path": null,
+        "normalized": "npm",
+        "raw": "npm install left-pad",
+        "confidence": "high"
+      }
+    ],
+    "lockfiles": [
+      {
+        "path": "package-install-lockfile-backed/package-lock.json",
+        "line": 1,
+        "source": "lockfile",
+        "manager": "npm",
+        "normalized": "package-lock.json",
+        "raw": "package-lock.json",
+        "confidence": "high"
+      }
+    ],
     "executables": [],
     "binaries": [],
     "checksums": [],

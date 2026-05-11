@@ -5,6 +5,7 @@ pub mod discovery;
 pub mod error;
 pub mod fail;
 pub mod model;
+mod package_inventory;
 pub mod parse;
 pub mod scan;
 #[cfg(test)]

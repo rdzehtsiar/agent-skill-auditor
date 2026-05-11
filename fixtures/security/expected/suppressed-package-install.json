@@ -74,8 +74,33 @@
     "licenses": [],
     "trust_manifests": [],
     "external_urls": [],
-    "remote_dependencies": [],
-    "package_managers": [],
+    "remote_dependencies": [
+      {
+        "path": "scripts/install.sh",
+        "line": 3,
+        "source": "script",
+        "kind": "package",
+        "package_manager": "npm",
+        "name": "left-pad",
+        "version": null,
+        "normalized": "npm:left-pad",
+        "raw": "left-pad",
+        "confidence": "high",
+        "pinned": false
+      }
+    ],
+    "package_managers": [
+      {
+        "path": "scripts/install.sh",
+        "line": 3,
+        "source": "script",
+        "manager": "npm",
+        "manifest_path": null,
+        "normalized": "npm",
+        "raw": "npm install left-pad",
+        "confidence": "high"
+      }
+    ],
     "lockfiles": [],
     "executables": [],
     "binaries": [],
