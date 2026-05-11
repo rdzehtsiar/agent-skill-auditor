@@ -12,7 +12,23 @@
         "normalized": "invalid-yaml",
         "raw": "agent-audit.trust.yaml",
         "confidence": "high",
-        "valid": false
+        "valid": false,
+        "diagnostics": [
+          {
+            "path": "trust-manifest-invalid/agent-audit.trust.yaml",
+            "line": 4,
+            "kind": "parse-error",
+            "message": "Invalid trust manifest YAML: did not find expected ',' or ']' at line 4 column 1, while parsing a flow sequence at line 3 column 14. Fix the YAML syntax or remove the manifest until it can be parsed.",
+            "field": null
+          }
+        ],
+        "skill": null,
+        "provenance": null,
+        "permissions": null,
+        "declared_dependencies": {
+          "commands": [],
+          "packages": []
+        }
       }
     ],
     "external_urls": [],
@@ -25,11 +41,12 @@
     "permissions": [],
     "offline_readiness": []
   },
-  "expected_findings": [
+  "expected_findings": [],
+  "expected_trust_manifest_diagnostics": [
     {
-      "rule_id": "SUPPLY012",
       "path": "trust-manifest-invalid/agent-audit.trust.yaml",
-      "message": "Invalid trust manifest YAML."
+      "kind": "parse-error",
+      "message_contains": "Invalid trust manifest YAML."
     }
   ]
 }

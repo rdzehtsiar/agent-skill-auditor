@@ -22,7 +22,28 @@
         "normalized": "offline-ready@1.0.0",
         "raw": "agent-audit.trust.yaml",
         "confidence": "high",
-        "valid": true
+        "valid": true,
+        "diagnostics": [],
+        "skill": {
+          "name": "offline-ready",
+          "version": "1.0.0"
+        },
+        "provenance": {
+          "source": "github.com/example/offline-ready",
+          "commit": "0123456789abcdef0123456789abcdef01234567",
+          "signed": false
+        },
+        "permissions": {
+          "network": false,
+          "filesystem_write": "none",
+          "secrets": []
+        },
+        "declared_dependencies": {
+          "commands": [
+            "sh"
+          ],
+          "packages": []
+        }
       }
     ],
     "external_urls": [],
@@ -30,6 +51,18 @@
     "package_managers": [],
     "lockfiles": [],
     "executables": [
+      {
+        "path": "offline-ready/agent-audit.trust.yaml",
+        "line": 14,
+        "source": "trust-manifest",
+        "kind": "command",
+        "language": null,
+        "reason": "declared trust manifest command dependency",
+        "referenced": false,
+        "normalized": "sh",
+        "raw": "sh",
+        "confidence": "high"
+      },
       {
         "path": "offline-ready/scripts/check.sh",
         "line": 1,
@@ -66,6 +99,16 @@
         "evidence": "declared",
         "normalized": "network=false",
         "raw": "network: false",
+        "confidence": "high"
+      },
+      {
+        "path": "offline-ready/agent-audit.trust.yaml",
+        "line": 10,
+        "source": "trust-manifest",
+        "kind": "filesystem-write",
+        "evidence": "declared",
+        "normalized": "filesystem_write=none",
+        "raw": "filesystem_write: none",
         "confidence": "high"
       }
     ],

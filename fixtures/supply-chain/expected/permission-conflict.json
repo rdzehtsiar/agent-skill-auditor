@@ -12,7 +12,24 @@
         "normalized": "permission-conflict@0.1.0",
         "raw": "agent-audit.trust.yaml",
         "confidence": "high",
-        "valid": true
+        "valid": true,
+        "diagnostics": [],
+        "skill": {
+          "name": "permission-conflict",
+          "version": "0.1.0"
+        },
+        "provenance": null,
+        "permissions": {
+          "network": false,
+          "filesystem_write": "repo-only",
+          "secrets": [
+            "DECLARED_TOKEN"
+          ]
+        },
+        "declared_dependencies": {
+          "commands": [],
+          "packages": []
+        }
       }
     ],
     "external_urls": [
@@ -55,6 +72,26 @@
         "evidence": "declared",
         "normalized": "network=false",
         "raw": "network: false",
+        "confidence": "high"
+      },
+      {
+        "path": "permission-conflict/agent-audit.trust.yaml",
+        "line": 6,
+        "source": "trust-manifest",
+        "kind": "filesystem-write",
+        "evidence": "declared",
+        "normalized": "filesystem_write=repo-only",
+        "raw": "filesystem_write: repo-only",
+        "confidence": "high"
+      },
+      {
+        "path": "permission-conflict/agent-audit.trust.yaml",
+        "line": 8,
+        "source": "trust-manifest",
+        "kind": "secrets",
+        "evidence": "declared",
+        "normalized": "secrets=DECLARED_TOKEN",
+        "raw": "DECLARED_TOKEN",
         "confidence": "high"
       },
       {

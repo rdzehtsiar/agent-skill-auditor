@@ -138,8 +138,12 @@ mod tests {
             false
         );
         assert_eq!(
-            invalid_projection["expected_findings"][0]["rule_id"],
-            "SUPPLY012"
+            invalid_projection["expected_findings"],
+            serde_json::json!([])
+        );
+        assert_eq!(
+            invalid_projection["expected_trust_manifest_diagnostics"][0]["kind"],
+            "parse-error"
         );
 
         let pinned_projection = expected_supply_chain_projection("github-raw-pinned");
@@ -187,17 +191,21 @@ mod tests {
                     let Some(line) = entry["line"].as_u64() else {
                         continue;
                     };
-                    assert!(line > 0, "{fixture_name}.{section_name} line should be 1-based");
+                    assert!(
+                        line > 0,
+                        "{fixture_name}.{section_name} line should be 1-based"
+                    );
 
                     let source_text = fs::read_to_string(&source_path).unwrap_or_else(|error| {
                         panic!("read source fixture {}: {error}", source_path.display())
                     });
-                    let source_line = source_text
-                        .lines()
-                        .nth((line - 1) as usize)
-                        .unwrap_or_else(|| {
-                            panic!("{fixture_name}.{section_name} line {line} exists in {path}")
-                        });
+                    let source_line =
+                        source_text
+                            .lines()
+                            .nth((line - 1) as usize)
+                            .unwrap_or_else(|| {
+                                panic!("{fixture_name}.{section_name} line {line} exists in {path}")
+                            });
 
                     for fragment in expected_source_line_fragments(section_name, entry) {
                         assert!(

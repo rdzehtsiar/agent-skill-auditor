@@ -171,7 +171,12 @@
         "normalized",
         "raw",
         "confidence",
-        "valid"
+        "valid",
+        "diagnostics",
+        "skill",
+        "provenance",
+        "permissions",
+        "declared_dependencies"
       ],
       "properties": {
         "path": {
@@ -200,6 +205,180 @@
             "boolean",
             "null"
           ]
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/trustManifestDiagnostic"
+          }
+        },
+        "skill": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/trustManifestSkill"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/trustManifestProvenance"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "permissions": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/trustManifestPermissions"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "declared_dependencies": {
+          "$ref": "#/$defs/trustManifestDeclaredDependencies"
+        }
+      },
+      "additionalProperties": false
+    },
+    "trustManifestDiagnostic": {
+      "type": "object",
+      "required": [
+        "path",
+        "line",
+        "kind",
+        "message",
+        "field"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "$ref": "#/$defs/optionalLine"
+        },
+        "kind": {
+          "$ref": "#/$defs/trustManifestDiagnosticKind"
+        },
+        "message": {
+          "type": "string"
+        },
+        "field": {
+          "$ref": "#/$defs/optionalString"
+        }
+      },
+      "additionalProperties": false
+    },
+    "trustManifestSkill": {
+      "type": "object",
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "version": {
+          "$ref": "#/$defs/optionalString"
+        }
+      },
+      "additionalProperties": false
+    },
+    "trustManifestProvenance": {
+      "type": "object",
+      "required": [
+        "source",
+        "commit",
+        "signed"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "commit": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "signed": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "trustManifestPermissions": {
+      "type": "object",
+      "required": [
+        "network",
+        "filesystem_write",
+        "secrets"
+      ],
+      "properties": {
+        "network": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "filesystem_write": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "secrets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "trustManifestDeclaredDependencies": {
+      "type": "object",
+      "required": [
+        "commands",
+        "packages"
+      ],
+      "properties": {
+        "commands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "packages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/trustManifestPackageDependency"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "trustManifestPackageDependency": {
+      "type": "object",
+      "required": [
+        "ecosystem",
+        "name",
+        "version"
+      ],
+      "properties": {
+        "ecosystem": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "name": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "version": {
+          "$ref": "#/$defs/optionalString"
         }
       },
       "additionalProperties": false
@@ -642,6 +821,14 @@
       "enum": [
         "agent-audit",
         "unknown"
+      ]
+    },
+    "trustManifestDiagnosticKind": {
+      "type": "string",
+      "enum": [
+        "parse-error",
+        "schema-error",
+        "unknown-field"
       ]
     },
     "externalUrlKind": {

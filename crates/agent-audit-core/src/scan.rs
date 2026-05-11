@@ -12,6 +12,7 @@ use crate::model::{
     SkillReference, SupplyChainInventory, SuppressedFinding, SuppressionMatch,
 };
 use crate::parse::parse_skill_manifest;
+use crate::trust_manifest::inventory_trust_manifest;
 use agent_audit_hosts::{
     profile_by_id, CompatibilityStatus, ProfileCompatibilityResult, HOST_PROFILES,
 };
@@ -61,6 +62,7 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
     let mut package_facts = Vec::new();
     let mut package_install_contexts = Vec::new();
     let mut security_signals = Vec::new();
+    let mut supply_chain = SupplyChainInventory::default();
 
     for manifest_path in manifests {
         let metadata =
@@ -70,6 +72,10 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
             })?;
         let skill_root = manifest_path.parent().unwrap_or(root);
         let manifest_display = display_path(root, &manifest_path);
+        merge_supply_chain_inventory(
+            &mut supply_chain,
+            inventory_trust_manifest(root, skill_root)?,
+        );
 
         if metadata.len() > options.max_manifest_bytes {
             package_facts.push(RulePackageFacts {
@@ -238,9 +244,31 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         packages,
         findings,
         suppressed_findings,
-        supply_chain: SupplyChainInventory::default(),
+        supply_chain,
         compatibility,
     })
+}
+
+fn merge_supply_chain_inventory(
+    target: &mut SupplyChainInventory,
+    mut source: SupplyChainInventory,
+) {
+    target.licenses.append(&mut source.licenses);
+    target.trust_manifests.append(&mut source.trust_manifests);
+    target.external_urls.append(&mut source.external_urls);
+    target
+        .remote_dependencies
+        .append(&mut source.remote_dependencies);
+    target.package_managers.append(&mut source.package_managers);
+    target.lockfiles.append(&mut source.lockfiles);
+    target.executables.append(&mut source.executables);
+    target.binaries.append(&mut source.binaries);
+    target.checksums.append(&mut source.checksums);
+    target.permissions.append(&mut source.permissions);
+    target
+        .offline_readiness
+        .append(&mut source.offline_readiness);
+    target.sort_deterministically();
 }
 
 fn compatibility_matrix_for_packages(

@@ -9,6 +9,7 @@ pub mod parse;
 pub mod scan;
 #[cfg(test)]
 mod test_support;
+pub mod trust_manifest;
 
 pub use config::{
     parse_audit_config, parse_severity, AuditConfig, ConfigIgnoreEntry, CONFIG_FILENAME,
@@ -25,6 +26,9 @@ pub use model::{
     PermissionKind, RemoteDependency, RemoteDependencyKind, ScanReport, Severity,
     SkillArtifactKind, SkillCompatibilityRow, SkillFile, SkillFileKind, SkillFinding, SkillGraph,
     SkillManifest, SkillPackage, SkillReference, SupplyChainInventory, SupplyChainSourceKind,
-    SuppressedFinding, SuppressionMatch, TrustManifest, TrustManifestFormat,
+    SuppressedFinding, SuppressionMatch, TrustManifest, TrustManifestDeclaredDependencies,
+    TrustManifestDiagnostic, TrustManifestDiagnosticKind, TrustManifestFormat,
+    TrustManifestPackageDependency, TrustManifestPermissions, TrustManifestProvenance,
+    TrustManifestSkill,
 };
 pub use scan::{scan_path, ScanOptions};

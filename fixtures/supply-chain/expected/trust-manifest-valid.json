@@ -12,7 +12,36 @@
         "normalized": "trust-manifest-valid@0.2.1",
         "raw": "agent-audit.trust.yaml",
         "confidence": "high",
-        "valid": true
+        "valid": true,
+        "diagnostics": [],
+        "skill": {
+          "name": "trust-manifest-valid",
+          "version": "0.2.1"
+        },
+        "provenance": {
+          "source": "github.com/example/trust-manifest-valid",
+          "commit": "0123456789abcdef0123456789abcdef01234567",
+          "signed": false
+        },
+        "permissions": {
+          "network": false,
+          "filesystem_write": "repo-only",
+          "secrets": [
+            "EXAMPLE_TOKEN"
+          ]
+        },
+        "declared_dependencies": {
+          "commands": [
+            "git"
+          ],
+          "packages": [
+            {
+              "ecosystem": "npm",
+              "name": "prettier",
+              "version": "3.2.5"
+            }
+          ]
+        }
       }
     ],
     "external_urls": [],
@@ -33,7 +62,20 @@
     ],
     "package_managers": [],
     "lockfiles": [],
-    "executables": [],
+    "executables": [
+      {
+        "path": "trust-manifest-valid/agent-audit.trust.yaml",
+        "line": 15,
+        "source": "trust-manifest",
+        "kind": "command",
+        "language": null,
+        "reason": "declared trust manifest command dependency",
+        "referenced": false,
+        "normalized": "git",
+        "raw": "git",
+        "confidence": "high"
+      }
+    ],
     "binaries": [],
     "checksums": [],
     "permissions": [
@@ -45,6 +87,26 @@
         "evidence": "declared",
         "normalized": "network=false",
         "raw": "network: false",
+        "confidence": "high"
+      },
+      {
+        "path": "trust-manifest-valid/agent-audit.trust.yaml",
+        "line": 10,
+        "source": "trust-manifest",
+        "kind": "filesystem-write",
+        "evidence": "declared",
+        "normalized": "filesystem_write=repo-only",
+        "raw": "filesystem_write: repo-only",
+        "confidence": "high"
+      },
+      {
+        "path": "trust-manifest-valid/agent-audit.trust.yaml",
+        "line": 12,
+        "source": "trust-manifest",
+        "kind": "secrets",
+        "evidence": "declared",
+        "normalized": "secrets=EXAMPLE_TOKEN",
+        "raw": "EXAMPLE_TOKEN",
         "confidence": "high"
       }
     ],

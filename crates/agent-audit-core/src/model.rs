@@ -81,6 +81,69 @@ pub struct TrustManifest {
     pub raw: Option<String>,
     pub confidence: EvidenceConfidence,
     pub valid: Option<bool>,
+    #[serde(default)]
+    pub diagnostics: Vec<TrustManifestDiagnostic>,
+    #[serde(default)]
+    pub skill: Option<TrustManifestSkill>,
+    #[serde(default)]
+    pub provenance: Option<TrustManifestProvenance>,
+    #[serde(default)]
+    pub permissions: Option<TrustManifestPermissions>,
+    #[serde(default)]
+    pub declared_dependencies: TrustManifestDeclaredDependencies,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct TrustManifestDeclaredDependencies {
+    #[serde(default)]
+    pub commands: Vec<String>,
+    #[serde(default)]
+    pub packages: Vec<TrustManifestPackageDependency>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct TrustManifestDiagnostic {
+    pub path: String,
+    pub line: Option<usize>,
+    pub kind: TrustManifestDiagnosticKind,
+    pub message: String,
+    pub field: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TrustManifestDiagnosticKind {
+    ParseError,
+    SchemaError,
+    UnknownField,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct TrustManifestSkill {
+    pub name: Option<String>,
+    pub version: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct TrustManifestProvenance {
+    pub source: Option<String>,
+    pub commit: Option<String>,
+    pub signed: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct TrustManifestPermissions {
+    pub network: Option<bool>,
+    pub filesystem_write: Option<String>,
+    #[serde(default)]
+    pub secrets: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct TrustManifestPackageDependency {
+    pub ecosystem: Option<String>,
+    pub name: Option<String>,
+    pub version: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -623,6 +686,29 @@ mod tests {
                     raw: None,
                     confidence: EvidenceConfidence::High,
                     valid: Some(true),
+                    diagnostics: Vec::new(),
+                    skill: Some(TrustManifestSkill {
+                        name: Some("review".to_owned()),
+                        version: Some("1.0.0".to_owned()),
+                    }),
+                    provenance: Some(TrustManifestProvenance {
+                        source: Some("github.com/example/review".to_owned()),
+                        commit: Some("0123456789abcdef0123456789abcdef01234567".to_owned()),
+                        signed: Some(true),
+                    }),
+                    permissions: Some(TrustManifestPermissions {
+                        network: Some(false),
+                        filesystem_write: Some("repo-only".to_owned()),
+                        secrets: vec!["REVIEW_TOKEN".to_owned()],
+                    }),
+                    declared_dependencies: TrustManifestDeclaredDependencies {
+                        commands: vec!["git".to_owned()],
+                        packages: vec![TrustManifestPackageDependency {
+                            ecosystem: Some("npm".to_owned()),
+                            name: Some("prettier".to_owned()),
+                            version: Some("3.2.5".to_owned()),
+                        }],
+                    },
                 }],
                 external_urls: vec![ExternalUrl {
                     path: "skills/review/SKILL.md".to_owned(),
@@ -743,7 +829,30 @@ mod tests {
                     "normalized": "agent-audit",
                     "raw": null,
                     "confidence": "high",
-                    "valid": true
+                    "valid": true,
+                    "diagnostics": [],
+                    "skill": {
+                        "name": "review",
+                        "version": "1.0.0"
+                    },
+                    "provenance": {
+                        "source": "github.com/example/review",
+                        "commit": "0123456789abcdef0123456789abcdef01234567",
+                        "signed": true
+                    },
+                    "permissions": {
+                        "network": false,
+                        "filesystem_write": "repo-only",
+                        "secrets": ["REVIEW_TOKEN"]
+                    },
+                    "declared_dependencies": {
+                        "commands": ["git"],
+                        "packages": [{
+                            "ecosystem": "npm",
+                            "name": "prettier",
+                            "version": "3.2.5"
+                        }]
+                    }
                 }],
                 "external_urls": [{
                     "path": "skills/review/SKILL.md",
