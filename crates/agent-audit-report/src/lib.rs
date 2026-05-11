@@ -243,12 +243,6 @@ fn offline_readiness_counts(supply_chain: &SupplyChainInventory) -> OfflineReadi
     counts
 }
 
-impl OfflineReadinessCounts {
-    fn total(self) -> usize {
-        self.ready + self.partial + self.not_ready + self.unknown
-    }
-}
-
 fn extend_compatibility_summary(lines: &mut Vec<String>, compatibility: &CompatibilityMatrix) {
     if compatibility.is_empty() {
         return;
@@ -328,12 +322,6 @@ fn compatibility_status_counts(compatibility: &CompatibilityMatrix) -> Compatibi
     counts
 }
 
-impl CompatibilityStatusCounts {
-    fn total(self) -> usize {
-        self.pass + self.warn + self.fail + self.unknown
-    }
-}
-
 fn compatibility_status_counts_for_profile(
     compatibility: &CompatibilityMatrix,
     profile_id: &str,
@@ -366,7 +354,7 @@ pub fn render_json(report: &ScanReport) -> serde_json::Result<String> {
 }
 
 pub fn render_html(report: &ScanReport) -> String {
-    let _ = HtmlReportViewModel::from_report(report).observed_item_count();
+    let view_model = HtmlReportViewModel::from_report(report);
     let mut html = String::from(
         r#"<!doctype html>
 <html lang="en">
@@ -374,100 +362,54 @@ pub fn render_html(report: &ScanReport) -> String {
 <meta charset="utf-8">
 <title>Agent Skill Auditor Report</title>
 <style>
-body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.5;margin:2rem;color:#1f2933;background:#ffffff}
-h1,h2{line-height:1.2}
-table{border-collapse:collapse;width:100%;margin:1rem 0 2rem}
-th,td{border:1px solid #d9e2ec;padding:.5rem;text-align:left;vertical-align:top}
-th{background:#f0f4f8}
-.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:.75rem;margin:1rem 0 2rem}
-.summary div{border:1px solid #d9e2ec;padding:.75rem}
+:root{color-scheme:light;--text:#17202a;--muted:#52616f;--border:#d8e0e8;--soft:#f5f7fa;--head:#edf2f7;--critical:#7f1d1d;--high:#9a3412;--medium:#854d0e;--low:#1d4ed8;--info:#475569;--pass:#166534;--warn:#92400e;--fail:#991b1b;--unknown:#475569}
+body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.5;margin:0;color:var(--text);background:#ffffff}
+main{max-width:1180px;margin:0 auto;padding:2rem}
+h1{font-size:2rem;line-height:1.2;margin:0 0 .5rem}
+h2{font-size:1.35rem;line-height:1.25;margin:2rem 0 .75rem}
+h3{font-size:1.05rem;line-height:1.3;margin:1.25rem 0 .5rem}
+p{margin:.25rem 0 1rem}
+table{border-collapse:collapse;width:100%;margin:.75rem 0 1.25rem}
+th,td{border:1px solid var(--border);padding:.5rem;text-align:left;vertical-align:top}
+th{background:var(--head)}
+tbody tr:nth-child(even){background:var(--soft)}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:.75rem;margin:1rem 0}
+.summary div{border:1px solid var(--border);padding:.75rem;background:var(--soft)}
 .count{display:block;font-size:1.5rem;font-weight:700}
-.status{font-weight:700}
-.status-pass{color:#0f5132}
-.status-warn{color:#8a5a00}
-.status-fail{color:#842029}
-.status-unknown{color:#4b5563}
-.finding-ids{font-size:.875rem;color:#4b5563}
+.muted{color:var(--muted)}
+.status,.severity{font-weight:700}
+.severity-critical{color:var(--critical)}
+.severity-high{color:var(--high)}
+.severity-medium{color:var(--medium)}
+.severity-low{color:var(--low)}
+.severity-info{color:var(--info)}
+.status-pass{color:var(--pass)}
+.status-warn{color:var(--warn)}
+.status-fail{color:var(--fail)}
+.status-unknown{color:var(--unknown)}
+.finding-ids{font-size:.875rem;color:var(--muted)}
+.skill-detail{border-top:1px solid var(--border);padding-top:.75rem}
+.nowrap{white-space:nowrap}
 </style>
 </head>
 <body>
+<main>
 <h1>Agent Skill Auditor Report</h1>
 "#,
     );
 
-    html.push_str("<section aria-labelledby=\"summary\"><h2 id=\"summary\">Summary</h2><div class=\"summary\">");
-    html.push_str(&summary_count("Packages", report.summary.package_count));
-    html.push_str(&summary_count("Findings", report.summary.finding_count));
-    html.push_str(&summary_count(
-        "Suppressed findings",
-        report.summary.suppressed_finding_count,
-    ));
-    html.push_str(&summary_count(
-        "Invalid manifests",
-        report.summary.invalid_manifest_count,
-    ));
-    html.push_str(&summary_count(
-        "Broken references",
-        report.summary.broken_reference_count,
-    ));
-    html.push_str("</div></section>\n");
-
-    html.push_str(
-        "<section aria-labelledby=\"packages\"><h2 id=\"packages\">Packages</h2><table><thead><tr><th>Name</th><th>Description</th><th>Manifest</th><th>Root</th></tr></thead><tbody>",
-    );
-    let packages = sorted_packages(&report.packages);
-    if packages.is_empty() {
-        html.push_str("<tr><td colspan=\"4\">No packages discovered.</td></tr>");
-    }
-    for package in packages {
-        html.push_str("<tr><td>");
-        html.push_str(&escape_html(package.manifest.name.as_deref().unwrap_or("")));
-        html.push_str("</td><td>");
-        html.push_str(&escape_html(
-            package.manifest.description.as_deref().unwrap_or(""),
-        ));
-        html.push_str("</td><td>");
-        html.push_str(&escape_html(&package.manifest_path));
-        html.push_str("</td><td>");
-        html.push_str(&escape_html(&package.root));
-        html.push_str("</td></tr>");
-    }
-    html.push_str("</tbody></table></section>\n");
-
-    extend_html_compatibility(&mut html, report);
-
-    html.push_str(
-        "<section aria-labelledby=\"findings\"><h2 id=\"findings\">Findings</h2><table><thead><tr><th>Rule</th><th>Severity</th><th>Category</th><th>Location</th><th>Title</th><th>Message</th><th>Why it matters</th><th>How to fix</th><th>Suppression</th></tr></thead><tbody>",
-    );
-    let findings = sorted_findings(&report.findings);
-    if findings.is_empty() {
-        html.push_str("<tr><td colspan=\"9\">No findings.</td></tr>");
-    }
-    for finding in findings {
-        html.push_str("<tr><td>");
-        html.push_str(&escape_html(&finding.rule_id));
-        html.push_str("</td><td>");
-        html.push_str(severity_name(finding.severity));
-        html.push_str("</td><td>");
-        html.push_str(category_name(finding.category));
-        html.push_str("</td><td>");
-        html.push_str(&escape_html(&location_display(
-            &finding.location.path,
-            finding.location.line,
-        )));
-        html.push_str("</td><td>");
-        html.push_str(&escape_html(&finding.title));
-        html.push_str("</td><td>");
-        html.push_str(&escape_html(&finding.message));
-        html.push_str("</td><td>");
-        html.push_str(&escape_html(&finding.rationale));
-        html.push_str("</td><td>");
-        html.push_str(&escape_html(&finding.remediation));
-        html.push_str("</td><td>");
-        html.push_str(&escape_html(&finding.suppression));
-        html.push_str("</td></tr>");
-    }
-    html.push_str("</tbody></table></section>\n</body>\n</html>\n");
+    extend_html_executive_summary(&mut html, report, &view_model);
+    extend_html_risk_distribution(&mut html, &view_model);
+    extend_html_compatibility(&mut html, report, &view_model);
+    extend_html_top_risky_skills(&mut html, &view_model);
+    extend_html_broken_references(&mut html, &view_model);
+    extend_html_external_urls(&mut html, &view_model);
+    extend_html_secret_usage(&mut html, &view_model);
+    extend_html_offline_readiness(&mut html, report, &view_model);
+    extend_html_packages(&mut html, report);
+    extend_html_findings(&mut html, report);
+    extend_html_skill_details(&mut html, &view_model);
+    html.push_str("</main>\n</body>\n</html>\n");
 
     html
 }
@@ -488,14 +430,522 @@ fn summary_count(label: &str, count: usize) -> String {
     format!("<div><span class=\"count\">{count}</span>{label}</div>")
 }
 
-fn extend_html_compatibility(html: &mut String, report: &ScanReport) {
+fn extend_html_executive_summary(
+    html: &mut String,
+    report: &ScanReport,
+    view_model: &HtmlReportViewModel<'_>,
+) {
+    html.push_str("<section aria-labelledby=\"summary\"><h2 id=\"summary\">Executive Summary</h2><div class=\"summary\">");
+    html.push_str(&summary_count("Packages", report.summary.package_count));
+    html.push_str(&summary_count("Findings", report.summary.finding_count));
+    html.push_str(&summary_count(
+        "Suppressed findings",
+        report.summary.suppressed_finding_count,
+    ));
+    html.push_str(&summary_count(
+        "Invalid manifests",
+        report.summary.invalid_manifest_count,
+    ));
+    html.push_str(&summary_count(
+        "Broken references",
+        report.summary.broken_reference_count,
+    ));
+    html.push_str(&summary_count(
+        "External URLs",
+        view_model.external_urls.len(),
+    ));
+    html.push_str(&summary_count(
+        "Secret signals",
+        view_model.secret_security_evidence.len(),
+    ));
+    html.push_str("</div></section>\n");
+}
+
+fn extend_html_risk_distribution(html: &mut String, view_model: &HtmlReportViewModel<'_>) {
+    html.push_str("<section aria-labelledby=\"risk-distribution\"><h2 id=\"risk-distribution\">Risk Distribution</h2>");
+    html.push_str("<table><thead><tr><th>Severity</th><th>Active findings</th></tr></thead><tbody>");
+    for (severity, count) in [
+        ("critical", view_model.severity_counts.critical),
+        ("high", view_model.severity_counts.high),
+        ("medium", view_model.severity_counts.medium),
+        ("low", view_model.severity_counts.low),
+        ("info", view_model.severity_counts.info),
+    ] {
+        html.push_str("<tr><td>");
+        html.push_str(&html_severity(severity));
+        html.push_str("</td><td>");
+        html.push_str(&count.to_string());
+        html.push_str("</td></tr>");
+    }
+    html.push_str("</tbody></table>");
+
+    html.push_str("<table><thead><tr><th>Category</th><th>Active findings</th></tr></thead><tbody>");
+    for (category, count) in [
+        ("spec", view_model.category_counts.spec),
+        ("compatibility", view_model.category_counts.compatibility),
+        ("security", view_model.category_counts.security),
+        ("quality", view_model.category_counts.quality),
+        ("portability", view_model.category_counts.portability),
+        ("reproducibility", view_model.category_counts.reproducibility),
+    ] {
+        html.push_str("<tr><td>");
+        html.push_str(category);
+        html.push_str("</td><td>");
+        html.push_str(&count.to_string());
+        html.push_str("</td></tr>");
+    }
+    html.push_str("</tbody></table></section>\n");
+}
+
+fn extend_html_top_risky_skills(html: &mut String, view_model: &HtmlReportViewModel<'_>) {
+    html.push_str("<section aria-labelledby=\"top-risky-skills\"><h2 id=\"top-risky-skills\">Top Risky Skills</h2><table><thead><tr><th>Skill</th><th>Manifest</th><th>Findings</th><th>Risk score</th></tr></thead><tbody>");
+    if view_model.top_risky_skills.is_empty() {
+        html.push_str("<tr><td colspan=\"4\">No risky skills identified.</td></tr>");
+    }
+
+    for skill in &view_model.top_risky_skills {
+        html.push_str("<tr><td>");
+        html.push_str(&escape_html(
+            skill
+                .package
+                .as_ref()
+                .and_then(|package| package.name.as_deref())
+                .unwrap_or("Unmatched findings"),
+        ));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(
+            skill
+                .package
+                .as_ref()
+                .map(|package| package.manifest_path.as_str())
+                .unwrap_or(""),
+        ));
+        html.push_str("</td><td>");
+        html.push_str(&skill.finding_count.to_string());
+        html.push_str("</td><td>");
+        html.push_str(&skill.score.to_string());
+        html.push_str("</td></tr>");
+    }
+    html.push_str("</tbody></table></section>\n");
+}
+
+fn extend_html_broken_references(html: &mut String, view_model: &HtmlReportViewModel<'_>) {
+    html.push_str("<section aria-labelledby=\"broken-references\"><h2 id=\"broken-references\">Broken References</h2><table><thead><tr><th>Location</th><th>Rule</th><th>Message</th><th>How to fix</th></tr></thead><tbody>");
+    if view_model.broken_references.is_empty() {
+        html.push_str("<tr><td colspan=\"4\">No broken references found.</td></tr>");
+    }
+
+    for finding in &view_model.broken_references {
+        html.push_str("<tr><td>");
+        html.push_str(&escape_html(&location_display(
+            &finding.location.path,
+            finding.location.line,
+        )));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&finding.rule_id));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&finding.message));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&finding.remediation));
+        html.push_str("</td></tr>");
+    }
+    html.push_str("</tbody></table></section>\n");
+}
+
+fn extend_html_external_urls(html: &mut String, view_model: &HtmlReportViewModel<'_>) {
+    html.push_str("<section aria-labelledby=\"external-urls\"><h2 id=\"external-urls\">External URLs</h2><table><thead><tr><th>Location</th><th>Kind</th><th>URL</th><th>Pinned</th><th>Source</th></tr></thead><tbody>");
+    if view_model.external_urls.is_empty() {
+        html.push_str("<tr><td colspan=\"5\">No external URLs observed.</td></tr>");
+    }
+
+    for url in &view_model.external_urls {
+        html.push_str("<tr><td>");
+        html.push_str(&escape_html(&location_display(&url.path, url.line)));
+        html.push_str("</td><td>");
+        html.push_str(external_url_kind_name(url.kind));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&url.normalized));
+        html.push_str("</td><td>");
+        html.push_str(pinned_name(url.pinned));
+        html.push_str("</td><td>");
+        html.push_str(supply_chain_source_name(url.source));
+        html.push_str("</td></tr>");
+    }
+    html.push_str("</tbody></table></section>\n");
+}
+
+fn extend_html_secret_usage(html: &mut String, view_model: &HtmlReportViewModel<'_>) {
+    html.push_str("<section aria-labelledby=\"secret-usage\"><h2 id=\"secret-usage\">Secret Usage</h2><table><thead><tr><th>Location</th><th>Source</th><th>Evidence</th><th>Detail</th></tr></thead><tbody>");
+    if view_model.secret_security_evidence.is_empty() {
+        html.push_str("<tr><td colspan=\"4\">No secret usage evidence observed.</td></tr>");
+    }
+
+    for evidence in &view_model.secret_security_evidence {
+        match evidence {
+            SecretSecurityEvidence::Finding(finding) => {
+                html.push_str("<tr><td>");
+                html.push_str(&escape_html(&location_display(
+                    &finding.location.path,
+                    finding.location.line,
+                )));
+                html.push_str("</td><td>finding</td><td>");
+                html.push_str(&escape_html(&finding.rule_id));
+                html.push_str("</td><td>");
+                html.push_str(&escape_html(&finding.message));
+                html.push_str("</td></tr>");
+            }
+            SecretSecurityEvidence::Permission(permission) => {
+                html.push_str("<tr><td>");
+                html.push_str(&escape_html(&location_display(&permission.path, permission.line)));
+                html.push_str("</td><td>permission</td><td>");
+                html.push_str(&escape_html(&permission.normalized));
+                html.push_str("</td><td>");
+                html.push_str(permission_evidence_name(permission.evidence));
+                html.push_str("</td></tr>");
+            }
+        }
+    }
+    html.push_str("</tbody></table></section>\n");
+}
+
+fn extend_html_offline_readiness(
+    html: &mut String,
+    report: &ScanReport,
+    view_model: &HtmlReportViewModel<'_>,
+) {
+    html.push_str("<section aria-labelledby=\"offline-readiness\"><h2 id=\"offline-readiness\">Offline Readiness</h2><div class=\"summary\">");
+    html.push_str(&summary_count("Ready", view_model.offline_readiness_totals.ready));
+    html.push_str(&summary_count(
+        "Partial",
+        view_model.offline_readiness_totals.partial,
+    ));
+    html.push_str(&summary_count(
+        "Not ready",
+        view_model.offline_readiness_totals.not_ready,
+    ));
+    html.push_str(&summary_count(
+        "Unknown",
+        view_model.offline_readiness_totals.unknown,
+    ));
+    html.push_str("</div><table><thead><tr><th>Path</th><th>Status</th><th>Score</th><th>Reasons</th></tr></thead><tbody>");
+
+    let mut readiness = report.supply_chain.offline_readiness.iter().collect::<Vec<_>>();
+    readiness.sort();
+    if readiness.is_empty() {
+        html.push_str("<tr><td colspan=\"4\">No offline readiness evidence.</td></tr>");
+    }
+
+    for item in readiness {
+        html.push_str("<tr><td>");
+        html.push_str(&escape_html(&item.path));
+        html.push_str("</td><td>");
+        html.push_str(offline_readiness_status_name(item.status));
+        html.push_str("</td><td>");
+        if let Some(score) = item.score {
+            html.push_str(&u8::from(score).to_string());
+        }
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&item.reasons.join("; ")));
+        html.push_str("</td></tr>");
+    }
+    html.push_str("</tbody></table></section>\n");
+}
+
+fn extend_html_packages(html: &mut String, report: &ScanReport) {
+    html.push_str(
+        "<section aria-labelledby=\"packages\"><h2 id=\"packages\">Packages</h2><table><thead><tr><th>Name</th><th>Description</th><th>Manifest</th><th>Root</th></tr></thead><tbody>",
+    );
+    let packages = sorted_packages(&report.packages);
+    if packages.is_empty() {
+        html.push_str("<tr><td colspan=\"4\">No packages discovered.</td></tr>");
+    }
+    for package in packages {
+        html.push_str("<tr><td>");
+        html.push_str(&escape_html(package.manifest.name.as_deref().unwrap_or("")));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(
+            package.manifest.description.as_deref().unwrap_or(""),
+        ));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&package.manifest_path));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&package.root));
+        html.push_str("</td></tr>");
+    }
+    html.push_str("</tbody></table>");
+    extend_html_package_inventory(html, report);
+    html.push_str("</section>\n");
+}
+
+fn extend_html_package_inventory(html: &mut String, report: &ScanReport) {
+    html.push_str("<h3>Package Inventory</h3><table><thead><tr><th>Type</th><th>Location</th><th>Manager</th><th>Evidence</th><th>Pinned</th></tr></thead><tbody>");
+
+    let mut rows = Vec::new();
+    for dependency in &report.supply_chain.remote_dependencies {
+        rows.push((
+            "dependency",
+            location_display(&dependency.path, dependency.line),
+            dependency
+                .package_manager
+                .map(package_manager_name)
+                .unwrap_or(""),
+            dependency.normalized.as_str(),
+            pinned_name(dependency.pinned),
+        ));
+    }
+    for manager in &report.supply_chain.package_managers {
+        rows.push((
+            "package manager",
+            location_display(&manager.path, manager.line),
+            package_manager_name(manager.manager),
+            manager.normalized.as_str(),
+            "",
+        ));
+    }
+    for lockfile in &report.supply_chain.lockfiles {
+        rows.push((
+            "lockfile",
+            location_display(&lockfile.path, lockfile.line),
+            package_manager_name(lockfile.manager),
+            lockfile.normalized.as_str(),
+            "",
+        ));
+    }
+    rows.sort();
+
+    if rows.is_empty() {
+        html.push_str("<tr><td colspan=\"5\">No package inventory evidence.</td></tr>");
+    }
+
+    for (kind, location, manager, evidence, pinned) in rows {
+        html.push_str("<tr><td>");
+        html.push_str(kind);
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&location));
+        html.push_str("</td><td>");
+        html.push_str(manager);
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(evidence));
+        html.push_str("</td><td>");
+        html.push_str(pinned);
+        html.push_str("</td></tr>");
+    }
+    html.push_str("</tbody></table>");
+}
+
+fn extend_html_findings(html: &mut String, report: &ScanReport) {
+    html.push_str(
+        "<section aria-labelledby=\"findings\"><h2 id=\"findings\">Findings</h2><table><thead><tr><th>Rule</th><th>Severity</th><th>Category</th><th>Location</th><th>Title</th><th>Message</th><th>Why it matters</th><th>How to fix</th><th>Suppression</th></tr></thead><tbody>",
+    );
+    let findings = sorted_findings(&report.findings);
+    if findings.is_empty() {
+        html.push_str("<tr><td colspan=\"9\">No findings.</td></tr>");
+    }
+    for finding in findings {
+        extend_html_finding_row(html, finding);
+    }
+    html.push_str("</tbody></table></section>\n");
+}
+
+fn extend_html_finding_row(html: &mut String, finding: &SkillFinding) {
+    html.push_str("<tr><td>");
+    html.push_str(&escape_html(&finding.rule_id));
+    html.push_str("</td><td>");
+    html.push_str(&html_severity(severity_name(finding.severity)));
+    html.push_str("</td><td>");
+    html.push_str(category_name(finding.category));
+    html.push_str("</td><td>");
+    html.push_str(&escape_html(&location_display(
+        &finding.location.path,
+        finding.location.line,
+    )));
+    html.push_str("</td><td>");
+    html.push_str(&escape_html(&finding.title));
+    html.push_str("</td><td>");
+    html.push_str(&escape_html(&finding.message));
+    html.push_str("</td><td>");
+    html.push_str(&escape_html(&finding.rationale));
+    html.push_str("</td><td>");
+    html.push_str(&escape_html(&finding.remediation));
+    html.push_str("</td><td>");
+    html.push_str(&escape_html(&finding.suppression));
+    html.push_str("</td></tr>");
+}
+
+fn extend_html_skill_details(html: &mut String, view_model: &HtmlReportViewModel<'_>) {
+    html.push_str("<section aria-labelledby=\"skill-details\"><h2 id=\"skill-details\">Skill Details</h2>");
+    if view_model.finding_groups.is_empty() {
+        html.push_str("<p class=\"muted\">No per-skill findings to report.</p>");
+    }
+
+    for (index, group) in view_model.finding_groups.iter().enumerate() {
+        let anchor = format!("skill-detail-{}", index + 1);
+        html.push_str("<section class=\"skill-detail\" id=\"");
+        html.push_str(&anchor);
+        html.push_str("\"><h3>");
+        html.push_str(&escape_html(
+            group
+                .package
+                .as_ref()
+                .and_then(|package| package.name.as_deref())
+                .unwrap_or("Unmatched findings"),
+        ));
+        html.push_str("</h3><table><tbody>");
+        if let Some(package) = &group.package {
+            html.push_str("<tr><th>Manifest</th><td>");
+            html.push_str(&escape_html(&package.manifest_path));
+            html.push_str("</td></tr><tr><th>Root</th><td>");
+            html.push_str(&escape_html(&package.root));
+            html.push_str("</td></tr>");
+        }
+        html.push_str("<tr><th>Anchor</th><td>");
+        html.push_str(&anchor);
+        html.push_str("</td></tr><tr><th>Finding count</th><td>");
+        html.push_str(&group.findings.len().to_string());
+        html.push_str("</td></tr></tbody></table>");
+
+        html.push_str("<table><thead><tr><th>Rule</th><th>Severity</th><th>Location</th><th>Message</th></tr></thead><tbody>");
+        if group.findings.is_empty() {
+            html.push_str("<tr><td colspan=\"4\">No findings for this package.</td></tr>");
+        }
+        for finding in &group.findings {
+            html.push_str("<tr><td>");
+            html.push_str(&escape_html(&finding.rule_id));
+            html.push_str("</td><td>");
+            html.push_str(&html_severity(severity_name(finding.severity)));
+            html.push_str("</td><td>");
+            html.push_str(&escape_html(&location_display(
+                &finding.location.path,
+                finding.location.line,
+            )));
+            html.push_str("</td><td>");
+            html.push_str(&escape_html(&finding.message));
+            html.push_str("</td></tr>");
+        }
+        html.push_str("</tbody></table></section>");
+    }
+    html.push_str("</section>\n");
+}
+
+fn html_severity(severity: &str) -> String {
+    format!(
+        "<span class=\"severity severity-{}\">{}</span>",
+        escape_html(severity),
+        escape_html(severity)
+    )
+}
+
+fn pinned_name(pinned: Option<bool>) -> &'static str {
+    match pinned {
+        Some(true) => "yes",
+        Some(false) => "no",
+        None => "unknown",
+    }
+}
+
+fn supply_chain_source_name(source: agent_audit_core::SupplyChainSourceKind) -> &'static str {
+    match source {
+        agent_audit_core::SupplyChainSourceKind::Frontmatter => "frontmatter",
+        agent_audit_core::SupplyChainSourceKind::MarkdownLink => "markdown-link",
+        agent_audit_core::SupplyChainSourceKind::InlineCode => "inline-code",
+        agent_audit_core::SupplyChainSourceKind::CodeBlock => "code-block",
+        agent_audit_core::SupplyChainSourceKind::Script => "script",
+        agent_audit_core::SupplyChainSourceKind::PackageManifest => "package-manifest",
+        agent_audit_core::SupplyChainSourceKind::Lockfile => "lockfile",
+        agent_audit_core::SupplyChainSourceKind::TrustManifest => "trust-manifest",
+        agent_audit_core::SupplyChainSourceKind::Filesystem => "filesystem",
+        agent_audit_core::SupplyChainSourceKind::Inferred => "inferred",
+    }
+}
+
+fn external_url_kind_name(kind: agent_audit_core::ExternalUrlKind) -> &'static str {
+    match kind {
+        agent_audit_core::ExternalUrlKind::Documentation => "documentation",
+        agent_audit_core::ExternalUrlKind::RemoteScript => "remote-script",
+        agent_audit_core::ExternalUrlKind::DownloadedArtifact => "downloaded-artifact",
+        agent_audit_core::ExternalUrlKind::PackageRegistry => "package-registry",
+        agent_audit_core::ExternalUrlKind::GithubRaw => "github-raw",
+        agent_audit_core::ExternalUrlKind::GithubReleaseAsset => "github-release-asset",
+        agent_audit_core::ExternalUrlKind::HttpEndpoint => "http-endpoint",
+        agent_audit_core::ExternalUrlKind::Localhost => "localhost",
+        agent_audit_core::ExternalUrlKind::Internal => "internal",
+        agent_audit_core::ExternalUrlKind::Unknown => "unknown",
+    }
+}
+
+fn package_manager_name(manager: agent_audit_core::PackageManagerKind) -> &'static str {
+    match manager {
+        agent_audit_core::PackageManagerKind::Npm => "npm",
+        agent_audit_core::PackageManagerKind::Yarn => "yarn",
+        agent_audit_core::PackageManagerKind::Pnpm => "pnpm",
+        agent_audit_core::PackageManagerKind::Pip => "pip",
+        agent_audit_core::PackageManagerKind::Poetry => "poetry",
+        agent_audit_core::PackageManagerKind::Uv => "uv",
+        agent_audit_core::PackageManagerKind::Cargo => "cargo",
+        agent_audit_core::PackageManagerKind::Go => "go",
+        agent_audit_core::PackageManagerKind::Gem => "gem",
+        agent_audit_core::PackageManagerKind::Composer => "composer",
+        agent_audit_core::PackageManagerKind::Unknown => "unknown",
+    }
+}
+
+fn permission_evidence_name(evidence: agent_audit_core::PermissionEvidenceKind) -> &'static str {
+    match evidence {
+        agent_audit_core::PermissionEvidenceKind::Declared => "declared",
+        agent_audit_core::PermissionEvidenceKind::Observed => "observed",
+    }
+}
+
+fn offline_readiness_status_name(status: OfflineReadinessStatus) -> &'static str {
+    match status {
+        OfflineReadinessStatus::Ready => "ready",
+        OfflineReadinessStatus::Partial => "partial",
+        OfflineReadinessStatus::NotReady => "not-ready",
+        OfflineReadinessStatus::Unknown => "unknown",
+    }
+}
+
+fn extend_html_compatibility(
+    html: &mut String,
+    report: &ScanReport,
+    view_model: &HtmlReportViewModel<'_>,
+) {
     if report.compatibility.is_empty() {
         return;
     }
 
     html.push_str(
-        "<section aria-labelledby=\"compatibility\"><h2 id=\"compatibility\">Compatibility</h2>",
+        "<section aria-labelledby=\"compatibility\"><h2 id=\"compatibility\">Compatibility / Host Support</h2>",
     );
+    html.push_str("<div class=\"summary\">");
+    html.push_str(&summary_count("Pass", view_model.compatibility_totals.pass));
+    html.push_str(&summary_count("Warn", view_model.compatibility_totals.warn));
+    html.push_str(&summary_count("Fail", view_model.compatibility_totals.fail));
+    html.push_str(&summary_count(
+        "Unknown",
+        view_model.compatibility_totals.unknown,
+    ));
+    html.push_str("</div>");
+
+    html.push_str("<h3>Host Support Totals</h3><table><thead><tr><th>Host</th><th>Pass</th><th>Warn</th><th>Fail</th><th>Unknown</th></tr></thead><tbody>");
+    if view_model.compatibility_host_totals.is_empty() {
+        html.push_str("<tr><td colspan=\"5\">No host profiles evaluated.</td></tr>");
+    }
+    for totals in &view_model.compatibility_host_totals {
+        html.push_str("<tr><td>");
+        html.push_str(&escape_html(&totals.host));
+        html.push_str("</td><td>");
+        html.push_str(&totals.counts.pass.to_string());
+        html.push_str("</td><td>");
+        html.push_str(&totals.counts.warn.to_string());
+        html.push_str("</td><td>");
+        html.push_str(&totals.counts.fail.to_string());
+        html.push_str("</td><td>");
+        html.push_str(&totals.counts.unknown.to_string());
+        html.push_str("</td></tr>");
+    }
+    html.push_str("</tbody></table><h3>Compatibility Matrix</h3>");
+
     html.push_str("<table><thead><tr><th>Package path</th><th>Skill</th>");
     for profile in &report.compatibility.profiles {
         html.push_str("<th>");
@@ -671,46 +1121,6 @@ impl<'a> HtmlReportViewModel<'a> {
             finding_groups,
         }
     }
-
-    fn observed_item_count(&self) -> usize {
-        self.severity_counts.total()
-            + self.category_counts.total()
-            + self.compatibility_totals.total()
-            + self
-                .compatibility_host_totals
-                .iter()
-                .map(|totals| totals.host.len() + totals.counts.total())
-                .sum::<usize>()
-            + self.offline_readiness_totals.total()
-            + self.broken_references.len()
-            + self.external_urls.len()
-            + self.secret_security_evidence.len()
-            + self
-                .finding_groups
-                .iter()
-                .map(|group| {
-                    group.findings.len()
-                        + group
-                            .package
-                            .as_ref()
-                            .map(SkillGroupPackage::stable_len)
-                            .unwrap_or_default()
-                })
-                .sum::<usize>()
-            + self
-                .top_risky_skills
-                .iter()
-                .map(|skill| {
-                    skill.score
-                        + skill.finding_count
-                        + skill
-                            .package
-                            .as_ref()
-                            .map(SkillGroupPackage::stable_len)
-                            .unwrap_or_default()
-                })
-                .sum::<usize>()
-    }
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -738,12 +1148,6 @@ fn severity_counts(findings: &[SkillFinding]) -> SeverityCounts {
     counts
 }
 
-impl SeverityCounts {
-    fn total(self) -> usize {
-        self.critical + self.high + self.medium + self.low + self.info
-    }
-}
-
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct CategoryCounts {
     spec: usize,
@@ -769,17 +1173,6 @@ fn category_counts(findings: &[SkillFinding]) -> CategoryCounts {
     }
 
     counts
-}
-
-impl CategoryCounts {
-    fn total(self) -> usize {
-        self.spec
-            + self.compatibility
-            + self.security
-            + self.quality
-            + self.portability
-            + self.reproducibility
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -909,15 +1302,13 @@ struct SkillGroupPackage {
     name: Option<String>,
 }
 
-impl SkillGroupPackage {
-    fn stable_len(&self) -> usize {
-        self.root.len() + self.manifest_path.len() + self.name.as_deref().unwrap_or("").len()
-    }
-}
-
 fn skill_finding_groups(report: &ScanReport) -> Vec<SkillFindingGroup<'_>> {
     let packages = sorted_packages(&report.packages);
     let mut grouped = BTreeMap::<Option<String>, Vec<&SkillFinding>>::new();
+
+    for package in &packages {
+        grouped.entry(Some(package.manifest_path.clone())).or_default();
+    }
 
     for finding in sorted_findings(&report.findings) {
         let manifest_path =
@@ -1846,9 +2237,49 @@ mod tests {
                 ))
                 .collect::<Vec<_>>(),
             vec![
+                (Some("skills/other/SKILL.md"), vec![]),
                 (Some("skills/review/SKILL.md"), vec!["ROOT"]),
                 (Some("skills/review/nested/SKILL.md"), vec!["NESTED"]),
                 (None, vec!["UNMATCHED"]),
+            ]
+        );
+    }
+
+    #[test]
+    fn html_view_model_includes_clean_packages_in_skill_groups() {
+        let report = report_with_packages_and_findings(
+            vec![
+                package("skills/clean", "skills/clean/SKILL.md", Some("clean"), None),
+                package("skills/risky", "skills/risky/SKILL.md", Some("risky"), None),
+            ],
+            vec![finding(
+                "SKILL001",
+                Severity::Low,
+                FindingCategory::Spec,
+                "Missing skill name",
+                "The skill manifest does not declare a name.",
+                "skills/risky/SKILL.md",
+                Some(1),
+            )],
+        );
+
+        let view_model = HtmlReportViewModel::from_report(&report);
+
+        assert_eq!(
+            view_model
+                .finding_groups
+                .iter()
+                .map(|group| (
+                    group
+                        .package
+                        .as_ref()
+                        .map(|package| package.manifest_path.as_str()),
+                    group.findings.len()
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (Some("skills/clean/SKILL.md"), 0),
+                (Some("skills/risky/SKILL.md"), 1),
             ]
         );
     }
@@ -2408,7 +2839,7 @@ mod tests {
 
         let html = render_html(&report);
 
-        assert!(html.contains("<h2 id=\"summary\">Summary</h2>"));
+        assert!(html.contains("<h2 id=\"summary\">Executive Summary</h2>"));
         assert!(html.contains("<h2 id=\"packages\">Packages</h2>"));
         assert!(html.contains("<h2 id=\"findings\">Findings</h2>"));
         assert!(html.contains("<span class=\"count\">1</span>Packages"));
@@ -2526,7 +2957,7 @@ mod tests {
 
         let html = render_html(&report);
 
-        assert!(html.contains("<h2 id=\"compatibility\">Compatibility</h2>"));
+        assert!(html.contains("<h2 id=\"compatibility\">Compatibility / Host Support</h2>"));
         assert!(html.contains("<th>Package path</th><th>Skill</th><th>agent-skills-spec</th><th>claude-code</th><th>codex</th>"));
         assert!(html.contains("<td>skills/deploy/SKILL.md</td><td>deploy-helper</td>"));
         assert!(html.contains("<span class=\"status status-pass\">pass</span>"));
@@ -2540,8 +2971,8 @@ mod tests {
         assert_in_order(
             &html,
             &[
+                "<h2 id=\"compatibility\">Compatibility / Host Support</h2>",
                 "<h2 id=\"packages\">Packages</h2>",
-                "<h2 id=\"compatibility\">Compatibility</h2>",
                 "<h2 id=\"findings\">Findings</h2>",
             ],
         );
@@ -2866,13 +3297,301 @@ mod tests {
             "url(",
             "integrity=",
             "crossorigin=",
-            "http://",
-            "https://",
         ] {
             assert!(
                 !html.contains(forbidden),
                 "HTML should not contain external markup token {forbidden:?}"
             );
+        }
+    }
+
+    #[test]
+    fn html_output_includes_milestone_six_sections_in_order() {
+        let mut report = report_with_packages_and_findings(
+            vec![package(
+                "skills/review",
+                "skills/review/SKILL.md",
+                Some("review"),
+                Some("Review skills."),
+            )],
+            vec![
+                finding(
+                    "SEC002",
+                    Severity::Medium,
+                    FindingCategory::Security,
+                    "Secret-like environment variable access",
+                    "The script reads REVIEW_TOKEN.",
+                    "skills/review/scripts/check.sh",
+                    Some(4),
+                ),
+                finding(
+                    "SKILL010",
+                    Severity::Low,
+                    FindingCategory::Spec,
+                    "Broken relative reference",
+                    "The referenced file could not be found.",
+                    "skills/review/SKILL.md",
+                    Some(8),
+                ),
+            ],
+        );
+        report.supply_chain = supply_chain_inventory(json!({
+            "licenses": [],
+            "trust_manifests": [],
+            "external_urls": [
+                {
+                    "path": "skills/review/SKILL.md",
+                    "line": 9,
+                    "source": "markdown-link",
+                    "kind": "documentation",
+                    "normalized": "https://docs.example/review",
+                    "raw": "https://docs.example/review",
+                    "confidence": "high",
+                    "pinned": true
+                }
+            ],
+            "remote_dependencies": [
+                {
+                    "path": "skills/review/package.json",
+                    "line": null,
+                    "source": "package-manifest",
+                    "kind": "package",
+                    "package_manager": "npm",
+                    "name": "zod",
+                    "version": "3.22.0",
+                    "normalized": "zod@3.22.0",
+                    "raw": "zod",
+                    "confidence": "high",
+                    "pinned": true
+                }
+            ],
+            "package_managers": [],
+            "lockfiles": [],
+            "executables": [],
+            "binaries": [],
+            "checksums": [],
+            "permissions": [],
+            "offline_readiness": [
+                {
+                    "path": "skills/review/SKILL.md",
+                    "status": "partial",
+                    "score": 70,
+                    "reasons": ["external documentation URL"]
+                }
+            ]
+        }));
+
+        let html = render_html(&report);
+
+        assert_in_order(
+            &html,
+            &[
+                "<h2 id=\"summary\">Executive Summary</h2>",
+                "<h2 id=\"risk-distribution\">Risk Distribution</h2>",
+                "<h2 id=\"top-risky-skills\">Top Risky Skills</h2>",
+                "<h2 id=\"broken-references\">Broken References</h2>",
+                "<h2 id=\"external-urls\">External URLs</h2>",
+                "<h2 id=\"secret-usage\">Secret Usage</h2>",
+                "<h2 id=\"offline-readiness\">Offline Readiness</h2>",
+                "<h2 id=\"packages\">Packages</h2>",
+                "<h2 id=\"findings\">Findings</h2>",
+                "<h2 id=\"skill-details\">Skill Details</h2>",
+            ],
+        );
+        assert!(html.contains("https://docs.example/review"));
+        assert!(html.contains("zod@3.22.0"));
+        assert!(html.contains("external documentation URL"));
+    }
+
+    #[test]
+    fn html_output_renders_external_url_text_without_loading_links_or_assets() {
+        let mut report = report_with_packages_and_findings(Vec::new(), Vec::new());
+        report.supply_chain = supply_chain_inventory(json!({
+            "licenses": [],
+            "trust_manifests": [],
+            "external_urls": [
+                {
+                    "path": "skills/review/SKILL.md",
+                    "line": 3,
+                    "source": "markdown-link",
+                    "kind": "documentation",
+                    "normalized": "https://docs.example/path?x=1&y=<tag>",
+                    "raw": "https://docs.example/path?x=1&y=<tag>",
+                    "confidence": "high",
+                    "pinned": null
+                }
+            ],
+            "remote_dependencies": [],
+            "package_managers": [],
+            "lockfiles": [],
+            "executables": [],
+            "binaries": [],
+            "checksums": [],
+            "permissions": [],
+            "offline_readiness": []
+        }));
+
+        let html = render_html(&report);
+
+        assert!(html.contains("https://docs.example/path?x=1&amp;y=&lt;tag&gt;"));
+        assert!(!html.contains("<a "));
+        assert!(!html.contains("href="));
+        assert!(!html.contains("src="));
+        assert!(!html.contains("@import"));
+        assert!(!html.contains("url("));
+    }
+
+    #[test]
+    fn html_output_renders_per_skill_detail_anchors_without_links() {
+        let report = report_with_packages_and_findings(
+            vec![
+                package("skills/clean", "skills/clean/SKILL.md", Some("clean"), None),
+                package(
+                    "skills/review",
+                    "skills/review/SKILL.md",
+                    Some("review"),
+                    None,
+                ),
+            ],
+            vec![finding(
+                "SKILL001",
+                Severity::Low,
+                FindingCategory::Spec,
+                "Missing skill name",
+                "The skill manifest does not declare a name.",
+                "skills/review/SKILL.md",
+                Some(1),
+            )],
+        );
+
+        let html = render_html(&report);
+
+        assert!(html.contains("<section class=\"skill-detail\" id=\"skill-detail-1\">"));
+        assert!(html.contains("<h3>clean</h3>"));
+        assert!(html.contains("<tr><th>Anchor</th><td>skill-detail-1</td></tr>"));
+        assert!(html.contains("<td colspan=\"4\">No findings for this package.</td>"));
+        assert!(html.contains("<section class=\"skill-detail\" id=\"skill-detail-2\">"));
+        assert!(html.contains("<h3>review</h3>"));
+        assert!(html.contains("<tr><th>Anchor</th><td>skill-detail-2</td></tr>"));
+        assert!(!html.contains("href="));
+    }
+
+    #[test]
+    fn html_output_escapes_new_section_strings() {
+        let mut report = report_with_packages_and_findings(
+            vec![package(
+                "skills/<root>",
+                "skills/<root>/SKILL.md",
+                Some("<skill>"),
+                Some("<description>"),
+            )],
+            vec![
+                finding_with_details(
+                    finding(
+                        "SKILL010",
+                        Severity::Low,
+                        FindingCategory::Spec,
+                        "<broken>",
+                        "</td><script>alert('broken')</script>",
+                        "skills/<root>/SKILL.md",
+                        Some(2),
+                    ),
+                    "<rationale>",
+                    "<fix>",
+                    "<suppress>",
+                ),
+                finding(
+                    "SEC002",
+                    Severity::Medium,
+                    FindingCategory::Security,
+                    "<secret>",
+                    "</td><img src=x>",
+                    "skills/<root>/scripts/check.sh",
+                    Some(3),
+                ),
+            ],
+        );
+        report.supply_chain = supply_chain_inventory(json!({
+            "licenses": [],
+            "trust_manifests": [],
+            "external_urls": [
+                {
+                    "path": "skills/<root>/SKILL.md",
+                    "line": 4,
+                    "source": "markdown-link",
+                    "kind": "documentation",
+                    "normalized": "https://docs.example/<unsafe>",
+                    "raw": "https://docs.example/<unsafe>",
+                    "confidence": "high",
+                    "pinned": false
+                }
+            ],
+            "remote_dependencies": [
+                {
+                    "path": "skills/<root>/package.json",
+                    "line": 5,
+                    "source": "package-manifest",
+                    "kind": "package",
+                    "package_manager": "npm",
+                    "name": "<pkg>",
+                    "version": null,
+                    "normalized": "<pkg>@latest",
+                    "raw": "<pkg>",
+                    "confidence": "high",
+                    "pinned": false
+                }
+            ],
+            "package_managers": [],
+            "lockfiles": [],
+            "executables": [],
+            "binaries": [],
+            "checksums": [],
+            "permissions": [
+                {
+                    "path": "skills/<root>/trust.yaml",
+                    "line": 6,
+                    "source": "trust-manifest",
+                    "kind": "secrets",
+                    "evidence": "declared",
+                    "normalized": "secrets=<TOKEN>",
+                    "raw": "<TOKEN>",
+                    "confidence": "high"
+                }
+            ],
+            "offline_readiness": [
+                {
+                    "path": "skills/<root>/SKILL.md",
+                    "status": "not-ready",
+                    "score": 20,
+                    "reasons": ["<reason>"]
+                }
+            ]
+        }));
+
+        let html = render_html(&report);
+
+        for escaped in [
+            "skills/&lt;root&gt;/SKILL.md",
+            "&lt;/td&gt;&lt;script&gt;alert(&#39;broken&#39;)&lt;/script&gt;",
+            "&lt;/td&gt;&lt;img src=x&gt;",
+            "https://docs.example/&lt;unsafe&gt;",
+            "&lt;pkg&gt;@latest",
+            "secrets=&lt;TOKEN&gt;",
+            "&lt;reason&gt;",
+        ] {
+            assert!(html.contains(escaped), "missing escaped value {escaped}");
+        }
+
+        for raw in [
+            "skills/<root>/SKILL.md",
+            "</td><script>alert('broken')</script>",
+            "</td><img src=x>",
+            "https://docs.example/<unsafe>",
+            "<pkg>@latest",
+            "secrets=<TOKEN>",
+            "<reason>",
+        ] {
+            assert!(!html.contains(raw), "raw dangerous value was rendered: {raw}");
         }
     }
 

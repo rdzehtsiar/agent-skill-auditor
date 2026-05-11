@@ -391,7 +391,7 @@ mod tests {
         assert!(!json_contains_path(&sarif, &workspace_root()));
 
         let html = render_html(&report);
-        assert!(html.contains("<h2 id=\"summary\">Summary</h2>"));
+        assert!(html.contains("<h2 id=\"summary\">Executive Summary</h2>"));
         assert!(html.contains("<span class=\"count\">30</span>Packages"));
         assert!(html.contains("<span class=\"count\">16</span>Findings"));
         assert!(html.contains("<span class=\"count\">0</span>Suppressed findings"));
