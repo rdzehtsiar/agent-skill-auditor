@@ -6,7 +6,8 @@ use std::fmt;
 use std::str::FromStr;
 
 use agent_audit_core::{
-    CompatibilityMatrix, FindingCategory, ScanReport, Severity, SkillFinding, SkillPackage,
+    CompatibilityMatrix, FindingCategory, ScanReport, Severity, SkillCompatibilityRow,
+    SkillFinding, SkillPackage,
 };
 use agent_audit_rules::{active_rule_metadata, RuleMetadata, RuleSeverity};
 use serde_json::{json, Value};
@@ -582,7 +583,7 @@ fn sarif_compatibility_matrix(compatibility: &CompatibilityMatrix) -> Value {
     })
 }
 
-fn sarif_compatibility_row(row: &agent_audit_core::SkillCompatibilityRow) -> Value {
+fn sarif_compatibility_row(row: &SkillCompatibilityRow) -> Value {
     json!({
         "path": row.path,
         "name": row.name,
@@ -602,15 +603,17 @@ fn sarif_compatibility_row(row: &agent_audit_core::SkillCompatibilityRow) -> Val
 
 fn sorted_findings(findings: &[SkillFinding]) -> Vec<&SkillFinding> {
     let mut sorted = findings.iter().collect::<Vec<_>>();
-    sorted.sort_by(|left, right| {
-        left.location
-            .path
-            .cmp(&right.location.path)
-            .then(left.location.line.cmp(&right.location.line))
-            .then(left.rule_id.cmp(&right.rule_id))
-            .then(left.message.cmp(&right.message))
-    });
+    sorted.sort_by(|left, right| compare_findings(left, right));
     sorted
+}
+
+fn compare_findings(left: &SkillFinding, right: &SkillFinding) -> std::cmp::Ordering {
+    left.location
+        .path
+        .cmp(&right.location.path)
+        .then(left.location.line.cmp(&right.location.line))
+        .then(left.rule_id.cmp(&right.rule_id))
+        .then(left.message.cmp(&right.message))
 }
 
 fn rule_indexes(findings: &[&SkillFinding]) -> BTreeMap<String, usize> {
@@ -891,22 +894,13 @@ mod tests {
 
     #[test]
     fn render_report_dispatches_supported_formats_with_trailing_newline() {
-        let report = report_with_packages_and_findings(
-            vec![package(
-                "skills/review",
-                "skills/review/SKILL.md",
-                Some("review-skill"),
-                Some("Reviews agent skills."),
-            )],
-            vec![finding(
-                "SKILL001",
-                Severity::Low,
-                FindingCategory::Spec,
-                "Missing skill name",
-                "The skill manifest does not declare a name.",
-                "skills/review/SKILL.md",
-                Some(1),
-            )],
+        let report = review_skill_report(
+            "SKILL001",
+            Severity::Low,
+            FindingCategory::Spec,
+            "Missing skill name",
+            "The skill manifest does not declare a name.",
+            Some(1),
         );
 
         let summary = render_report(&report, ReportFormat::Summary).expect("render summary");
@@ -1117,22 +1111,13 @@ mod tests {
 
     #[test]
     fn json_output_uses_report_renderer() {
-        let report = report_with_packages_and_findings(
-            vec![package(
-                "skills/review",
-                "skills/review/SKILL.md",
-                Some("review-skill"),
-                Some("Reviews agent skills."),
-            )],
-            vec![finding(
-                "SKILL002",
-                Severity::Low,
-                FindingCategory::Spec,
-                "Missing skill description",
-                "The skill manifest does not declare a description.",
-                "skills/review/SKILL.md",
-                Some(2),
-            )],
+        let report = review_skill_report(
+            "SKILL002",
+            Severity::Low,
+            FindingCategory::Spec,
+            "Missing skill description",
+            "The skill manifest does not declare a description.",
+            Some(2),
         );
 
         let rendered = render_report(&report, ReportFormat::Json).expect("render JSON");
@@ -1148,13 +1133,15 @@ mod tests {
     #[test]
     fn json_and_html_outputs_include_finding_explanation_fields() {
         let report = report_with_findings(vec![finding_with_details(
-            "CUSTOM001",
-            Severity::Medium,
-            FindingCategory::Quality,
-            "Custom explanation",
-            "Custom finding message.",
-            "skills/custom/SKILL.md",
-            Some(4),
+            finding(
+                "CUSTOM001",
+                Severity::Medium,
+                FindingCategory::Quality,
+                "Custom explanation",
+                "Custom finding message.",
+                "skills/custom/SKILL.md",
+                Some(4),
+            ),
             "Explain why the custom finding matters.",
             "Explain how to fix the custom finding.",
             "Explain how to suppress the custom finding safely.",
@@ -1186,22 +1173,13 @@ mod tests {
 
     #[test]
     fn html_output_has_summary_packages_and_findings() {
-        let report = report_with_packages_and_findings(
-            vec![package(
-                "skills/review",
-                "skills/review/SKILL.md",
-                Some("review-skill"),
-                Some("Reviews agent skills."),
-            )],
-            vec![finding(
-                "SKILL010",
-                Severity::Low,
-                FindingCategory::Spec,
-                "Broken relative reference",
-                "The referenced file could not be found.",
-                "skills/review/SKILL.md",
-                Some(12),
-            )],
+        let report = review_skill_report(
+            "SKILL010",
+            Severity::Low,
+            FindingCategory::Spec,
+            "Broken relative reference",
+            "The referenced file could not be found.",
+            Some(12),
         );
 
         let html = render_html(&report);
@@ -1505,13 +1483,15 @@ mod tests {
                 Some("\"description\" & 'summary'"),
             )],
             vec![finding_with_details(
-                "SEC<001>",
-                Severity::High,
-                FindingCategory::Security,
-                "<x-title>",
-                "</td><script>alert('message')</script>",
-                "skills/<finding>/SKILL.md",
-                Some(7),
+                finding(
+                    "SEC<001>",
+                    Severity::High,
+                    FindingCategory::Security,
+                    "<x-title>",
+                    "</td><script>alert('message')</script>",
+                    "skills/<finding>/SKILL.md",
+                    Some(7),
+                ),
                 "\"rationale\" & 'risk'",
                 "<remediation>",
                 "</td><img src=x>",
@@ -1833,13 +1813,15 @@ mod tests {
     #[test]
     fn sarif_rule_descriptor_for_known_rule_comes_from_registry() {
         let report = report_with_findings(vec![finding_with_details(
-            "SKILL001",
-            Severity::High,
-            FindingCategory::Security,
-            "Conflicting finding title",
-            "Finding-specific message stays on the result.",
-            "skills/conflict/SKILL.md",
-            Some(9),
+            finding(
+                "SKILL001",
+                Severity::High,
+                FindingCategory::Security,
+                "Conflicting finding title",
+                "Finding-specific message stays on the result.",
+                "skills/conflict/SKILL.md",
+                Some(9),
+            ),
             "Conflicting finding rationale.",
             "Conflicting finding remediation.",
             "Conflicting finding suppression.",
@@ -1920,13 +1902,15 @@ mod tests {
     #[test]
     fn sarif_output_falls_back_to_finding_metadata_for_unknown_rule_descriptor() {
         let report = report_with_findings(vec![finding_with_details(
-            "CUSTOM900",
-            Severity::Critical,
-            FindingCategory::Reproducibility,
-            "Custom reproducibility rule",
-            "The custom rule produced a finding.",
-            "custom/SKILL.md",
-            Some(3),
+            finding(
+                "CUSTOM900",
+                Severity::Critical,
+                FindingCategory::Reproducibility,
+                "Custom reproducibility rule",
+                "The custom rule produced a finding.",
+                "custom/SKILL.md",
+                Some(3),
+            ),
             "Custom rationale.",
             "Custom remediation.",
             "Custom suppression.",
@@ -1954,13 +1938,15 @@ mod tests {
     #[test]
     fn sarif_rule_descriptor_for_skill050_comes_from_active_registry_metadata() {
         let report = report_with_findings(vec![finding_with_details(
-            "SKILL050",
-            Severity::Medium,
-            FindingCategory::Portability,
-            "Synthetic host metadata issue",
-            "The synthetic host metadata issue produced a finding.",
-            "host/SKILL.md",
-            Some(5),
+            finding(
+                "SKILL050",
+                Severity::Medium,
+                FindingCategory::Portability,
+                "Synthetic host metadata issue",
+                "The synthetic host metadata issue produced a finding.",
+                "host/SKILL.md",
+                Some(5),
+            ),
             "Synthetic rationale.",
             "Synthetic remediation.",
             "Synthetic suppression.",
@@ -2454,7 +2440,7 @@ mod tests {
             },
             findings: Vec::new(),
             suppressed_findings: Vec::new(),
-            compatibility: agent_audit_core::CompatibilityMatrix::default(),
+            compatibility: CompatibilityMatrix::default(),
         }
     }
 
@@ -2478,8 +2464,39 @@ mod tests {
             },
             findings,
             suppressed_findings: Vec::new(),
-            compatibility: agent_audit_core::CompatibilityMatrix::default(),
+            compatibility: CompatibilityMatrix::default(),
         }
+    }
+
+    fn review_skill_report(
+        rule_id: &str,
+        severity: Severity,
+        category: FindingCategory,
+        title: &str,
+        message: &str,
+        line: Option<usize>,
+    ) -> ScanReport {
+        report_with_packages_and_findings(
+            vec![review_package()],
+            vec![finding(
+                rule_id,
+                severity,
+                category,
+                title,
+                message,
+                "skills/review/SKILL.md",
+                line,
+            )],
+        )
+    }
+
+    fn review_package() -> SkillPackage {
+        package(
+            "skills/review",
+            "skills/review/SKILL.md",
+            Some("review-skill"),
+            Some("Reviews agent skills."),
+        )
     }
 
     fn package(
@@ -2537,31 +2554,15 @@ mod tests {
     }
 
     fn finding_with_details(
-        rule_id: &str,
-        severity: Severity,
-        category: FindingCategory,
-        title: &str,
-        message: &str,
-        path: &str,
-        line: Option<usize>,
+        mut finding: SkillFinding,
         rationale: &str,
         remediation: &str,
         suppression: &str,
     ) -> SkillFinding {
-        SkillFinding {
-            rule_id: rule_id.to_owned(),
-            severity,
-            category,
-            title: title.to_owned(),
-            message: message.to_owned(),
-            location: FindingLocation {
-                path: path.to_owned(),
-                line,
-            },
-            rationale: rationale.to_owned(),
-            remediation: remediation.to_owned(),
-            suppression: suppression.to_owned(),
-        }
+        finding.rationale = rationale.to_owned();
+        finding.remediation = remediation.to_owned();
+        finding.suppression = suppression.to_owned();
+        finding
     }
 
     fn render_sarif_value(report: &ScanReport) -> Value {

@@ -452,58 +452,32 @@ mod tests {
 
     #[test]
     fn parses_json_scan_format() {
-        let cli = Cli::parse_from([
-            "agent-audit",
-            "scan",
-            "fixtures/spec/basic",
-            "--format",
-            "json",
-        ]);
-
-        match cli.command {
-            Command::Scan(command) => {
-                assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
-                assert_eq!(command.format, ReportFormat::Json);
-                assert_eq!(command.config, None);
-                assert_eq!(command.fail_on, Vec::<Severity>::new());
-            }
-        }
+        assert_parsed_scan_format("json", ReportFormat::Json);
     }
 
     #[test]
     fn parses_sarif_scan_format() {
-        let cli = Cli::parse_from([
-            "agent-audit",
-            "scan",
-            "fixtures/spec/basic",
-            "--format",
-            "sarif",
-        ]);
-
-        match cli.command {
-            Command::Scan(command) => {
-                assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
-                assert_eq!(command.format, ReportFormat::Sarif);
-                assert_eq!(command.config, None);
-                assert_eq!(command.fail_on, Vec::<Severity>::new());
-            }
-        }
+        assert_parsed_scan_format("sarif", ReportFormat::Sarif);
     }
 
     #[test]
     fn parses_html_scan_format() {
+        assert_parsed_scan_format("html", ReportFormat::Html);
+    }
+
+    fn assert_parsed_scan_format(value: &str, expected: ReportFormat) {
         let cli = Cli::parse_from([
             "agent-audit",
             "scan",
             "fixtures/spec/basic",
             "--format",
-            "html",
+            value,
         ]);
 
         match cli.command {
             Command::Scan(command) => {
                 assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
-                assert_eq!(command.format, ReportFormat::Html);
+                assert_eq!(command.format, expected);
                 assert_eq!(command.config, None);
                 assert_eq!(command.fail_on, Vec::<Severity>::new());
             }
@@ -547,14 +521,8 @@ description: Summary output fixture.
             "# Guide\n\nSee [missing](../not-found.md).\n",
         );
 
-        let output = run_scan_output(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Summary,
-            config: None,
-            fail_on: Vec::new(),
-            profiles: Vec::new(),
-        })
-        .expect("run summary scan");
+        let output = run_scan_output(scan_command(&workspace, ReportFormat::Summary))
+            .expect("run summary scan");
 
         assert!(output.starts_with("Agent Skill Auditor scan summary\n"));
         assert!(output.contains("Packages: 1\n"));
@@ -581,14 +549,8 @@ description: JSON output fixture.
 "#,
         );
 
-        let output = run_scan_output(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Json,
-            config: None,
-            fail_on: Vec::new(),
-            profiles: Vec::new(),
-        })
-        .expect("run JSON scan");
+        let output =
+            run_scan_output(scan_command(&workspace, ReportFormat::Json)).expect("run JSON scan");
 
         assert!(output.starts_with("{\n"));
         assert!(output.contains("\"packages\""));
@@ -611,14 +573,8 @@ description: SARIF output fixture.
 "#,
         );
 
-        let output = run_scan_output(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Sarif,
-            config: None,
-            fail_on: Vec::new(),
-            profiles: Vec::new(),
-        })
-        .expect("run SARIF scan");
+        let output =
+            run_scan_output(scan_command(&workspace, ReportFormat::Sarif)).expect("run SARIF scan");
 
         assert!(output.starts_with("{\n"));
         assert!(output.contains("\"version\": \"2.1.0\""));
@@ -640,14 +596,8 @@ description: HTML output fixture.
 "#,
         );
 
-        let output = run_scan_output(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Html,
-            config: None,
-            fail_on: Vec::new(),
-            profiles: Vec::new(),
-        })
-        .expect("run HTML scan");
+        let output =
+            run_scan_output(scan_command(&workspace, ReportFormat::Html)).expect("run HTML scan");
 
         assert!(output.starts_with("<!doctype html>\n"));
         assert!(output.contains("<h1>Agent Skill Auditor Report</h1>"));
@@ -668,14 +618,8 @@ name: [unterminated
 "#,
         );
 
-        let output = run_scan_output(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Summary,
-            config: None,
-            fail_on: Vec::new(),
-            profiles: Vec::new(),
-        })
-        .expect("malformed frontmatter should render report");
+        let output = run_scan_output(scan_command(&workspace, ReportFormat::Summary))
+            .expect("malformed frontmatter should render report");
 
         assert!(output.starts_with("Agent Skill Auditor scan summary\n"));
         assert!(output.contains("Packages: 1\n"));
@@ -717,14 +661,8 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
 "#,
         );
 
-        let output = run_scan_output(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Summary,
-            config: None,
-            fail_on: Vec::new(),
-            profiles: Vec::new(),
-        })
-        .expect("run summary scan");
+        let output = run_scan_output(scan_command(&workspace, ReportFormat::Summary))
+            .expect("run summary scan");
 
         assert!(output.contains("Finding details:\n"));
         assert!(output.contains("[low/spec]"));
@@ -738,14 +676,8 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
         let workspace = CliTestWorkspace::new("default-non-failing");
         workspace.write_file("SKILL.md", missing_name_skill());
 
-        let output = run_scan_output(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Summary,
-            config: None,
-            fail_on: Vec::new(),
-            profiles: Vec::new(),
-        })
-        .expect("default scan should render low findings without failing");
+        let output = run_scan_output(scan_command(&workspace, ReportFormat::Summary))
+            .expect("default scan should render low findings without failing");
 
         assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
     }
@@ -762,13 +694,11 @@ fail_on:
 "#,
         );
 
-        let (output, result) = run_scan_attempt(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Summary,
-            config: Some(workspace.root.join("agent-audit.yaml")),
-            fail_on: Vec::new(),
-            profiles: Vec::new(),
-        });
+        let (output, result) = run_scan_attempt(configured_scan_command(
+            &workspace,
+            ReportFormat::Summary,
+            "agent-audit.yaml",
+        ));
         let error = result.expect_err("low fail_on should fail after rendering");
 
         assert!(output.starts_with("Agent Skill Auditor scan summary\n"));
@@ -791,13 +721,11 @@ fail_on:
 "#,
         );
 
-        let (output, result) = run_scan_attempt(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Summary,
-            config: Some(workspace.root.join("agent-audit.yaml")),
-            fail_on: Vec::new(),
-            profiles: Vec::new(),
-        });
+        let (output, result) = run_scan_attempt(configured_scan_command(
+            &workspace,
+            ReportFormat::Summary,
+            "agent-audit.yaml",
+        ));
         let error = result.expect_err("multiple config fail_on values should match low finding");
 
         assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
@@ -818,13 +746,11 @@ fail_on:
 "#,
         );
 
-        let output = run_scan_output(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Summary,
-            config: Some(workspace.root.join("agent-audit.yaml")),
-            fail_on: Vec::new(),
-            profiles: Vec::new(),
-        })
+        let output = run_scan_output(configured_scan_command(
+            &workspace,
+            ReportFormat::Summary,
+            "agent-audit.yaml",
+        ))
         .expect("high fail_on should not match low finding");
 
         assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
@@ -843,13 +769,11 @@ fail_on:
 "#,
         );
 
-        let output = run_scan_output(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Summary,
-            config: Some(workspace.root.join("agent-audit.yaml")),
-            fail_on: Vec::new(),
-            profiles: Vec::new(),
-        })
+        let output = run_scan_output(configured_scan_command(
+            &workspace,
+            ReportFormat::Summary,
+            "agent-audit.yaml",
+        ))
         .expect("multiple config fail_on values should not match low finding");
 
         assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
@@ -871,13 +795,11 @@ ignore:
 "#,
         );
 
-        let output = run_scan_output(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Json,
-            config: Some(workspace.root.join("agent-audit.yaml")),
-            fail_on: Vec::new(),
-            profiles: Vec::new(),
-        })
+        let output = run_scan_output(configured_scan_command(
+            &workspace,
+            ReportFormat::Json,
+            "agent-audit.yaml",
+        ))
         .expect("suppressed low finding should not trigger fail_on");
         let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
 
@@ -935,13 +857,11 @@ ignore:
         let workspace = CliTestWorkspace::new("cli-fail-low");
         workspace.write_file("SKILL.md", missing_name_skill());
 
-        let (output, result) = run_scan_attempt(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Summary,
-            config: None,
-            fail_on: vec![Severity::Low],
-            profiles: Vec::new(),
-        });
+        let (output, result) = run_scan_attempt(failing_scan_command(
+            &workspace,
+            ReportFormat::Summary,
+            vec![Severity::Low],
+        ));
 
         result.expect_err("CLI fail_on low should fail without config");
         assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
@@ -952,13 +872,11 @@ ignore:
         let workspace = CliTestWorkspace::new("cli-multiple-fail-low");
         workspace.write_file("SKILL.md", missing_name_skill());
 
-        let (output, result) = run_scan_attempt(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Summary,
-            config: None,
-            fail_on: vec![Severity::Medium, Severity::Low],
-            profiles: Vec::new(),
-        });
+        let (output, result) = run_scan_attempt(failing_scan_command(
+            &workspace,
+            ReportFormat::Summary,
+            vec![Severity::Medium, Severity::Low],
+        ));
         let error = result.expect_err("multiple CLI fail_on values should match low finding");
 
         assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
@@ -979,14 +897,11 @@ fail_on:
 "#,
         );
 
-        let output = run_scan_output(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Summary,
-            config: Some(workspace.root.join("agent-audit.yaml")),
-            fail_on: vec![Severity::High],
-            profiles: Vec::new(),
-        })
-        .expect("CLI fail_on high should override config fail_on low");
+        let mut command =
+            configured_scan_command(&workspace, ReportFormat::Summary, "agent-audit.yaml");
+        command.fail_on = vec![Severity::High];
+        let output =
+            run_scan_output(command).expect("CLI fail_on high should override config fail_on low");
 
         assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
     }
@@ -995,13 +910,11 @@ fail_on:
     fn run_scan_phase2_fail_on_low_fixture_fails_after_output() {
         let fixture = phase2_fail_on_fixture("low-unsuppressed");
 
-        let (output, result) = run_scan_attempt(ScanCommand {
-            path: fixture.clone(),
-            format: ReportFormat::Summary,
-            config: Some(fixture.join("agent-audit.yaml")),
-            fail_on: Vec::new(),
-            profiles: Vec::new(),
-        });
+        let (output, result) = run_scan_attempt(configured_path_scan_command(
+            fixture,
+            ReportFormat::Summary,
+            "agent-audit.yaml",
+        ));
         let error = result.expect_err("low fail_on fixture should fail");
 
         assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
@@ -1014,13 +927,11 @@ fail_on:
     fn run_scan_phase2_suppressed_low_fixture_does_not_fail() {
         let fixture = phase2_fail_on_fixture("suppressed-low");
 
-        let output = run_scan_output(ScanCommand {
-            path: fixture.clone(),
-            format: ReportFormat::Json,
-            config: Some(fixture.join("agent-audit.yaml")),
-            fail_on: Vec::new(),
-            profiles: Vec::new(),
-        })
+        let output = run_scan_output(configured_path_scan_command(
+            fixture,
+            ReportFormat::Json,
+            "agent-audit.yaml",
+        ))
         .expect("suppressed low fixture should not fail");
         let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
 
@@ -1036,13 +947,11 @@ fail_on:
     fn run_scan_phase2_high_threshold_fixture_does_not_fail_low_finding() {
         let fixture = phase2_fail_on_fixture("high-threshold");
 
-        let output = run_scan_output(ScanCommand {
-            path: fixture.clone(),
-            format: ReportFormat::Summary,
-            config: Some(fixture.join("agent-audit.yaml")),
-            fail_on: Vec::new(),
-            profiles: Vec::new(),
-        })
+        let output = run_scan_output(configured_path_scan_command(
+            fixture,
+            ReportFormat::Summary,
+            "agent-audit.yaml",
+        ))
         .expect("high threshold should not fail low findings");
 
         assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
@@ -1053,13 +962,11 @@ fail_on:
         let workspace = CliTestWorkspace::new("compatibility-fail-on-low");
         workspace.write_file("SKILL.md", compatibility_unknown_frontmatter_skill());
 
-        let (output, result) = run_scan_attempt(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Json,
-            config: None,
-            fail_on: vec![Severity::Low],
-            profiles: Vec::new(),
-        });
+        let (output, result) = run_scan_attempt(failing_scan_command(
+            &workspace,
+            ReportFormat::Json,
+            vec![Severity::Low],
+        ));
         let error = result.expect_err("low fail_on should match compatibility finding");
         let value: serde_json::Value =
             serde_json::from_str(&output).expect("JSON output should be written before fail_on");
@@ -1077,13 +984,11 @@ fail_on:
         let workspace = CliTestWorkspace::new("compatibility-fail-on-medium");
         workspace.write_file("SKILL.md", compatibility_unknown_frontmatter_skill());
 
-        let output = run_scan_output(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Json,
-            config: None,
-            fail_on: vec![Severity::Medium],
-            profiles: Vec::new(),
-        })
+        let output = run_scan_output(failing_scan_command(
+            &workspace,
+            ReportFormat::Json,
+            vec![Severity::Medium],
+        ))
         .expect("medium fail_on should not match low compatibility finding");
         let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
 
@@ -1108,13 +1013,11 @@ ignore:
 "#,
         );
 
-        let output = run_scan_output(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Json,
-            config: Some(workspace.root.join("agent-audit.yaml")),
-            fail_on: Vec::new(),
-            profiles: Vec::new(),
-        })
+        let output = run_scan_output(configured_scan_command(
+            &workspace,
+            ReportFormat::Json,
+            "agent-audit.yaml",
+        ))
         .expect("suppressed compatibility finding should not trigger fail_on");
         let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
 
@@ -1469,6 +1372,53 @@ description: Missing name fail_on fixture.
 
 This manifest intentionally starts with a paragraph so the scanner cannot derive a heading fallback name.
 "#
+    }
+
+    fn scan_command(workspace: &CliTestWorkspace, format: ReportFormat) -> ScanCommand {
+        scan_path_command(workspace.root.clone(), format)
+    }
+
+    fn scan_path_command(path: PathBuf, format: ReportFormat) -> ScanCommand {
+        ScanCommand {
+            path,
+            format,
+            config: None,
+            fail_on: Vec::new(),
+            profiles: Vec::new(),
+        }
+    }
+
+    fn configured_scan_command(
+        workspace: &CliTestWorkspace,
+        format: ReportFormat,
+        config: &str,
+    ) -> ScanCommand {
+        ScanCommand {
+            config: Some(workspace.root.join(config)),
+            ..scan_command(workspace, format)
+        }
+    }
+
+    fn configured_path_scan_command(
+        path: PathBuf,
+        format: ReportFormat,
+        config: &str,
+    ) -> ScanCommand {
+        ScanCommand {
+            config: Some(path.join(config)),
+            ..scan_path_command(path, format)
+        }
+    }
+
+    fn failing_scan_command(
+        workspace: &CliTestWorkspace,
+        format: ReportFormat,
+        fail_on: Vec<Severity>,
+    ) -> ScanCommand {
+        ScanCommand {
+            fail_on,
+            ..scan_command(workspace, format)
+        }
     }
 
     fn valid_skill(name: &str) -> String {

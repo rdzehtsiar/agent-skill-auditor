@@ -696,7 +696,7 @@ pub fn render_rule_documentation_for(registry: &RuleRegistry) -> String {
         markdown.push_str("\n\n");
         markdown.push_str("- Status: `");
         markdown.push_str(metadata.status.as_str());
-        markdown.push_str("`");
+        markdown.push('`');
         if !metadata.status.emits_findings() {
             markdown.push_str(" (reserved; not emitted)");
         }
@@ -816,12 +816,7 @@ mod tests {
 
     #[test]
     fn metadata_covers_active_rule_ids_in_deterministic_order() {
-        let active_metadata_ids = RULE_REGISTRY
-            .rules()
-            .iter()
-            .filter(|metadata| metadata.status == RuleStatus::Active)
-            .map(|metadata| metadata.id.as_str())
-            .collect::<Vec<_>>();
+        let active_metadata_ids = metadata_ids_with_status(RuleStatus::Active);
 
         assert_eq!(active_metadata_ids, ACTIVE_RULE_IDS);
         assert!(active_metadata_ids.windows(2).all(|ids| ids[0] < ids[1]));
@@ -860,23 +855,22 @@ mod tests {
 
     #[test]
     fn active_and_reserved_rule_ids_are_explicit_and_deterministic() {
-        let active_ids = RULE_REGISTRY
-            .rules()
-            .iter()
-            .filter(|metadata| metadata.status == RuleStatus::Active)
-            .map(|metadata| metadata.id.as_str())
-            .collect::<Vec<_>>();
-        let reserved_ids = RULE_REGISTRY
-            .rules()
-            .iter()
-            .filter(|metadata| metadata.status == RuleStatus::Reserved)
-            .map(|metadata| metadata.id.as_str())
-            .collect::<Vec<_>>();
+        let active_ids = metadata_ids_with_status(RuleStatus::Active);
+        let reserved_ids = metadata_ids_with_status(RuleStatus::Reserved);
 
         assert_eq!(active_ids, ACTIVE_RULE_IDS);
         assert_eq!(reserved_ids, RESERVED_RULE_IDS);
         assert!(active_ids.windows(2).all(|ids| ids[0] < ids[1]));
         assert!(reserved_ids.windows(2).all(|ids| ids[0] < ids[1]));
+    }
+
+    fn metadata_ids_with_status(status: RuleStatus) -> Vec<&'static str> {
+        RULE_REGISTRY
+            .rules()
+            .iter()
+            .filter(|metadata| metadata.status == status)
+            .map(|metadata| metadata.id.as_str())
+            .collect()
     }
 
     #[test]

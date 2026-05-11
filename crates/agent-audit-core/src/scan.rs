@@ -1078,7 +1078,7 @@ fn inventory_directory(
         })
         .collect::<AuditResult<Vec<_>>>()?;
 
-    entries.sort_by(|left, right| left.path().cmp(&right.path()));
+    entries.sort_by_key(|entry| entry.path());
 
     for entry in entries {
         let path = entry.path();
@@ -3218,7 +3218,10 @@ ignore:
             report.suppressed_findings[0].suppression.reason,
             "Codex wrapper translates Claude-style tool metadata."
         );
-        assert!(crate::fail::report_matches_fail_on(&report, &[Severity::Low]));
+        assert!(crate::fail::report_matches_fail_on(
+            &report,
+            &[Severity::Low]
+        ));
         assert_eq!(
             compatibility_projection(&report.compatibility.matrix[0].profiles),
             vec![
@@ -3285,7 +3288,10 @@ ignore:
             report.suppressed_findings[0].suppression.reason,
             "Owner metadata is retained for an internal deterministic fixture."
         );
-        assert!(!crate::fail::report_matches_fail_on(&report, &[Severity::Low]));
+        assert!(!crate::fail::report_matches_fail_on(
+            &report,
+            &[Severity::Low]
+        ));
         assert_eq!(
             compatibility_projection(&report.compatibility.matrix[0].profiles),
             vec![
@@ -5792,10 +5798,13 @@ This second extra line makes the intended `SKILL020` case unambiguous.
             }
             assert_eq!(finding["severity"], "low");
             assert_eq!(finding["category"], "spec");
-            assert!(finding["title"].as_str().expect("title").len() > 0);
-            assert!(finding["message"].as_str().expect("message").len() > 0);
-            assert!(finding["rationale"].as_str().expect("rationale").len() > 0);
-            assert!(finding["remediation"].as_str().expect("remediation").len() > 0);
+            assert!(!finding["title"].as_str().expect("title").is_empty());
+            assert!(!finding["message"].as_str().expect("message").is_empty());
+            assert!(!finding["rationale"].as_str().expect("rationale").is_empty());
+            assert!(!finding["remediation"]
+                .as_str()
+                .expect("remediation")
+                .is_empty());
             assert!(finding["suppression"]
                 .as_str()
                 .expect("suppression")
@@ -5980,7 +5989,7 @@ Read [guidance](references/guidance.md).
     }
 
     fn compatibility_projection(
-        profiles: &[agent_audit_hosts::ProfileCompatibilityResult],
+        profiles: &[ProfileCompatibilityResult],
     ) -> Vec<(&str, CompatibilityStatus, Vec<&str>)> {
         profiles
             .iter()

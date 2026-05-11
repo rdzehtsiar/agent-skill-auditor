@@ -682,7 +682,11 @@ mod tests {
                 );
             }
 
-            assert!(profile.recommended_manifest_size_limit.bytes > 0, "{}", profile.id);
+            assert!(
+                profile.recommended_manifest_size_limit.bytes > 0,
+                "{}",
+                profile.id
+            );
 
             assert_capability_expectation_documented(
                 profile.id,
@@ -772,11 +776,7 @@ mod tests {
         profiles.iter().map(|profile| profile.id).collect()
     }
 
-    fn assert_manifest_field_documented(
-        profile_id: &str,
-        category: &str,
-        field: &ManifestField,
-    ) {
+    fn assert_manifest_field_documented(profile_id: &str, category: &str, field: &ManifestField) {
         assert_not_blank(profile_id, category, field.name);
         assert_not_blank(profile_id, category, field.description);
     }
@@ -802,11 +802,7 @@ mod tests {
         assert_not_blank(profile_id, category, notice.summary);
     }
 
-    fn assert_unique_manifest_fields(
-        profile_id: &str,
-        category: &str,
-        fields: &[ManifestField],
-    ) {
+    fn assert_unique_manifest_fields(profile_id: &str, category: &str, fields: &[ManifestField]) {
         let mut names = BTreeSet::new();
 
         for field in fields {

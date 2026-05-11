@@ -15,6 +15,16 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
 
+    const EMPTY_FINDING_IDS: &[&str] = &[];
+    const DEFAULT_COMPATIBILITY_PROJECTION: &[(&str, &str, &[&str])] = &[
+        ("agent-skills-spec", "pass", EMPTY_FINDING_IDS),
+        ("claude-code", "warn", EMPTY_FINDING_IDS),
+        ("codex", "warn", EMPTY_FINDING_IDS),
+        ("github-copilot", "warn", EMPTY_FINDING_IDS),
+        ("vscode-copilot", "warn", EMPTY_FINDING_IDS),
+        ("generic", "pass", EMPTY_FINDING_IDS),
+    ];
+
     #[test]
     fn fixture_groups_match_planned_fixture_directories() {
         assert_eq!(
@@ -259,14 +269,7 @@ mod tests {
         assert_compatibility_profile_projection(
             &spec_basic,
             "SKILL.md",
-            &[
-                ("agent-skills-spec", "pass", &[]),
-                ("claude-code", "warn", &[]),
-                ("codex", "warn", &[]),
-                ("github-copilot", "warn", &[]),
-                ("vscode-copilot", "warn", &[]),
-                ("generic", "pass", &[]),
-            ],
+            DEFAULT_COMPATIBILITY_PROJECTION,
         );
 
         let missing_description =
@@ -302,14 +305,7 @@ mod tests {
         assert_compatibility_profile_projection(
             &copilot_path,
             "SKILL.md",
-            &[
-                ("agent-skills-spec", "pass", &[]),
-                ("claude-code", "warn", &[]),
-                ("codex", "warn", &[]),
-                ("github-copilot", "warn", &[]),
-                ("vscode-copilot", "warn", &[]),
-                ("generic", "pass", &[]),
-            ],
+            DEFAULT_COMPATIBILITY_PROJECTION,
         );
 
         let codex_script =
@@ -318,14 +314,7 @@ mod tests {
         assert_compatibility_profile_projection(
             &codex_script,
             ".agents/skills/codex-script-reference/SKILL.md",
-            &[
-                ("agent-skills-spec", "pass", &[]),
-                ("claude-code", "warn", &[]),
-                ("codex", "warn", &[]),
-                ("github-copilot", "warn", &[]),
-                ("vscode-copilot", "warn", &[]),
-                ("generic", "pass", &[]),
-            ],
+            DEFAULT_COMPATIBILITY_PROJECTION,
         );
 
         let vscode_ignored =
@@ -350,14 +339,7 @@ mod tests {
         assert_compatibility_profile_projection(
             &permissions,
             ".github/skills/unsupported-permissions/SKILL.md",
-            &[
-                ("agent-skills-spec", "pass", &[]),
-                ("claude-code", "warn", &[]),
-                ("codex", "warn", &[]),
-                ("github-copilot", "warn", &[]),
-                ("vscode-copilot", "warn", &[]),
-                ("generic", "pass", &[]),
-            ],
+            DEFAULT_COMPATIBILITY_PROJECTION,
         );
 
         let generic_unknown =
@@ -679,7 +661,7 @@ mod tests {
             .to_path_buf()
     }
 
-    fn package_paths(report: &agent_audit_core::ScanReport) -> Vec<&str> {
+    fn package_paths(report: &ScanReport) -> Vec<&str> {
         report
             .packages
             .iter()
@@ -687,7 +669,7 @@ mod tests {
             .collect()
     }
 
-    fn rule_counts(report: &agent_audit_core::ScanReport) -> BTreeMap<String, usize> {
+    fn rule_counts(report: &ScanReport) -> BTreeMap<String, usize> {
         let mut counts = BTreeMap::new();
         for finding in &report.findings {
             *counts.entry(finding.rule_id.clone()).or_insert(0) += 1;
@@ -703,7 +685,7 @@ mod tests {
             .collect()
     }
 
-    fn category_counts(report: &agent_audit_core::ScanReport) -> BTreeMap<FindingCategory, usize> {
+    fn category_counts(report: &ScanReport) -> BTreeMap<FindingCategory, usize> {
         let mut counts = BTreeMap::new();
         for finding in &report.findings {
             *counts.entry(finding.category).or_insert(0) += 1;
@@ -711,9 +693,7 @@ mod tests {
         counts
     }
 
-    fn finding_order_keys(
-        report: &agent_audit_core::ScanReport,
-    ) -> Vec<(String, Option<usize>, String, String)> {
+    fn finding_order_keys(report: &ScanReport) -> Vec<(String, Option<usize>, String, String)> {
         report
             .findings
             .iter()
@@ -749,7 +729,7 @@ mod tests {
             .collect()
     }
 
-    fn suppression_snapshot_projection(report: &agent_audit_core::ScanReport) -> serde_json::Value {
+    fn suppression_snapshot_projection(report: &ScanReport) -> serde_json::Value {
         serde_json::json!({
             "summary": {
                 "package_count": report.summary.package_count,
