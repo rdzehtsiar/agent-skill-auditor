@@ -1559,10 +1559,12 @@ fn analyze_shell_security_text(path: &str, text: &str) -> Vec<SecuritySignal> {
 
 fn analyze_python_security_text(path: &str, text: &str) -> Vec<SecuritySignal> {
     let mut signals = Vec::new();
+    let mut triple_quote = None;
 
     for (line_index, line) in text.lines().enumerate() {
         let line_number = line_index + 1;
-        let uncommented = python_uncommented_prefix(line);
+        let unquoted = python_line_without_triple_quoted_strings(line, &mut triple_quote);
+        let uncommented = python_uncommented_prefix(&unquoted);
         if uncommented.trim().is_empty() {
             continue;
         }
@@ -1574,11 +1576,128 @@ fn analyze_python_security_text(path: &str, text: &str) -> Vec<SecuritySignal> {
             uncommented,
             &evidence,
         ));
+        signals.extend(detect_python_subprocess_execution(
+            path,
+            line_number,
+            uncommented,
+            &evidence,
+        ));
+        signals.extend(detect_python_network_access(
+            path,
+            line_number,
+            uncommented,
+            &evidence,
+        ));
+        signals.extend(detect_python_file_writes(
+            path,
+            line_number,
+            uncommented,
+            &evidence,
+        ));
+        signals.extend(detect_python_dynamic_code_evaluation(
+            path,
+            line_number,
+            uncommented,
+            &evidence,
+        ));
+        signals.extend(detect_python_package_installation(
+            path,
+            line_number,
+            uncommented,
+            &evidence,
+        ));
     }
 
     signals.sort();
     signals.dedup();
     signals
+}
+
+fn python_line_without_triple_quoted_strings(line: &str, active_quote: &mut Option<u8>) -> String {
+    let bytes = line.as_bytes();
+    let mut masked = bytes.to_vec();
+    let mut index = 0;
+    let mut inline_quote = None;
+    let mut escaped = false;
+
+    while index < bytes.len() {
+        if let Some(quote) = *active_quote {
+            if let Some(close_index) = find_python_triple_quote(bytes, index, quote) {
+                mask_byte_range(&mut masked, index, close_index + 3);
+                *active_quote = None;
+                index = close_index + 3;
+            } else {
+                mask_byte_range(&mut masked, index, bytes.len());
+                break;
+            }
+            continue;
+        }
+
+        let byte = bytes[index];
+        if escaped {
+            escaped = false;
+            index += 1;
+            continue;
+        }
+
+        if inline_quote.is_some() && byte == b'\\' {
+            escaped = true;
+            index += 1;
+            continue;
+        }
+
+        if let Some(quote) = inline_quote {
+            if byte == quote {
+                inline_quote = None;
+            }
+            index += 1;
+            continue;
+        }
+
+        if byte == b'#' {
+            break;
+        }
+
+        if matches!(byte, b'\'' | b'"') {
+            if python_starts_with_triple_quote(bytes, index, byte) {
+                mask_byte_range(&mut masked, index, index + 3);
+                *active_quote = Some(byte);
+                index += 3;
+            } else {
+                inline_quote = Some(byte);
+                index += 1;
+            }
+            continue;
+        }
+
+        index += 1;
+    }
+
+    String::from_utf8(masked).expect("masking ASCII bytes preserves UTF-8")
+}
+
+fn python_starts_with_triple_quote(bytes: &[u8], index: usize, quote: u8) -> bool {
+    bytes
+        .get(index..index.saturating_add(3))
+        .is_some_and(|candidate| candidate == [quote, quote, quote])
+}
+
+fn find_python_triple_quote(bytes: &[u8], start: usize, quote: u8) -> Option<usize> {
+    let mut index = start;
+    while index < bytes.len() {
+        if python_starts_with_triple_quote(bytes, index, quote) {
+            return Some(index);
+        }
+        index += 1;
+    }
+
+    None
+}
+
+fn mask_byte_range(bytes: &mut [u8], start: usize, end: usize) {
+    for byte in &mut bytes[start..end] {
+        *byte = b' ';
+    }
 }
 
 fn detect_shell_secret_env_reads(
@@ -1610,6 +1729,223 @@ fn detect_python_secret_env_reads(
         .into_iter()
         .filter(|(_, name)| is_secret_like_environment_variable(name))
         .map(|(column, name)| environment_secret_signal(path, line_number, column, name, evidence))
+        .collect()
+}
+
+fn detect_python_subprocess_execution(
+    path: &str,
+    line_number: usize,
+    line: &str,
+    evidence: &str,
+) -> Vec<SecuritySignal> {
+    const PROCESS_CALLS: &[&str] = &[
+        "subprocess.run",
+        "subprocess.Popen",
+        "subprocess.call",
+        "subprocess.check_call",
+        "subprocess.check_output",
+        "os.system",
+    ];
+
+    find_python_calls(line, PROCESS_CALLS)
+        .into_iter()
+        .map(|call| {
+            shell_signal(
+                path,
+                line_number,
+                call.column,
+                SecuritySignalKind::SubprocessExecution,
+                None,
+                Some(SecuritySink {
+                    kind: SecuritySinkKind::ProcessExecution,
+                    target: Some(call.name),
+                }),
+                SecurityRiskScore::new(65),
+                AnalyzerConfidence::Medium,
+                evidence,
+            )
+        })
+        .collect()
+}
+
+fn detect_python_network_access(
+    path: &str,
+    line_number: usize,
+    line: &str,
+    evidence: &str,
+) -> Vec<SecuritySignal> {
+    const NETWORK_CALLS: &[&str] = &[
+        "requests.get",
+        "requests.post",
+        "requests.put",
+        "requests.patch",
+        "requests.delete",
+        "requests.request",
+        "urllib.request.urlopen",
+        "http.client.HTTPConnection",
+        "http.client.HTTPSConnection",
+    ];
+
+    let mut signals = find_python_calls(line, NETWORK_CALLS)
+        .into_iter()
+        .map(|call| {
+            let target = find_external_urls(call.args)
+                .into_iter()
+                .map(|(_, url)| url)
+                .next()
+                .unwrap_or(call.name);
+            shell_signal(
+                path,
+                line_number,
+                call.column,
+                SecuritySignalKind::NetworkAccess,
+                None,
+                Some(SecuritySink {
+                    kind: SecuritySinkKind::NetworkRequest,
+                    target: Some(target),
+                }),
+                SecurityRiskScore::new(45),
+                AnalyzerConfidence::Medium,
+                evidence,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    for call in find_python_calls(line, &["request"]) {
+        if !find_external_urls(call.args).is_empty() {
+            signals.push(shell_signal(
+                path,
+                line_number,
+                call.column,
+                SecuritySignalKind::NetworkAccess,
+                None,
+                Some(SecuritySink {
+                    kind: SecuritySinkKind::NetworkRequest,
+                    target: find_external_urls(call.args)
+                        .into_iter()
+                        .map(|(_, url)| url)
+                        .next(),
+                }),
+                SecurityRiskScore::new(45),
+                AnalyzerConfidence::Medium,
+                evidence,
+            ));
+        }
+    }
+
+    signals
+}
+
+fn detect_python_file_writes(
+    path: &str,
+    line_number: usize,
+    line: &str,
+    evidence: &str,
+) -> Vec<SecuritySignal> {
+    let mut signals = Vec::new();
+
+    for call in find_python_calls(line, &["open"]) {
+        if python_open_call_writes(call.args) {
+            signals.push(shell_signal(
+                path,
+                line_number,
+                call.column,
+                SecuritySignalKind::FileWrite,
+                None,
+                Some(SecuritySink {
+                    kind: SecuritySinkKind::FileWrite,
+                    target: Some("open".to_owned()),
+                }),
+                SecurityRiskScore::new(50),
+                AnalyzerConfidence::Medium,
+                evidence,
+            ));
+        }
+    }
+
+    for call in find_python_calls(line, &["write_text", "write_bytes"]) {
+        if python_method_call(line, call.start) {
+            signals.push(shell_signal(
+                path,
+                line_number,
+                call.column,
+                SecuritySignalKind::FileWrite,
+                None,
+                Some(SecuritySink {
+                    kind: SecuritySinkKind::FileWrite,
+                    target: Some(call.name),
+                }),
+                SecurityRiskScore::new(50),
+                AnalyzerConfidence::Medium,
+                evidence,
+            ));
+        }
+    }
+
+    signals
+}
+
+fn detect_python_dynamic_code_evaluation(
+    path: &str,
+    line_number: usize,
+    line: &str,
+    evidence: &str,
+) -> Vec<SecuritySignal> {
+    find_python_calls(line, &["eval", "exec"])
+        .into_iter()
+        .map(|call| {
+            shell_signal(
+                path,
+                line_number,
+                call.column,
+                SecuritySignalKind::DynamicCodeEvaluation,
+                None,
+                Some(SecuritySink {
+                    kind: SecuritySinkKind::DynamicCodeEvaluation,
+                    target: Some(call.name),
+                }),
+                SecurityRiskScore::new(70),
+                AnalyzerConfidence::Medium,
+                evidence,
+            )
+        })
+        .collect()
+}
+
+fn detect_python_package_installation(
+    path: &str,
+    line_number: usize,
+    line: &str,
+    evidence: &str,
+) -> Vec<SecuritySignal> {
+    const PROCESS_CALLS: &[&str] = &[
+        "subprocess.run",
+        "subprocess.Popen",
+        "subprocess.call",
+        "subprocess.check_call",
+        "subprocess.check_output",
+        "os.system",
+    ];
+
+    find_python_calls(line, PROCESS_CALLS)
+        .into_iter()
+        .filter_map(|call| python_package_install_target(call.args).map(|target| (call, target)))
+        .map(|(call, target)| {
+            shell_signal(
+                path,
+                line_number,
+                call.column,
+                SecuritySignalKind::PackageInstallation,
+                None,
+                Some(SecuritySink {
+                    kind: SecuritySinkKind::PackageInstall,
+                    target: Some(target),
+                }),
+                SecurityRiskScore::new(65),
+                AnalyzerConfidence::High,
+                evidence,
+            )
+        })
         .collect()
 }
 
@@ -2106,8 +2442,10 @@ fn find_python_env_index_reads(line: &str, prefix: &str) -> Vec<(usize, String)>
     while let Some(relative_index) = line[search_start..].find(prefix) {
         let prefix_start = search_start + relative_index;
         let literal_start = prefix_start + prefix.len();
-        if let Some((name, _)) = parse_python_string_literal(line, literal_start) {
-            reads.push((literal_start + 1, name));
+        if !python_index_in_string(line, prefix_start) {
+            if let Some((name, _)) = parse_python_string_literal(line, literal_start) {
+                reads.push((literal_start + 1, name));
+            }
         }
         search_start = literal_start.saturating_add(1);
     }
@@ -2122,13 +2460,330 @@ fn find_python_env_call_reads(line: &str, prefix: &str) -> Vec<(usize, String)> 
     while let Some(relative_index) = line[search_start..].find(prefix) {
         let prefix_start = search_start + relative_index;
         let literal_start = skip_ascii_whitespace(line, prefix_start + prefix.len());
-        if let Some((name, _)) = parse_python_string_literal(line, literal_start) {
-            reads.push((literal_start + 1, name));
+        if !python_index_in_string(line, prefix_start) {
+            if let Some((name, _)) = parse_python_string_literal(line, literal_start) {
+                reads.push((literal_start + 1, name));
+            }
         }
         search_start = literal_start.saturating_add(1);
     }
 
     reads
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PythonCall<'a> {
+    name: String,
+    start: usize,
+    column: usize,
+    args: &'a str,
+}
+
+fn find_python_calls<'a>(line: &'a str, names: &[&str]) -> Vec<PythonCall<'a>> {
+    let mut calls = Vec::new();
+    let mut index = 0;
+
+    while index < line.len() {
+        let Some((name, name_start, args_start)) = find_next_python_call(line, index, names) else {
+            break;
+        };
+        let args_end = find_python_call_args_end(line, args_start).unwrap_or(line.len());
+        calls.push(PythonCall {
+            name: name.to_owned(),
+            start: name_start,
+            column: name_start + 1,
+            args: &line[args_start..args_end],
+        });
+        index = args_start.saturating_add(1);
+    }
+
+    calls.sort_by(|left, right| {
+        left.start
+            .cmp(&right.start)
+            .then(left.name.cmp(&right.name))
+    });
+    calls.dedup_by(|left, right| left.start == right.start && left.name == right.name);
+    calls
+}
+
+fn find_next_python_call<'a>(
+    line: &'a str,
+    start: usize,
+    names: &[&str],
+) -> Option<(String, usize, usize)> {
+    let mut best = None;
+
+    for &name in names {
+        let mut search_start = start;
+        while let Some(relative_index) = line[search_start..].find(name) {
+            let name_start = search_start + relative_index;
+            let name_end = name_start + name.len();
+            let open_paren = skip_ascii_whitespace(line, name_end);
+
+            if line
+                .as_bytes()
+                .get(open_paren)
+                .is_some_and(|byte| *byte == b'(')
+                && python_name_boundary_before(line, name_start)
+                && python_name_boundary_after(line, name_end)
+                && !python_index_in_string(line, name_start)
+            {
+                let args_start = open_paren + 1;
+                if best
+                    .as_ref()
+                    .is_none_or(|(_, best_start, _)| name_start < *best_start)
+                {
+                    best = Some((name.to_owned(), name_start, args_start));
+                }
+                break;
+            }
+
+            search_start = name_end;
+        }
+    }
+
+    best
+}
+
+fn find_python_call_args_end(line: &str, start: usize) -> Option<usize> {
+    let bytes = line.as_bytes();
+    let mut index = start;
+    let mut depth = 1usize;
+    let mut quote = None;
+    let mut escaped = false;
+
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if escaped {
+            escaped = false;
+            index += 1;
+            continue;
+        }
+
+        if quote.is_some() && byte == b'\\' {
+            escaped = true;
+            index += 1;
+            continue;
+        }
+
+        if matches!(byte, b'\'' | b'"') {
+            if quote == Some(byte) {
+                quote = None;
+            } else if quote.is_none() {
+                quote = Some(byte);
+            }
+            index += 1;
+            continue;
+        }
+
+        if quote.is_none() {
+            match byte {
+                b'(' | b'[' | b'{' => depth += 1,
+                b')' | b']' | b'}' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        return Some(index);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        index += 1;
+    }
+
+    None
+}
+
+fn python_index_in_string(line: &str, target: usize) -> bool {
+    let bytes = line.as_bytes();
+    let mut index = 0;
+    let mut quote = None;
+    let mut escaped = false;
+
+    while index < bytes.len() && index < target {
+        let byte = bytes[index];
+        if escaped {
+            escaped = false;
+            index += 1;
+            continue;
+        }
+        if quote.is_some() && byte == b'\\' {
+            escaped = true;
+            index += 1;
+            continue;
+        }
+        if matches!(byte, b'\'' | b'"') {
+            if quote == Some(byte) {
+                quote = None;
+            } else if quote.is_none() {
+                quote = Some(byte);
+            }
+        }
+        index += 1;
+    }
+
+    quote.is_some()
+}
+
+fn python_name_boundary_before(line: &str, start: usize) -> bool {
+    start == 0
+        || !line
+            .as_bytes()
+            .get(start - 1)
+            .is_some_and(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_'))
+}
+
+fn python_name_boundary_after(line: &str, end: usize) -> bool {
+    !line
+        .as_bytes()
+        .get(end)
+        .is_some_and(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_'))
+}
+
+fn python_method_call(line: &str, name_start: usize) -> bool {
+    let prefix = line[..name_start].trim_end();
+    prefix.ends_with('.')
+}
+
+fn python_open_call_writes(args: &str) -> bool {
+    python_top_level_arguments(args)
+        .get(1)
+        .and_then(|argument| parse_python_string_literal(argument.trim(), 0))
+        .is_some_and(|(mode, _)| python_file_mode_writes(&mode))
+        || find_python_keyword_string_argument(args, "mode")
+            .is_some_and(|mode| python_file_mode_writes(&mode))
+}
+
+fn python_file_mode_writes(mode: &str) -> bool {
+    mode.contains('+')
+        || mode
+            .chars()
+            .next()
+            .is_some_and(|character| matches!(character, 'w' | 'a' | 'x'))
+}
+
+fn python_package_install_target(args: &str) -> Option<String> {
+    let literals = python_string_literals(args);
+    if literals.iter().any(|literal| {
+        let normalized = literal.to_ascii_lowercase();
+        normalized.contains("pip install") || normalized.contains("-m pip install")
+    }) {
+        return Some("pip install".to_owned());
+    }
+
+    let normalized_tokens = literals
+        .iter()
+        .map(|literal| literal.to_ascii_lowercase())
+        .collect::<Vec<_>>();
+
+    if normalized_tokens
+        .windows(2)
+        .any(|window| window[0] == "pip" && window[1] == "install")
+        || normalized_tokens.windows(4).any(|window| {
+            matches!(window[0].as_str(), "python" | "python3")
+                && window[1] == "-m"
+                && window[2] == "pip"
+                && window[3] == "install"
+        })
+    {
+        return Some("pip install".to_owned());
+    }
+
+    None
+}
+
+fn find_python_keyword_string_argument(args: &str, keyword: &str) -> Option<String> {
+    let prefix = format!("{keyword}=");
+    let mut search_start = 0;
+    while let Some(relative_index) = args[search_start..].find(&prefix) {
+        let prefix_start = search_start + relative_index;
+        if python_name_boundary_before(args, prefix_start)
+            && !python_index_in_string(args, prefix_start)
+        {
+            let literal_start = skip_ascii_whitespace(args, prefix_start + prefix.len());
+            if let Some((literal, _)) = parse_python_string_literal(args, literal_start) {
+                return Some(literal);
+            }
+        }
+        search_start = prefix_start + prefix.len();
+    }
+
+    None
+}
+
+fn python_top_level_arguments(args: &str) -> Vec<&str> {
+    let bytes = args.as_bytes();
+    let mut arguments = Vec::new();
+    let mut start = 0;
+    let mut index = 0;
+    let mut depth = 0usize;
+    let mut quote = None;
+    let mut escaped = false;
+
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if escaped {
+            escaped = false;
+            index += 1;
+            continue;
+        }
+
+        if quote.is_some() && byte == b'\\' {
+            escaped = true;
+            index += 1;
+            continue;
+        }
+
+        if matches!(byte, b'\'' | b'"') {
+            if quote == Some(byte) {
+                quote = None;
+            } else if quote.is_none() {
+                quote = Some(byte);
+            }
+            index += 1;
+            continue;
+        }
+
+        if quote.is_none() {
+            match byte {
+                b'(' | b'[' | b'{' => depth += 1,
+                b')' | b']' | b'}' => depth = depth.saturating_sub(1),
+                b',' if depth == 0 => {
+                    arguments.push(&args[start..index]);
+                    start = index + 1;
+                }
+                _ => {}
+            }
+        }
+
+        index += 1;
+    }
+
+    if start < args.len() || args.ends_with(',') {
+        arguments.push(&args[start..]);
+    }
+
+    arguments
+}
+
+fn python_string_literals(line: &str) -> Vec<String> {
+    let mut literals = Vec::new();
+    let bytes = line.as_bytes();
+    let mut index = 0;
+
+    while index < bytes.len() {
+        if matches!(bytes[index], b'\'' | b'"') {
+            if let Some((literal, end)) = parse_python_string_literal(line, index) {
+                literals.push(literal);
+                index = end;
+                continue;
+            }
+        }
+        index += 1;
+    }
+
+    literals
 }
 
 fn parse_python_string_literal(line: &str, start: usize) -> Option<(String, usize)> {
@@ -3527,6 +4182,400 @@ mod tests {
             .iter()
             .any(|signal| signal.kind == SecuritySignalKind::SecretRead));
         assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn python_security_analyzer_ignores_secret_env_access_inside_strings() {
+        let script = concat!(
+            "note = 'os.environ[\"OPENAI_API_KEY\"]'\n",
+            "doc = \"os.getenv('SERVICE_TOKEN')\"\n",
+        );
+
+        let output = python_security_analyzer().analyze(&python_analyzer_input(
+            "scripts/check.py",
+            script.as_bytes(),
+        ));
+
+        assert!(!output
+            .signals
+            .iter()
+            .any(|signal| signal.kind == SecuritySignalKind::SecretRead));
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn python_security_analyzer_ignores_multiline_triple_quoted_strings() {
+        let script = concat!(
+            "\"\"\"\n",
+            "os.environ[\"OPENAI_API_KEY\"]\n",
+            "os.getenv('SERVICE_TOKEN')\n",
+            "subprocess.run(['curl', 'https://example.test'])\n",
+            "requests.post('https://example.test/api')\n",
+            "open(path, 'w')\n",
+            "eval(payload)\n",
+            "os.system('python -m pip install demo')\n",
+            "\"\"\"\n",
+        );
+
+        let output = python_security_analyzer().analyze(&python_analyzer_input(
+            "scripts/read_only.py",
+            script.as_bytes(),
+        ));
+
+        assert_eq!(output.signals, Vec::new());
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn python_security_analyzer_ignores_single_quoted_docstrings() {
+        let script = concat!(
+            "'''\n",
+            "os.environ[\"OPENAI_API_KEY\"]\n",
+            "os.getenv('SERVICE_TOKEN')\n",
+            "subprocess.run(['tool'])\n",
+            "'''\n",
+        );
+
+        let output = python_security_analyzer().analyze(&python_analyzer_input(
+            "scripts/read_only.py",
+            script.as_bytes(),
+        ));
+
+        assert_eq!(output.signals, Vec::new());
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn python_security_analyzer_detects_code_after_closed_triple_quoted_string() {
+        let script = concat!(
+            "doc = \"\"\"os.environ[\"OPENAI_API_KEY\"]\"\"\"; os.system('id')\n",
+            "\"\"\"\n",
+            "os.getenv('SERVICE_TOKEN')\n",
+            "\"\"\"\n",
+            "subprocess.run(['tool'])\n",
+        );
+
+        let output = python_security_analyzer().analyze(&python_analyzer_input(
+            "scripts/check.py",
+            script.as_bytes(),
+        ));
+
+        assert_eq!(
+            output
+                .signals
+                .iter()
+                .map(|signal| (signal.kind, signal.location.line, signal.location.column))
+                .collect::<Vec<_>>(),
+            vec![
+                (SecuritySignalKind::SubprocessExecution, Some(1), Some(43)),
+                (SecuritySignalKind::SubprocessExecution, Some(5), Some(1)),
+            ]
+        );
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn python_security_analyzer_detects_baseline_true_positives() {
+        let cases = [
+            (
+                "subprocess.run(['tool', '--version'])\n",
+                SecuritySignalKind::SubprocessExecution,
+                SecuritySinkKind::ProcessExecution,
+            ),
+            (
+                "requests.post('https://example.test/api')\n",
+                SecuritySignalKind::NetworkAccess,
+                SecuritySinkKind::NetworkRequest,
+            ),
+            (
+                "open(path, 'w').write('payload')\n",
+                SecuritySignalKind::FileWrite,
+                SecuritySinkKind::FileWrite,
+            ),
+            (
+                "eval(payload)\n",
+                SecuritySignalKind::DynamicCodeEvaluation,
+                SecuritySinkKind::DynamicCodeEvaluation,
+            ),
+            (
+                "os.system('python -m pip install demo')\n",
+                SecuritySignalKind::PackageInstallation,
+                SecuritySinkKind::PackageInstall,
+            ),
+        ];
+
+        for (script, expected_kind, expected_sink) in cases {
+            let output = python_security_analyzer().analyze(&python_analyzer_input(
+                "scripts/check.py",
+                script.as_bytes(),
+            ));
+
+            let signal = output
+                .signals
+                .iter()
+                .find(|signal| signal.kind == expected_kind)
+                .unwrap_or_else(|| panic!("missing {expected_kind:?} in {:?}", output.signals));
+
+            assert_eq!(signal.location.line, Some(1));
+            assert_eq!(signal.location.column, Some(1));
+            assert_eq!(
+                signal.sink.as_ref().map(|sink| sink.kind),
+                Some(expected_sink)
+            );
+            assert_eq!(signal.classification, ClassificationMethod::RegexFallback);
+            assert!(!signal.evidence.is_empty());
+            assert!(signal.evidence.len() <= 120);
+            assert_eq!(output.diagnostics, Vec::new());
+        }
+    }
+
+    #[test]
+    fn python_security_analyzer_detects_pathlib_writes_and_urlopen() {
+        let script = concat!(
+            "from pathlib import Path\n",
+            "Path('out.txt').write_text('payload')\n",
+            "data = urllib.request.urlopen('https://example.test/data').read()\n",
+        );
+
+        let output = python_security_analyzer().analyze(&python_analyzer_input(
+            "scripts/check.py",
+            script.as_bytes(),
+        ));
+
+        assert_eq!(
+            output
+                .signals
+                .iter()
+                .map(|signal| (signal.kind, signal.location.line, signal.location.column))
+                .collect::<Vec<_>>(),
+            vec![
+                (SecuritySignalKind::FileWrite, Some(2), Some(17)),
+                (SecuritySignalKind::NetworkAccess, Some(3), Some(8)),
+            ]
+        );
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn python_security_analyzer_detects_existing_secret_access_with_stable_locations() {
+        let script = concat!(
+            "import os\n",
+            "api_key = os.environ[\"OPENAI_API_KEY\"]\n",
+            "token = os.getenv('SERVICE_TOKEN')\n",
+        );
+
+        let output = python_security_analyzer().analyze(&python_analyzer_input(
+            "scripts/check.py",
+            script.as_bytes(),
+        ));
+
+        assert_eq!(
+            output
+                .signals
+                .iter()
+                .filter(|signal| signal.kind == SecuritySignalKind::SecretRead)
+                .map(|signal| (
+                    signal
+                        .source
+                        .as_ref()
+                        .and_then(|source| source.name.as_deref())
+                        .expect("secret source name"),
+                    signal.location.line,
+                    signal.location.column,
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                ("OPENAI_API_KEY", Some(2), Some(22)),
+                ("SERVICE_TOKEN", Some(3), Some(19)),
+            ]
+        );
+    }
+
+    #[test]
+    fn python_security_analyzer_keeps_read_only_python_clean() {
+        let script = concat!(
+            "from pathlib import Path\n",
+            "import json\n",
+            "data = Path('references/config.json').read_text()\n",
+            "payload = json.loads(data)\n",
+            "with open('work.txt', encoding='utf-8') as handle:\n",
+            "    cached = handle.read()\n",
+            "print(payload.get('name', 'skill'))\n",
+        );
+
+        let output = python_security_analyzer().analyze(&python_analyzer_input(
+            "scripts/read_only.py",
+            script.as_bytes(),
+        ));
+
+        assert_eq!(output.signals, Vec::new());
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn python_security_analyzer_treats_update_file_modes_as_writes() {
+        let write_modes = ["r+", "rb+"];
+
+        for mode in write_modes {
+            let script = format!("open(path, \"{mode}\")\n");
+            let output = python_security_analyzer().analyze(&python_analyzer_input(
+                "scripts/check.py",
+                script.as_bytes(),
+            ));
+
+            assert!(
+                output
+                    .signals
+                    .iter()
+                    .any(|signal| signal.kind == SecuritySignalKind::FileWrite),
+                "missing FileWrite for mode {mode:?}: {:?}",
+                output.signals
+            );
+            assert_eq!(output.diagnostics, Vec::new());
+        }
+    }
+
+    #[test]
+    fn python_security_analyzer_keeps_read_only_file_modes_clean() {
+        let read_modes = ["r", "rb"];
+
+        for mode in read_modes {
+            let script = format!("open(path, \"{mode}\")\n");
+            let output = python_security_analyzer().analyze(&python_analyzer_input(
+                "scripts/check.py",
+                script.as_bytes(),
+            ));
+
+            assert!(
+                !output
+                    .signals
+                    .iter()
+                    .any(|signal| signal.kind == SecuritySignalKind::FileWrite),
+                "unexpected FileWrite for mode {mode:?}: {:?}",
+                output.signals
+            );
+            assert_eq!(output.diagnostics, Vec::new());
+        }
+    }
+
+    #[test]
+    fn python_security_analyzer_ignores_comments_and_string_mentions() {
+        let script = concat!(
+            "# subprocess.run(['curl', 'https://example.test'])\n",
+            "note = \"os.system('pip install demo')\"\n",
+            "doc = 'requests.get(\"https://example.test\")'\n",
+            "message = 'eval(payload) and open(path, \"w\")'\n",
+        );
+
+        let output = python_security_analyzer().analyze(&python_analyzer_input(
+            "scripts/read_only.py",
+            script.as_bytes(),
+        ));
+
+        assert_eq!(output.signals, Vec::new());
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn python_security_analyzer_reports_recoverable_input_diagnostics() {
+        let classification_signals = [SecurityArtifactClassificationSignal::Extension];
+        let unavailable_input = SecurityAnalyzerInput {
+            artifact: SecurityAnalyzerArtifactInput {
+                path: "scripts/check.py",
+                kind: SecurityArtifactKind::Script,
+                language: SecurityLanguage::Python,
+                classification_method: SecurityArtifactClassificationMethod::Extension,
+                classification_signals: &classification_signals,
+                executable: true,
+                size_bytes: 2,
+                content: SecurityAnalyzerContent::from_bytes(
+                    &[0xff, 0xfe],
+                    SecurityArtifactReadStatus::Full,
+                    2,
+                ),
+            },
+            package: SecurityAnalyzerPackageContext {
+                package_root: ".",
+                manifest_path: "SKILL.md",
+                declared_tools: &[],
+                declared_permissions: &[],
+            },
+        };
+        let truncated_input = SecurityAnalyzerInput {
+            artifact: SecurityAnalyzerArtifactInput {
+                path: "scripts/check.py",
+                kind: SecurityArtifactKind::Script,
+                language: SecurityLanguage::Python,
+                classification_method: SecurityArtifactClassificationMethod::Extension,
+                classification_signals: &classification_signals,
+                executable: true,
+                size_bytes: 19,
+                content: SecurityAnalyzerContent::from_bytes(
+                    b"os.system('whoami')",
+                    SecurityArtifactReadStatus::Truncated,
+                    19,
+                ),
+            },
+            package: SecurityAnalyzerPackageContext {
+                package_root: ".",
+                manifest_path: "SKILL.md",
+                declared_tools: &[],
+                declared_permissions: &[],
+            },
+        };
+
+        let unavailable = python_security_analyzer().analyze(&unavailable_input);
+        let truncated = python_security_analyzer().analyze(&truncated_input);
+
+        assert_eq!(unavailable.signals, Vec::new());
+        assert_eq!(
+            unavailable.diagnostics[0].kind,
+            SecurityAnalyzerDiagnosticKind::TextUnavailable
+        );
+        assert_eq!(
+            truncated.diagnostics[0].kind,
+            SecurityAnalyzerDiagnosticKind::ContentTruncated
+        );
+        assert!(truncated
+            .signals
+            .iter()
+            .any(|signal| signal.kind == SecuritySignalKind::SubprocessExecution));
+    }
+
+    #[test]
+    fn python_security_analyzer_orders_output_deterministically() {
+        let script = concat!(
+            "open(path, 'w')\n",
+            "subprocess.run(['python', '-m', 'pip', 'install', 'demo'])\n",
+            "eval(payload)\n",
+            "requests.get('https://example.test')\n",
+            "secret = os.getenv('SERVICE_TOKEN')\n",
+        );
+        let first = python_security_analyzer().analyze(&python_analyzer_input(
+            "scripts/check.py",
+            script.as_bytes(),
+        ));
+        let second = python_security_analyzer().analyze(&python_analyzer_input(
+            "scripts/check.py",
+            script.as_bytes(),
+        ));
+
+        assert_eq!(first, second);
+        assert_eq!(
+            first
+                .signals
+                .iter()
+                .map(|signal| (signal.kind, signal.location.line, signal.location.column))
+                .collect::<Vec<_>>(),
+            vec![
+                (SecuritySignalKind::FileWrite, Some(1), Some(1)),
+                (SecuritySignalKind::PackageInstallation, Some(2), Some(1)),
+                (SecuritySignalKind::SubprocessExecution, Some(2), Some(1)),
+                (SecuritySignalKind::DynamicCodeEvaluation, Some(3), Some(1)),
+                (SecuritySignalKind::NetworkAccess, Some(4), Some(1)),
+                (SecuritySignalKind::SecretRead, Some(5), Some(20)),
+            ]
+        );
     }
 
     #[test]
