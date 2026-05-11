@@ -25,6 +25,7 @@ use agent_audit_rules::{
 };
 use agent_audit_security::{
     analyze_instruction_security_text, classify_security_artifact, javascript_security_analyzer,
+    path_target::{has_uri_scheme, has_windows_prefix, strip_query_and_fragment},
     python_security_analyzer, read_security_artifact_bytes, shell_security_analyzer,
     SecurityAnalyzer, SecurityAnalyzerArtifactInput, SecurityAnalyzerContent,
     SecurityAnalyzerInput, SecurityAnalyzerPackageContext,
@@ -868,36 +869,6 @@ fn relative_probe_target(target: &str) -> Option<RelativeProbeTarget<'_>> {
     }
 
     Some(RelativeProbeTarget::Safe(target))
-}
-
-fn strip_query_and_fragment(target: &str) -> &str {
-    match (target.find('?'), target.find('#')) {
-        (Some(query), Some(fragment)) => &target[..query.min(fragment)],
-        (Some(index), None) | (None, Some(index)) => &target[..index],
-        (None, None) => target,
-    }
-}
-
-fn has_uri_scheme(target: &str) -> bool {
-    let Some(colon_index) = target.find(':') else {
-        return false;
-    };
-    if target[..colon_index].contains(['/', '\\']) {
-        return false;
-    }
-
-    let mut chars = target[..colon_index].chars();
-    matches!(chars.next(), Some(first) if first.is_ascii_alphabetic())
-        && chars.all(|value| value.is_ascii_alphanumeric() || matches!(value, '+' | '-' | '.'))
-}
-
-fn has_windows_prefix(target: &str) -> bool {
-    let bytes = target.as_bytes();
-    matches!(
-        bytes,
-        [drive, b':', ..] if drive.is_ascii_alphabetic()
-    ) || target.starts_with(r"\\")
-        || target.starts_with("//")
 }
 
 fn is_absolute_path_target(target: &str) -> bool {

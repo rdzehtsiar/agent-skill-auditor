@@ -6,6 +6,10 @@ use std::fs::{self, File};
 use std::io::Read;
 use std::path::Path;
 
+pub mod path_target;
+
+use crate::path_target::{has_uri_scheme, has_windows_prefix, strip_query_and_fragment};
+
 pub const INITIAL_SECURITY_RULE_IDS: &[&str] = &[
     "SEC001", "SEC002", "SEC003", "SEC004", "SEC005", "SEC006", "SEC007", "SEC008", "SEC009",
     "SEC010", "SEC011", "SEC012",
@@ -1015,35 +1019,6 @@ fn join_package_path(package_root: &str, package_relative_path: &str) -> String 
     } else {
         format!("{package_root}/{package_relative_path}")
     }
-}
-
-fn strip_query_and_fragment(target: &str) -> &str {
-    match (target.find('?'), target.find('#')) {
-        (Some(query), Some(fragment)) => &target[..query.min(fragment)],
-        (Some(index), None) | (None, Some(index)) => &target[..index],
-        (None, None) => target,
-    }
-}
-
-fn has_uri_scheme(target: &str) -> bool {
-    let Some(colon_index) = target.find(':') else {
-        return false;
-    };
-    if target[..colon_index].contains('/') {
-        return false;
-    }
-
-    let mut chars = target[..colon_index].chars();
-    matches!(chars.next(), Some(first) if first.is_ascii_alphabetic())
-        && chars.all(|value| value.is_ascii_alphanumeric() || matches!(value, '+' | '-' | '.'))
-}
-
-fn has_windows_prefix(target: &str) -> bool {
-    let bytes = target.as_bytes();
-    matches!(
-        bytes,
-        [drive, b':', ..] if drive.is_ascii_alphabetic()
-    ) || target.starts_with("//")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
