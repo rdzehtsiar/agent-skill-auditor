@@ -18,6 +18,19 @@
     ],
     "remote_dependencies": [
       {
+        "path": "offline-partial/SKILL.md",
+        "line": 8,
+        "source": "markdown-link",
+        "kind": "script",
+        "package_manager": null,
+        "name": "setup.sh",
+        "version": "main",
+        "normalized": "github-raw:example/skill@setup.sh",
+        "raw": "raw.githubusercontent.com/example/skill",
+        "confidence": "high",
+        "pinned": false
+      },
+      {
         "path": "offline-partial/scripts/install.sh",
         "line": 2,
         "source": "script",
@@ -44,46 +57,17 @@
       }
     ],
     "lockfiles": [],
-    "executables": [
-      {
-        "path": "offline-partial/scripts/install.sh",
-        "line": 1,
-        "source": "filesystem",
-        "kind": "script",
-        "language": "sh",
-        "reason": "shebang",
-        "referenced": true,
-        "normalized": "script:sh",
-        "raw": "scripts/install.sh",
-        "confidence": "high"
-      }
-    ],
+    "executables": [],
     "binaries": [],
     "checksums": [],
-    "permissions": [
-      {
-        "path": "offline-partial/scripts/install.sh",
-        "line": 2,
-        "source": "script",
-        "kind": "package-install",
-        "evidence": "observed",
-        "normalized": "npm install",
-        "raw": "npm install prettier@latest",
-        "confidence": "high"
-      }
-    ],
-    "offline_readiness": [
-      {
-        "path": "offline-partial/SKILL.md",
-        "status": "partial",
-        "score": 62,
-        "reasons": [
-          "install command has no matching lockfile",
-          "mutable GitHub raw URL reference",
-          "package dependency uses latest"
-        ]
-      }
-    ]
+    "permissions": [],
+    "offline_readiness": []
   },
-  "expected_findings": []
+  "expected_findings": [
+    {
+      "rule_id": "SEC009",
+      "path": "offline-partial/scripts/install.sh",
+      "message": "The artifact runs a JavaScript package install without nearby lockfile or exact version pinning evidence. This can make installs resolve different packages over time and increases reproducibility and supply-chain risk."
+    }
+  ]
 }

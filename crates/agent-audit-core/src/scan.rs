@@ -6,6 +6,7 @@ use std::path::Path;
 use crate::config::{AuditConfig, ConfigIgnoreEntry};
 use crate::discovery::discover_skill_manifests;
 use crate::error::{AuditError, AuditResult};
+use crate::license_inventory::{inventory_license_files, inventory_manifest_license};
 use crate::model::{
     CompatibilityMatrix, ScanReport, ScanSummary, SkillArtifactKind, SkillCompatibilityRow,
     SkillFile, SkillFileKind, SkillFinding, SkillGraph, SkillManifest, SkillPackage,
@@ -81,7 +82,11 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
             &mut supply_chain,
             inventory_trust_manifest(root, skill_root)?,
         );
-        merge_supply_chain_inventory(&mut supply_chain, inventory_package_files(root, skill_root)?);
+        merge_supply_chain_inventory(&mut supply_chain, inventory_license_files(root, skill_root));
+        merge_supply_chain_inventory(
+            &mut supply_chain,
+            inventory_package_files(root, skill_root)?,
+        );
 
         if metadata.len() > options.max_manifest_bytes {
             package_facts.push(RulePackageFacts {
@@ -165,6 +170,10 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         merge_supply_chain_inventory(
             &mut supply_chain,
             inventory_manifest_urls(&manifest_display, &manifest, &frontmatter_key_lines),
+        );
+        merge_supply_chain_inventory(
+            &mut supply_chain,
+            inventory_manifest_license(&manifest_display, &manifest, &frontmatter_key_lines),
         );
         merge_supply_chain_inventory(
             &mut supply_chain,
@@ -4555,6 +4564,7 @@ tools:
   - shell
 permissions:
   - filesystem-read
+license: Apache-2.0
 ---
 
 # Accepted Frontmatter

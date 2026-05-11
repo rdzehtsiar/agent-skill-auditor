@@ -44,9 +44,11 @@ pub fn inventory_package_files(
                 manager_label(manager),
                 Some(filename.clone()),
             ));
-            inventory.remote_dependencies.extend(package_manifest_dependencies(
-                &path, &display, &filename, manager,
-            )?);
+            inventory
+                .remote_dependencies
+                .extend(package_manifest_dependencies(
+                    &path, &display, &filename, manager,
+                )?);
         }
         if is_lockfile_with_urls(&filename) {
             let content = std::fs::read_to_string(&path).map_err(|source| AuditError::Read {
@@ -78,9 +80,7 @@ pub fn inventory_package_files(
     Ok(inventory)
 }
 
-pub fn inventory_package_installs_from_signals(
-    signals: &[SecuritySignal],
-) -> SupplyChainInventory {
+pub fn inventory_package_installs_from_signals(signals: &[SecuritySignal]) -> SupplyChainInventory {
     let mut inventory = SupplyChainInventory::default();
 
     for signal in signals.iter().filter(|signal| {
@@ -296,10 +296,12 @@ fn requirements_dependencies(_path: &str, content: &str) -> Vec<ParsedDependency
     content
         .lines()
         .enumerate()
-        .filter_map(|(index, line)| parse_requirement_line(line).map(|mut dependency| {
-            dependency.line = Some(index + 1);
-            dependency
-        }))
+        .filter_map(|(index, line)| {
+            parse_requirement_line(line).map(|mut dependency| {
+                dependency.line = Some(index + 1);
+                dependency
+            })
+        })
         .collect()
 }
 
@@ -442,11 +444,7 @@ struct ParsedDependency {
 }
 
 impl ParsedDependency {
-    fn into_remote_dependency(
-        self,
-        path: &str,
-        manager: PackageManagerKind,
-    ) -> RemoteDependency {
+    fn into_remote_dependency(self, path: &str, manager: PackageManagerKind) -> RemoteDependency {
         RemoteDependency {
             path: path.to_owned(),
             line: self.line,
@@ -534,9 +532,7 @@ struct CommandPackage {
     pinned: bool,
 }
 
-fn install_command_start(
-    tokens: &[String],
-) -> Option<(usize, PackageManagerKind, usize)> {
+fn install_command_start(tokens: &[String]) -> Option<(usize, PackageManagerKind, usize)> {
     for (index, token) in tokens.iter().enumerate() {
         let token = shell_command_name(token);
         let rest = &tokens[index + 1..];
@@ -998,8 +994,8 @@ mod tests {
                 "package-lock.json",
                 "pnpm-lock.yaml",
                 "requirements.txt",
-            "uv.lock",
-            "yarn.lock",
+                "uv.lock",
+                "yarn.lock",
             ]
         );
     }
@@ -1012,10 +1008,7 @@ mod tests {
             "package.json",
             r#"{"dependencies":{"exact":"1.2.3","range":"^1.2.3","floating":"latest"}}"#,
         );
-        workspace.write_file(
-            "requirements.txt",
-            "requests==2.32.0\nclick>=8\npytest\n",
-        );
+        workspace.write_file("requirements.txt", "requests==2.32.0\nclick>=8\npytest\n");
         workspace.write_file(
             "Cargo.toml",
             "[dependencies]\nripgrep = \"14.1.0\"\nregex = \"^1.10\"\n",
@@ -1048,7 +1041,11 @@ mod tests {
                 ("pip:click@>=8", Some(false), Some(2)),
                 ("pip:pytest", Some(false), Some(3)),
                 ("cargo:fd-find@10.1.0", Some(true), Some(2)),
-                ("go:golang.org/x/tools/cmd/stringer@latest", Some(false), Some(3)),
+                (
+                    "go:golang.org/x/tools/cmd/stringer@latest",
+                    Some(false),
+                    Some(3)
+                ),
             ]
         );
     }

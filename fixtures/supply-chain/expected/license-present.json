@@ -11,6 +11,15 @@
         "normalized": "Apache-2.0",
         "raw": "LICENSE.txt",
         "confidence": "medium"
+      },
+      {
+        "path": "license-present/SKILL.md",
+        "line": 4,
+        "source": "frontmatter",
+        "scope": "skill",
+        "normalized": "Apache-2.0",
+        "raw": "license: Apache-2.0",
+        "confidence": "high"
       }
     ],
     "trust_manifests": [],

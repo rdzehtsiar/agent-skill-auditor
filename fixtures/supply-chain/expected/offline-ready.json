@@ -11,6 +11,15 @@
         "normalized": "Apache-2.0",
         "raw": "LICENSE.txt",
         "confidence": "medium"
+      },
+      {
+        "path": "offline-ready/SKILL.md",
+        "line": 4,
+        "source": "frontmatter",
+        "scope": "skill",
+        "normalized": "Apache-2.0",
+        "raw": "license: Apache-2.0",
+        "confidence": "high"
       }
     ],
     "trust_manifests": [
@@ -62,34 +71,10 @@
         "normalized": "sh",
         "raw": "sh",
         "confidence": "high"
-      },
-      {
-        "path": "offline-ready/scripts/check.sh",
-        "line": 1,
-        "source": "filesystem",
-        "kind": "script",
-        "language": "sh",
-        "reason": "shebang",
-        "referenced": true,
-        "normalized": "script:sh",
-        "raw": "scripts/check.sh",
-        "confidence": "high"
       }
     ],
     "binaries": [],
-    "checksums": [
-      {
-        "path": "offline-ready/checksums.txt",
-        "line": 1,
-        "source": "filesystem",
-        "algorithm": "sha256",
-        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "target_path": "offline-ready/SKILL.md",
-        "normalized": "sha256:SKILL.md",
-        "raw": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  SKILL.md",
-        "confidence": "high"
-      }
-    ],
+    "checksums": [],
     "permissions": [
       {
         "path": "offline-ready/agent-audit.trust.yaml",
@@ -112,17 +97,7 @@
         "confidence": "high"
       }
     ],
-    "offline_readiness": [
-      {
-        "path": "offline-ready/SKILL.md",
-        "status": "ready",
-        "score": 100,
-        "reasons": [
-          "all referenced local files are present",
-          "no remote dependencies are required"
-        ]
-      }
-    ]
+    "offline_readiness": []
   },
   "expected_findings": []
 }

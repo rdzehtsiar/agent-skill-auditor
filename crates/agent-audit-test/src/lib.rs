@@ -59,6 +59,16 @@ mod tests {
         "remote_dependencies",
         "trust_manifests",
     ];
+    const IMPLEMENTED_SUPPLY_CHAIN_SECTION_KEYS: &[&str] = &[
+        "executables",
+        "external_urls",
+        "licenses",
+        "lockfiles",
+        "package_managers",
+        "permissions",
+        "remote_dependencies",
+        "trust_manifests",
+    ];
 
     #[test]
     fn fixture_groups_match_planned_fixture_directories() {
@@ -79,6 +89,7 @@ mod tests {
         let root = supply_chain_root();
         let expected_root = root.join("expected");
         assert!(expected_root.is_dir(), "missing supply-chain expected dir");
+        let report = scan_path(&root, &ScanOptions::default()).expect("scan supply-chain corpus");
 
         assert_eq!(fixture_directory_names(&root), SUPPLY_CHAIN_FIXTURES);
 
@@ -107,6 +118,16 @@ mod tests {
                 serde_json::from_str(&expected_json).expect("parse expected projection JSON");
             assert_eq!(value["fixture"], *fixture_name);
             assert!(value["expected_findings"].is_array());
+            assert_eq!(
+                supply_chain_projection_for_fixture(&report, fixture_name),
+                value["supply_chain"],
+                "{fixture_name} supply-chain projection"
+            );
+            assert_eq!(
+                finding_projection_for_fixture(&report, fixture_name),
+                value["expected_findings"],
+                "{fixture_name} expected findings"
+            );
 
             let supply_chain = value["supply_chain"]
                 .as_object()
@@ -128,8 +149,10 @@ mod tests {
         }
 
         assert!(
-            covered_sections.iter().all(|(_, count)| *count > 0),
-            "every supply-chain section should be represented: {covered_sections:?}"
+            IMPLEMENTED_SUPPLY_CHAIN_SECTION_KEYS
+                .iter()
+                .all(|section| covered_sections[*section] > 0),
+            "every implemented supply-chain section should be represented: {covered_sections:?}"
         );
 
         let invalid_projection = expected_supply_chain_projection("trust-manifest-invalid");
@@ -1116,6 +1139,56 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    fn supply_chain_projection_for_fixture(
+        report: &ScanReport,
+        fixture_name: &str,
+    ) -> serde_json::Value {
+        let prefix = format!("{fixture_name}/");
+        let mut value =
+            serde_json::to_value(&report.supply_chain).expect("serialize supply-chain inventory");
+        let supply_chain = value
+            .as_object_mut()
+            .expect("serialized supply-chain object");
+
+        for section_name in SUPPLY_CHAIN_SECTION_KEYS {
+            let section = supply_chain
+                .get_mut(*section_name)
+                .unwrap_or_else(|| panic!("missing supply-chain section {section_name}"))
+                .as_array_mut()
+                .unwrap_or_else(|| panic!("supply-chain section {section_name} should be array"));
+            section.retain(|entry| entry_path_starts_with(entry, &prefix));
+        }
+
+        value
+    }
+
+    fn finding_projection_for_fixture(
+        report: &ScanReport,
+        fixture_name: &str,
+    ) -> serde_json::Value {
+        let prefix = format!("{fixture_name}/");
+        serde_json::Value::Array(
+            report
+                .findings
+                .iter()
+                .filter(|finding| finding.location.path.starts_with(&prefix))
+                .map(|finding| {
+                    serde_json::json!({
+                        "rule_id": finding.rule_id,
+                        "path": finding.location.path,
+                        "message": finding.message,
+                    })
+                })
+                .collect(),
+        )
+    }
+
+    fn entry_path_starts_with(entry: &serde_json::Value, prefix: &str) -> bool {
+        entry["path"]
+            .as_str()
+            .is_some_and(|path| path.starts_with(prefix))
     }
 
     fn workspace_root() -> PathBuf {

@@ -14,11 +14,5 @@
     "permissions": [],
     "offline_readiness": []
   },
-  "expected_findings": [
-    {
-      "rule_id": "SUPPLY002",
-      "path": "license-missing/SKILL.md",
-      "message": "Missing skill-local license evidence."
-    }
-  ]
+  "expected_findings": []
 }

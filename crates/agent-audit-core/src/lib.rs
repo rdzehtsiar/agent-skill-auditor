@@ -4,6 +4,7 @@ pub mod config;
 pub mod discovery;
 pub mod error;
 pub mod fail;
+mod license_inventory;
 pub mod model;
 mod package_inventory;
 pub mod parse;

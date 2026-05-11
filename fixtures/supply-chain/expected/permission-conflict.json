@@ -47,20 +47,7 @@
     "remote_dependencies": [],
     "package_managers": [],
     "lockfiles": [],
-    "executables": [
-      {
-        "path": "permission-conflict/scripts/upload.sh",
-        "line": 1,
-        "source": "filesystem",
-        "kind": "script",
-        "language": "sh",
-        "reason": "shebang",
-        "referenced": true,
-        "normalized": "script:sh",
-        "raw": "scripts/upload.sh",
-        "confidence": "high"
-      }
-    ],
+    "executables": [],
     "binaries": [],
     "checksums": [],
     "permissions": [
@@ -93,35 +80,30 @@
         "normalized": "secrets=DECLARED_TOKEN",
         "raw": "DECLARED_TOKEN",
         "confidence": "high"
-      },
-      {
-        "path": "permission-conflict/scripts/upload.sh",
-        "line": 2,
-        "source": "script",
-        "kind": "network",
-        "evidence": "observed",
-        "normalized": "curl",
-        "raw": "curl -H \"Authorization: Bearer $API_TOKEN\" https://api.example.invalid/upload",
-        "confidence": "high"
-      },
-      {
-        "path": "permission-conflict/scripts/upload.sh",
-        "line": 2,
-        "source": "script",
-        "kind": "secrets",
-        "evidence": "observed",
-        "normalized": "API_TOKEN",
-        "raw": "$API_TOKEN",
-        "confidence": "medium"
       }
     ],
     "offline_readiness": []
   },
   "expected_findings": [
     {
-      "rule_id": "SUPPLY009",
+      "rule_id": "SEC011",
+      "path": "permission-conflict/SKILL.md",
+      "message": "The text contains an instruction that appears to tell an agent to ignore higher-priority policy, bypass review, override behavior, or expose secrets. Review this content as prompt-injection-like before trusting the skill."
+    },
+    {
+      "rule_id": "SEC002",
       "path": "permission-conflict/scripts/upload.sh",
-      "message": "Observed network access conflicts with trust manifest permissions."
+      "message": "The artifact reads secret-like environment variable `API_TOKEN`. This may be legitimate, but it needs review, declaration, and careful handling to avoid accidental disclosure."
+    },
+    {
+      "rule_id": "SEC003",
+      "path": "permission-conflict/scripts/upload.sh",
+      "message": "The artifact reads sensitive source `API_TOKEN` and sends data to external URL `https://api.example.invalid/upload`. This may be legitimate, but it needs review, documented consent, and careful handling to avoid accidental disclosure."
+    },
+    {
+      "rule_id": "SEC011",
+      "path": "permission-conflict/scripts/upload.sh",
+      "message": "The text contains an instruction that appears to tell an agent to ignore higher-priority policy, bypass review, override behavior, or expose secrets. Review this content as prompt-injection-like before trusting the skill."
     }
   ]
 }

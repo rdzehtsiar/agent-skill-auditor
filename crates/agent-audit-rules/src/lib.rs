@@ -699,7 +699,8 @@ pub fn rule_counts_as_broken_reference(rule_id: &str) -> bool {
 }
 
 /// Portable frontmatter fields accepted by the initial structural scanner.
-pub const ACCEPTED_FRONTMATTER_FIELDS: &[&str] = &["name", "description", "tools", "permissions"];
+pub const ACCEPTED_FRONTMATTER_FIELDS: &[&str] =
+    &["name", "description", "tools", "permissions", "license"];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RulePackageFacts {
@@ -3620,6 +3621,27 @@ mod tests {
                 Some(4)
             )]
         );
+    }
+
+    #[test]
+    fn skill040_allows_license_frontmatter_for_supply_chain_inventory() {
+        let packages = vec![parsed_manifest_package(
+            "license-field/SKILL.md",
+            RuleParsedManifestFacts {
+                name: Some("reviewer".to_owned()),
+                description: Some("Reviews pull requests.".to_owned()),
+                frontmatter_fields: vec![RuleFrontmatterFieldFact {
+                    name: "license".to_owned(),
+                    line: Some(4),
+                }],
+                references: Vec::new(),
+                oversized: false,
+            },
+        )];
+
+        let findings = evaluate_structural_rules(&packages);
+
+        assert!(findings.is_empty());
     }
 
     #[test]

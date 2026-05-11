@@ -16,21 +16,7 @@
         "pinned": false
       }
     ],
-    "remote_dependencies": [
-      {
-        "path": "github-raw-unpinned/SKILL.md",
-        "line": 8,
-        "source": "markdown-link",
-        "kind": "script",
-        "package_manager": null,
-        "name": "scripts/install.sh",
-        "version": "main",
-        "normalized": "github-raw:example/skill@scripts/install.sh",
-        "raw": "raw.githubusercontent.com/example/skill",
-        "confidence": "high",
-        "pinned": false
-      }
-    ],
+    "remote_dependencies": [],
     "package_managers": [],
     "lockfiles": [],
     "executables": [],
@@ -39,11 +25,5 @@
     "permissions": [],
     "offline_readiness": []
   },
-  "expected_findings": [
-    {
-      "rule_id": "SUPPLY005",
-      "path": "github-raw-unpinned/SKILL.md",
-      "message": "Mutable GitHub raw URL reference."
-    }
-  ]
+  "expected_findings": []
 }

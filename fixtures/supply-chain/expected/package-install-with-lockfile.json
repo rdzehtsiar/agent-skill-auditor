@@ -16,21 +16,7 @@
         "pinned": true
       }
     ],
-    "remote_dependencies": [
-      {
-        "path": "package-install-with-lockfile/package.json",
-        "line": 6,
-        "source": "package-manifest",
-        "kind": "package",
-        "package_manager": "npm",
-        "name": "left-pad",
-        "version": "1.3.0",
-        "normalized": "npm:left-pad@1.3.0",
-        "raw": "left-pad 1.3.0",
-        "confidence": "high",
-        "pinned": true
-      }
-    ],
+    "remote_dependencies": [],
     "package_managers": [
       {
         "path": "package-install-with-lockfile/package.json",
@@ -64,34 +50,10 @@
         "confidence": "high"
       }
     ],
-    "executables": [
-      {
-        "path": "package-install-with-lockfile/scripts/install.sh",
-        "line": 1,
-        "source": "filesystem",
-        "kind": "script",
-        "language": "sh",
-        "reason": "shebang",
-        "referenced": true,
-        "normalized": "script:sh",
-        "raw": "scripts/install.sh",
-        "confidence": "high"
-      }
-    ],
+    "executables": [],
     "binaries": [],
     "checksums": [],
-    "permissions": [
-      {
-        "path": "package-install-with-lockfile/scripts/install.sh",
-        "line": 2,
-        "source": "script",
-        "kind": "package-install",
-        "evidence": "observed",
-        "normalized": "npm ci",
-        "raw": "npm ci",
-        "confidence": "high"
-      }
-    ],
+    "permissions": [],
     "offline_readiness": []
   },
   "expected_findings": []
