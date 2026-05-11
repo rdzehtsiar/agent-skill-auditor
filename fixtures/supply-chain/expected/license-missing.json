@@ -12,7 +12,16 @@
     "binaries": [],
     "checksums": [],
     "permissions": [],
-    "offline_readiness": []
+    "offline_readiness": [
+      {
+        "path": "license-missing/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      }
+    ]
   },
   "expected_findings": []
 }

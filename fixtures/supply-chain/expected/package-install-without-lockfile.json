@@ -71,7 +71,17 @@
         "confidence": "high"
       }
     ],
-    "offline_readiness": []
+    "offline_readiness": [
+      {
+        "path": "package-install-without-lockfile/SKILL.md",
+        "status": "partial",
+        "score": 75,
+        "reasons": [
+          "1 package install command has no matching lockfile",
+          "no local license evidence found"
+        ]
+      }
+    ]
   },
   "expected_findings": []
 }

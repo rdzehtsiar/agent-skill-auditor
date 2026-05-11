@@ -39,7 +39,17 @@
     "binaries": [],
     "checksums": [],
     "permissions": [],
-    "offline_readiness": []
+    "offline_readiness": [
+      {
+        "path": "trust-manifest-invalid/SKILL.md",
+        "status": "partial",
+        "score": 75,
+        "reasons": [
+          "1 invalid trust manifest",
+          "no local license evidence found"
+        ]
+      }
+    ]
   },
   "expected_findings": [],
   "expected_trust_manifest_diagnostics": [

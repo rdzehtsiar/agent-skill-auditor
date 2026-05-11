@@ -59,7 +59,17 @@
         "confidence": "high"
       }
     ],
-    "offline_readiness": []
+    "offline_readiness": [
+      {
+        "path": "binary-artifact/SKILL.md",
+        "status": "partial",
+        "score": 75,
+        "reasons": [
+          "1 binary executable lacks local checksum or provenance evidence",
+          "no local license evidence found"
+        ]
+      }
+    ]
   },
   "expected_findings": []
 }

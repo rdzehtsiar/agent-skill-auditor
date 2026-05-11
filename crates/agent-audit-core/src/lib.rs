@@ -7,6 +7,7 @@ pub mod error;
 pub mod fail;
 mod license_inventory;
 pub mod model;
+mod offline_readiness;
 mod package_inventory;
 pub mod parse;
 mod permission_reconciliation;

@@ -121,7 +121,16 @@
         "confidence": "high"
       }
     ],
-    "offline_readiness": []
+    "offline_readiness": [
+      {
+        "path": "offline-ready/SKILL.md",
+        "status": "ready",
+        "score": 100,
+        "reasons": [
+          "local package evidence has no remote or install blockers"
+        ]
+      }
+    ]
   },
   "expected_findings": []
 }

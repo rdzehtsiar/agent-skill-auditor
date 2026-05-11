@@ -1670,7 +1670,142 @@
         "confidence": "medium"
       }
     ],
-    "offline_readiness": []
+    "offline_readiness": [
+      {
+        "path": "benign-local-script/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "curl-bash/SKILL.md",
+        "status": "partial",
+        "score": 80,
+        "reasons": [
+          "1 unpinned remote dependencies",
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "env-exfiltration/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "hidden-instruction-code-block/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "hidden-instruction-comments/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "hidden-instruction-multiline-comment/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "multi-language/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "normal-instructions/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "package-install-lockfile-backed/SKILL.md",
+        "status": "partial",
+        "score": 85,
+        "reasons": [
+          "1 unpinned package dependencies",
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "package-install-pinned/SKILL.md",
+        "status": "partial",
+        "score": 75,
+        "reasons": [
+          "4 package install command has no matching lockfile",
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "package-install-unpinned/SKILL.md",
+        "status": "partial",
+        "score": 65,
+        "reasons": [
+          "4 package install command has no matching lockfile",
+          "3 unpinned package dependencies",
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "prompt-injection/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "read-only-python/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "sudo-install/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "suppressed-package-install/SKILL.md",
+        "status": "partial",
+        "score": 75,
+        "reasons": [
+          "1 package install command has no matching lockfile",
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "write-outside/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      }
+    ]
   },
   "compatibility": {
     "profiles": [

@@ -1284,7 +1284,248 @@
         "confidence": "high"
       }
     ],
-    "offline_readiness": []
+    "offline_readiness": [
+      {
+        "path": ".agents/skills/artifacts/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": ".agents/skills/broken-reference/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": ".agents/skills/missing-description/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": ".agents/skills/triage/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": ".claude/skills/duplicate-a/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": ".claude/skills/duplicate-b/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": ".claude/skills/planning/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": ".claude/skills/unknown-frontmatter/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": ".github/skills/assets/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": ".github/skills/broken-reference/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": ".github/skills/missing-name/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": ".github/skills/release-notes/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "deep/products/alpha/.agents/skills/nested-agent/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "deep/products/beta/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "generic/artifact-complete/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "generic/assets-only/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "generic/broken-reference/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "generic/duplicate-a/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "generic/duplicate-b/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "generic/missing-description/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "generic/missing-name/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "generic/references-only/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "generic/scripts-only/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "generic/unknown-field/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "generic/valid-basic/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "generic/valid-tools/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "nested/team/platform/review/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "nested/team/portability/missing-name/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "nested/team/quality/docs/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "nested/team/security/checks/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      }
+    ]
   },
   "compatibility": {
     "profiles": [

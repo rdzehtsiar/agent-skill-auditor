@@ -78,7 +78,16 @@
         "confidence": "high"
       }
     ],
-    "offline_readiness": []
+    "offline_readiness": [
+      {
+        "path": "package-install-with-lockfile/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      }
+    ]
   },
   "expected_findings": []
 }

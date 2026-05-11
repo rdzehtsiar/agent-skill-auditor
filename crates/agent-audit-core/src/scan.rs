@@ -13,6 +13,7 @@ use crate::model::{
     SkillFile, SkillFileKind, SkillFinding, SkillGraph, SkillManifest, SkillPackage,
     SkillReference, SupplyChainInventory, SuppressedFinding, SuppressionMatch,
 };
+use crate::offline_readiness::populate_offline_readiness;
 use crate::package_inventory::{
     inventory_package_files, inventory_package_installs_from_scripts,
     inventory_package_installs_from_signals,
@@ -263,6 +264,7 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         inventory_package_installs_from_signals(&security_signals),
     );
     reconcile_observed_permissions(&mut supply_chain, &security_signals);
+    populate_offline_readiness(&mut supply_chain, &packages);
     findings.extend(evaluate_compatibility_findings(
         &packages,
         options.config.as_ref(),
@@ -6111,7 +6113,16 @@ description: JSON stability fixture.
     "binaries": [],
     "checksums": [],
     "permissions": [],
-    "offline_readiness": []
+    "offline_readiness": [
+      {
+        "path": "SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      }
+    ]
   },
   "compatibility": {
     "profiles": [

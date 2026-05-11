@@ -31,7 +31,16 @@
     "binaries": [],
     "checksums": [],
     "permissions": [],
-    "offline_readiness": []
+    "offline_readiness": [
+      {
+        "path": "license-present/SKILL.md",
+        "status": "ready",
+        "score": 100,
+        "reasons": [
+          "local package evidence has no remote or install blockers"
+        ]
+      }
+    ]
   },
   "expected_findings": []
 }

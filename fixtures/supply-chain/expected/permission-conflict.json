@@ -115,7 +115,17 @@
         "confidence": "high"
       }
     ],
-    "offline_readiness": []
+    "offline_readiness": [
+      {
+        "path": "permission-conflict/SKILL.md",
+        "status": "partial",
+        "score": 75,
+        "reasons": [
+          "observed network access conflicts with trust manifest network=false",
+          "no local license evidence found"
+        ]
+      }
+    ]
   },
   "expected_findings": [
     {

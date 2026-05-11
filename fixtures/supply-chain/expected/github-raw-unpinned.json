@@ -23,7 +23,17 @@
     "binaries": [],
     "checksums": [],
     "permissions": [],
-    "offline_readiness": []
+    "offline_readiness": [
+      {
+        "path": "github-raw-unpinned/SKILL.md",
+        "status": "partial",
+        "score": 80,
+        "reasons": [
+          "1 unpinned external URLs",
+          "no local license evidence found"
+        ]
+      }
+    ]
   },
   "expected_findings": []
 }

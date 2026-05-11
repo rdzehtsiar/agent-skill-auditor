@@ -130,7 +130,18 @@
         "confidence": "high"
       }
     ],
-    "offline_readiness": []
+    "offline_readiness": [
+      {
+        "path": "SKILL.md",
+        "status": "partial",
+        "score": 65,
+        "reasons": [
+          "1 package install command has no matching lockfile",
+          "1 unpinned package dependencies",
+          "no local license evidence found"
+        ]
+      }
+    ]
   },
   "compatibility": {
     "profiles": [

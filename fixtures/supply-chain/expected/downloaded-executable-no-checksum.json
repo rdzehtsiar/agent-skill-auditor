@@ -71,7 +71,17 @@
         "confidence": "medium"
       }
     ],
-    "offline_readiness": []
+    "offline_readiness": [
+      {
+        "path": "downloaded-executable-no-checksum/SKILL.md",
+        "status": "partial",
+        "score": 70,
+        "reasons": [
+          "1 downloaded executable artifact lacks checksum evidence",
+          "no local license evidence found"
+        ]
+      }
+    ]
   },
   "expected_findings": []
 }

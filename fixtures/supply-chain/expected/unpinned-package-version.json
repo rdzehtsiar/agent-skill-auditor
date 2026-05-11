@@ -83,7 +83,17 @@
     "binaries": [],
     "checksums": [],
     "permissions": [],
-    "offline_readiness": []
+    "offline_readiness": [
+      {
+        "path": "unpinned-package-version/SKILL.md",
+        "status": "partial",
+        "score": 85,
+        "reasons": [
+          "3 unpinned package dependencies",
+          "no local license evidence found"
+        ]
+      }
+    ]
   },
   "expected_findings": []
 }
