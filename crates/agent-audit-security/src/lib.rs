@@ -3822,50 +3822,75 @@ fn find_python_call_args_end(line: &str, start: usize) -> Option<usize> {
     let bytes = line.as_bytes();
     let mut index = start;
     let mut depth = 1usize;
-    let mut quote = None;
-    let mut escaped = false;
+    let mut quote_state = PythonQuoteState::default();
 
     while index < bytes.len() {
         let byte = bytes[index];
-        if escaped {
-            escaped = false;
+        if quote_state.consume(byte) {
             index += 1;
             continue;
         }
 
-        if quote.is_some() && byte == b'\\' {
-            escaped = true;
-            index += 1;
-            continue;
-        }
-
-        if matches!(byte, b'\'' | b'"') {
-            if quote == Some(byte) {
-                quote = None;
-            } else if quote.is_none() {
-                quote = Some(byte);
-            }
-            index += 1;
-            continue;
-        }
-
-        if quote.is_none() {
-            match byte {
-                b'(' | b'[' | b'{' => depth += 1,
-                b')' | b']' | b'}' => {
-                    depth = depth.saturating_sub(1);
-                    if depth == 0 {
-                        return Some(index);
-                    }
-                }
-                _ => {}
-            }
+        if !quote_state.is_quoted() && update_python_delimiter_depth(byte, &mut depth) {
+            return Some(index);
         }
 
         index += 1;
     }
 
     None
+}
+
+#[derive(Debug, Default)]
+struct PythonQuoteState {
+    quote: Option<u8>,
+    escaped: bool,
+}
+
+impl PythonQuoteState {
+    fn consume(&mut self, byte: u8) -> bool {
+        if self.escaped {
+            self.escaped = false;
+            return true;
+        }
+
+        if self.quote.is_some() && byte == b'\\' {
+            self.escaped = true;
+            return true;
+        }
+
+        if matches!(byte, b'\'' | b'"') {
+            self.toggle_quote(byte);
+            return true;
+        }
+
+        false
+    }
+
+    fn is_quoted(&self) -> bool {
+        self.quote.is_some()
+    }
+
+    fn toggle_quote(&mut self, byte: u8) {
+        if self.quote == Some(byte) {
+            self.quote = None;
+        } else if self.quote.is_none() {
+            self.quote = Some(byte);
+        }
+    }
+}
+
+fn update_python_delimiter_depth(byte: u8, depth: &mut usize) -> bool {
+    match byte {
+        b'(' | b'[' | b'{' => *depth += 1,
+        b')' | b']' | b'}' => {
+            *depth = depth.saturating_sub(1);
+            return *depth == 0;
+        }
+        _ => {}
+    }
+
+    false
 }
 
 fn python_index_in_string(line: &str, target: usize) -> bool {
@@ -6647,6 +6672,32 @@ mod tests {
                 Some("scripts/../../.claude/settings.json"),
                 Some("../outside.txt"),
                 None,
+            ]
+        );
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn python_security_analyzer_ignores_nested_delimiters_inside_call_strings() {
+        let script = concat!(
+            "subprocess.run(['tool', '--expr', \"text ) ] } with \\\\\\\" escaped quote\"], check=True)\n",
+            "requests.post('https://example.test/api', json={'payload': 'literal ) ] }'})\n",
+        );
+
+        let output = python_security_analyzer().analyze(&python_analyzer_input(
+            "scripts/check.py",
+            script.as_bytes(),
+        ));
+
+        assert_eq!(
+            output
+                .signals
+                .iter()
+                .map(|signal| (signal.kind, signal.location.line, signal.location.column))
+                .collect::<Vec<_>>(),
+            vec![
+                (SecuritySignalKind::SubprocessExecution, Some(1), Some(1)),
+                (SecuritySignalKind::NetworkAccess, Some(2), Some(1)),
             ]
         );
         assert_eq!(output.diagnostics, Vec::new());
