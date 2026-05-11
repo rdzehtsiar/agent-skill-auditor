@@ -1990,6 +1990,7 @@ fn detect_javascript_file_writes(
     find_javascript_calls(line, FILE_WRITE_CALLS)
         .into_iter()
         .map(|call| {
+            let target = javascript_file_write_target(call.args);
             shell_signal(
                 path,
                 line_number,
@@ -1998,7 +1999,7 @@ fn detect_javascript_file_writes(
                 None,
                 Some(SecuritySink {
                     kind: SecuritySinkKind::FileWrite,
-                    target: Some(call.name),
+                    target,
                 }),
                 SecurityRiskScore::new(50),
                 AnalyzerConfidence::Medium,
@@ -2318,6 +2319,7 @@ fn detect_python_file_writes(
 
     for call in find_python_calls(line, &["open"]) {
         if python_open_call_writes(call.args) {
+            let target = python_open_file_write_target(call.args);
             signals.push(shell_signal(
                 path,
                 line_number,
@@ -2326,7 +2328,7 @@ fn detect_python_file_writes(
                 None,
                 Some(SecuritySink {
                     kind: SecuritySinkKind::FileWrite,
-                    target: Some("open".to_owned()),
+                    target,
                 }),
                 SecurityRiskScore::new(50),
                 AnalyzerConfidence::Medium,
@@ -2337,6 +2339,7 @@ fn detect_python_file_writes(
 
     for call in find_python_calls(line, &["write_text", "write_bytes"]) {
         if python_method_call(line, call.start) {
+            let target = python_pathlib_file_write_target(line, call.start);
             signals.push(shell_signal(
                 path,
                 line_number,
@@ -2345,7 +2348,7 @@ fn detect_python_file_writes(
                 None,
                 Some(SecuritySink {
                     kind: SecuritySinkKind::FileWrite,
-                    target: Some(call.name),
+                    target,
                 }),
                 SecurityRiskScore::new(50),
                 AnalyzerConfidence::Medium,
@@ -3127,6 +3130,35 @@ fn python_open_call_writes(args: &str) -> bool {
             .is_some_and(|mode| python_file_mode_writes(&mode))
 }
 
+fn python_open_file_write_target(args: &str) -> Option<String> {
+    python_top_level_arguments(args)
+        .first()
+        .and_then(|argument| parse_python_string_literal(argument.trim(), 0))
+        .map(|(target, _)| target)
+}
+
+fn python_pathlib_file_write_target(line: &str, method_start: usize) -> Option<String> {
+    let receiver = line[..method_start]
+        .trim_end()
+        .strip_suffix('.')?
+        .trim_end();
+    let path_call_start = receiver.rfind("Path(")?;
+    if !python_name_boundary_before(receiver, path_call_start) {
+        return None;
+    }
+
+    let args_start = path_call_start + "Path(".len();
+    let args_end = find_python_call_args_end(receiver, args_start)?;
+    if !receiver[args_end + 1..].trim().is_empty() {
+        return None;
+    }
+
+    python_top_level_arguments(&receiver[args_start..args_end])
+        .first()
+        .and_then(|argument| parse_python_string_literal(argument.trim(), 0))
+        .map(|(target, _)| target)
+}
+
 fn python_file_mode_writes(mode: &str) -> bool {
     mode.contains('+')
         || mode
@@ -3750,6 +3782,13 @@ fn javascript_function_call_has_new_prefix(line: &str, function_start: usize) ->
         && before_function[new_start + "new".len()..].trim().is_empty()
 }
 
+fn javascript_file_write_target(args: &str) -> Option<String> {
+    javascript_top_level_arguments(args)
+        .first()
+        .and_then(|argument| parse_javascript_string_literal(argument.trim(), 0))
+        .map(|(target, _)| target)
+}
+
 fn javascript_package_install_target(args: &str) -> Option<String> {
     let literals = javascript_string_literals(args);
     for literal in &literals {
@@ -3827,6 +3866,61 @@ fn command_phrase_boundary_after(text: &str, end: usize) -> bool {
         .as_bytes()
         .get(end)
         .is_some_and(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+}
+
+fn javascript_top_level_arguments(args: &str) -> Vec<&str> {
+    let bytes = args.as_bytes();
+    let mut arguments = Vec::new();
+    let mut start = 0;
+    let mut index = 0;
+    let mut depth = 0usize;
+    let mut quote = None;
+    let mut escaped = false;
+
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if escaped {
+            escaped = false;
+            index += 1;
+            continue;
+        }
+
+        if quote.is_some() && byte == b'\\' {
+            escaped = true;
+            index += 1;
+            continue;
+        }
+
+        if matches!(byte, b'\'' | b'"' | b'`') {
+            if quote == Some(byte) {
+                quote = None;
+            } else if quote.is_none() {
+                quote = Some(byte);
+            }
+            index += 1;
+            continue;
+        }
+
+        if quote.is_none() {
+            match byte {
+                b'(' | b'[' | b'{' => depth += 1,
+                b')' | b']' | b'}' => depth = depth.saturating_sub(1),
+                b',' if depth == 0 => {
+                    arguments.push(&args[start..index]);
+                    start = index + 1;
+                }
+                _ => {}
+            }
+        }
+
+        index += 1;
+    }
+
+    if start < args.len() || args.ends_with(',') {
+        arguments.push(&args[start..]);
+    }
+
+    arguments
 }
 
 fn javascript_string_literals(line: &str) -> Vec<String> {
@@ -5393,6 +5487,35 @@ mod tests {
     }
 
     #[test]
+    fn python_security_analyzer_reports_static_file_write_targets() {
+        let script = concat!(
+            "open('scripts/../../.claude/settings.json', 'w').write('payload')\n",
+            "Path('../outside.txt').write_text('payload')\n",
+            "open(path, 'w').write('payload')\n",
+        );
+
+        let output = python_security_analyzer().analyze(&python_analyzer_input(
+            "scripts/write.py",
+            script.as_bytes(),
+        ));
+
+        assert_eq!(
+            output
+                .signals
+                .iter()
+                .filter(|signal| signal.kind == SecuritySignalKind::FileWrite)
+                .map(|signal| signal.sink.as_ref().and_then(|sink| sink.target.as_deref()))
+                .collect::<Vec<_>>(),
+            vec![
+                Some("scripts/../../.claude/settings.json"),
+                Some("../outside.txt"),
+                None,
+            ]
+        );
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
     fn python_security_analyzer_detects_existing_secret_access_with_stable_locations() {
         let script = concat!(
             "import os\n",
@@ -6102,17 +6225,47 @@ mod tests {
                 (
                     SecuritySignalKind::FileWrite,
                     Some(SecuritySinkKind::FileWrite),
-                    Some("fs.writeFileSync"),
+                    Some("out.txt"),
                     Some(5),
                     Some(1),
                 ),
                 (
                     SecuritySignalKind::FileWrite,
                     Some(SecuritySinkKind::FileWrite),
-                    Some("Deno.writeTextFile"),
+                    Some("out.txt"),
                     Some(6),
                     Some(1),
                 ),
+            ]
+        );
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn javascript_security_analyzer_reports_static_file_write_targets() {
+        let script = concat!(
+            "fs.writeFileSync('scripts/../../.claude/settings.json', data);\n",
+            "Deno.writeTextFile('../outside.txt', data);\n",
+            "fs.writeFileSync(path, data);\n",
+        );
+
+        let output = javascript_security_analyzer().analyze(&javascript_analyzer_input(
+            "scripts/write.js",
+            SecurityLanguage::JavaScript,
+            script.as_bytes(),
+        ));
+
+        assert_eq!(
+            output
+                .signals
+                .iter()
+                .filter(|signal| signal.kind == SecuritySignalKind::FileWrite)
+                .map(|signal| signal.sink.as_ref().and_then(|sink| sink.target.as_deref()))
+                .collect::<Vec<_>>(),
+            vec![
+                Some("scripts/../../.claude/settings.json"),
+                Some("../outside.txt"),
+                None,
             ]
         );
         assert_eq!(output.diagnostics, Vec::new());

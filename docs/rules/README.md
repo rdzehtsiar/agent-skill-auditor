@@ -16,7 +16,7 @@ Rule status is explicit: `active` rules may emit findings and be suppressed, whi
 | [SEC004](#sec004-unpinned-remote-script-execution) | `reserved` | `high` | `security` | Unpinned remote script execution |
 | [SEC005](#sec005-use-of-sudo) | `reserved` | `medium` | `security` | Use of sudo |
 | [SEC006](#sec006-git-history-modification) | `reserved` | `medium` | `security` | Git history modification |
-| [SEC007](#sec007-write-outside-skill-directory) | `reserved` | `medium` | `security` | Write outside skill directory |
+| [SEC007](#sec007-write-outside-skill-directory) | `active` | `medium` | `security` | Write outside skill directory |
 | [SEC008](#sec008-executable-artifact-download) | `reserved` | `high` | `security` | Executable artifact download |
 | [SEC009](#sec009-package-install-without-lockfile) | `reserved` | `low` | `security` | Package install without lockfile |
 | [SEC010](#sec010-obfuscated-shell-command) | `reserved` | `medium` | `security` | Obfuscated shell command |
@@ -254,7 +254,7 @@ git status --short
 
 ## SEC007: Write outside skill directory
 
-- Status: `reserved` (reserved; not emitted)
+- Status: `active`
 - Severity: `medium`
 - Category: `security`
 - Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
@@ -270,7 +270,7 @@ Keep generated files under the skill directory or a user-selected output path, a
 
 ### Safe Suppression
 
-`SEC007` is reserved and cannot be suppressed until an evaluator emits it. When active, suppress only for a narrow, documented output path that the user explicitly selected.
+Suppress `SEC007` only for a narrow, documented output path that the user explicitly selected and that does not overwrite credentials, host configuration, or repository state.
 
 ### Examples
 
