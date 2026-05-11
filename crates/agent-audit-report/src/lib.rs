@@ -1278,7 +1278,7 @@ mod tests {
                     "SKILL050",
                     Severity::Low,
                     FindingCategory::Compatibility,
-                    "Invalid host-specific metadata",
+                    "Ignored host-specific metadata",
                     "Claude Code may ignore the custom metadata.",
                     "skills/deploy/SKILL.md",
                     Some(3),
@@ -1970,18 +1970,18 @@ mod tests {
         let rule = &value["runs"][0]["tool"]["driver"]["rules"][0];
 
         assert_eq!(rule["id"], "SKILL050");
-        assert_eq!(rule["name"], "Invalid host-specific metadata");
+        assert_eq!(rule["name"], "Ignored host-specific metadata");
         assert_eq!(
             rule["shortDescription"]["text"],
-            "Invalid host-specific metadata"
+            "Ignored host-specific metadata"
         );
         assert_eq!(
             rule["fullDescription"]["text"],
-            "Host-specific metadata that does not match the selected profile schema may be ignored, rejected, or interpreted differently by the target host."
+            "Host-specific metadata fields that the selected profile is likely to ignore can create a false sense that tool or permission settings will be enforced."
         );
         assert_eq!(
             rule["help"]["text"],
-            "Update the host-specific metadata to match the documented profile schema, move unsupported settings into the Markdown body, or remove metadata that the target host does not accept.\n\nSuppress `SKILL050` only when the target host accepts the metadata despite the local profile schema, and include the host/version or policy exception in the reason."
+            "Use metadata supported by the selected profile, move advisory settings into the Markdown body, or remove fields that the profile marks as ignored.\n\nSuppress `SKILL050` only when a documented wrapper, host version, or project policy intentionally accepts the ignored metadata, and include that context in the reason."
         );
         assert_eq!(rule["defaultConfiguration"]["level"], "warning");
         assert_eq!(rule["properties"]["agentAuditSeverity"], "low");
@@ -1995,7 +1995,7 @@ mod tests {
                 "SKILL050",
                 Severity::Low,
                 FindingCategory::Compatibility,
-                "Invalid host-specific metadata",
+                "Ignored host-specific metadata",
                 "Codex and Generic profile context should be attached.",
                 "skills/beta/SKILL.md",
                 Some(3),

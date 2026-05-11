@@ -285,7 +285,7 @@ const SKILL030_EXAMPLES: &[RuleExample] = &[RuleExample {
 }];
 
 const SKILL040_EXAMPLES: &[RuleExample] = &[RuleExample {
-    summary: "Use only portable frontmatter fields in the initial scanner.",
+    summary: "Use only portable or selected-profile-supported frontmatter fields.",
     non_compliant: "---\nname: reviewer\ndescription: Reviews changes.\nowner: security\n---\n",
     compliant: "---\nname: reviewer\ndescription: Reviews changes.\n---\n",
 }];
@@ -297,11 +297,10 @@ const SKILL041_EXAMPLES: &[RuleExample] = &[RuleExample {
 }];
 
 const SKILL050_EXAMPLES: &[RuleExample] = &[RuleExample {
-    summary: "Match host-specific metadata to the target profile schema.",
+    summary: "Use metadata fields supported by the selected host profile.",
     non_compliant:
-        "---\nname: reviewer\ndescription: Reviews changes.\ncodex:\n  tools:\n    - shell\n---\n",
-    compliant:
-        "---\nname: reviewer\ndescription: Reviews changes.\ncodex:\n  tools:\n    - shell_command\n---\n",
+        "---\nname: reviewer\ndescription: Reviews changes.\nallowed-tools:\n  - Bash\n---\n",
+    compliant: "---\nname: reviewer\ndescription: Reviews changes.\ntools:\n  - shell\n---\n",
 }];
 
 pub const RULE_METADATA: &[RuleMetadata] = &[
@@ -408,16 +407,16 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
     RuleMetadata {
         id: RuleId::Skill050,
         status: RuleStatus::Active,
-        title: "Invalid host-specific metadata",
+        title: "Ignored host-specific metadata",
         severity: RuleSeverity::Low,
         category: RuleCategory::Compatibility,
         applicable_profiles: ALL_HOST_PROFILES,
         input_node_types: FRONTMATTER_INPUT,
-        rationale: "Host-specific metadata that does not match the selected profile schema may be ignored, rejected, or interpreted differently by the target host.",
+        rationale: "Host-specific metadata fields that the selected profile is likely to ignore can create a false sense that tool or permission settings will be enforced.",
         remediation:
-            "Update the host-specific metadata to match the documented profile schema, move unsupported settings into the Markdown body, or remove metadata that the target host does not accept.",
+            "Use metadata supported by the selected profile, move advisory settings into the Markdown body, or remove fields that the profile marks as ignored.",
         suppression_guidance:
-            "Suppress `SKILL050` only when the target host accepts the metadata despite the local profile schema, and include the host/version or policy exception in the reason.",
+            "Suppress `SKILL050` only when a documented wrapper, host version, or project policy intentionally accepts the ignored metadata, and include that context in the reason.",
         examples: SKILL050_EXAMPLES,
     },
 ];
@@ -1046,7 +1045,7 @@ mod tests {
         );
         assert_eq!(
             active_rule_metadata("SKILL050").map(|metadata| metadata.title),
-            Some("Invalid host-specific metadata")
+            Some("Ignored host-specific metadata")
         );
         assert!(active_rule_metadata("SEC001").is_none());
     }
@@ -1436,7 +1435,7 @@ mod tests {
         assert!(first_render.ends_with('\n'));
         assert!(first_render.contains("## Rule Index"));
         assert!(first_render.contains("| Rule | Status | Severity | Category | Title |"));
-        assert!(first_render.contains("| [SKILL050](#skill050-invalid-host-specific-metadata) | `active` | `low` | `compatibility` | Invalid host-specific metadata |"));
+        assert!(first_render.contains("| [SKILL050](#skill050-ignored-host-specific-metadata) | `active` | `low` | `compatibility` | Ignored host-specific metadata |"));
         assert!(first_render.contains("- Status: `active`"));
 
         for metadata in RULE_REGISTRY.rules() {

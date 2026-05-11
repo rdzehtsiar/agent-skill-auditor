@@ -17,7 +17,7 @@ Rule status is explicit: `active` rules may emit findings and be suppressed, whi
 | [SKILL030](#skill030-duplicate-skill-name) | `active` | `low` | `compatibility` | Duplicate skill name |
 | [SKILL040](#skill040-unknown-frontmatter-field) | `active` | `low` | `compatibility` | Unknown frontmatter field |
 | [SKILL041](#skill041-malformed-frontmatter) | `active` | `low` | `spec` | Malformed frontmatter |
-| [SKILL050](#skill050-invalid-host-specific-metadata) | `active` | `low` | `compatibility` | Invalid host-specific metadata |
+| [SKILL050](#skill050-ignored-host-specific-metadata) | `active` | `low` | `compatibility` | Ignored host-specific metadata |
 
 ## SKILL001: Missing skill name
 
@@ -231,7 +231,7 @@ Suppress `SKILL040` only with a documented reason in the project audit config.
 
 ### Examples
 
-Use only portable frontmatter fields in the initial scanner.
+Use only portable or selected-profile-supported frontmatter fields.
 
 Non-compliant:
 
@@ -293,7 +293,7 @@ description: Reviews changes.
 ---
 ```
 
-## SKILL050: Invalid host-specific metadata
+## SKILL050: Ignored host-specific metadata
 
 - Status: `active`
 - Severity: `low`
@@ -303,19 +303,19 @@ description: Reviews changes.
 
 ### Why It Matters
 
-Host-specific metadata that does not match the selected profile schema may be ignored, rejected, or interpreted differently by the target host.
+Host-specific metadata fields that the selected profile is likely to ignore can create a false sense that tool or permission settings will be enforced.
 
 ### How To Fix
 
-Update the host-specific metadata to match the documented profile schema, move unsupported settings into the Markdown body, or remove metadata that the target host does not accept.
+Use metadata supported by the selected profile, move advisory settings into the Markdown body, or remove fields that the profile marks as ignored.
 
 ### Safe Suppression
 
-Suppress `SKILL050` only when the target host accepts the metadata despite the local profile schema, and include the host/version or policy exception in the reason.
+Suppress `SKILL050` only when a documented wrapper, host version, or project policy intentionally accepts the ignored metadata, and include that context in the reason.
 
 ### Examples
 
-Match host-specific metadata to the target profile schema.
+Use metadata fields supported by the selected host profile.
 
 Non-compliant:
 
@@ -323,9 +323,8 @@ Non-compliant:
 ---
 name: reviewer
 description: Reviews changes.
-codex:
-  tools:
-    - shell
+allowed-tools:
+  - Bash
 ---
 ```
 
@@ -335,8 +334,7 @@ Compliant:
 ---
 name: reviewer
 description: Reviews changes.
-codex:
-  tools:
-    - shell_command
+tools:
+  - shell
 ---
 ```
