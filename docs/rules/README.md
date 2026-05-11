@@ -12,7 +12,7 @@ Rule status is explicit: `active` rules may emit findings and be suppressed, whi
 | --- | --- | --- | --- | --- |
 | [SEC001](#sec001-remote-content-piped-into-shell) | `active` | `high` | `security` | Remote content piped into shell |
 | [SEC002](#sec002-secret-like-environment-variable-access) | `active` | `medium` | `security` | Secret-like environment variable access |
-| [SEC003](#sec003-data-sent-to-external-url) | `reserved` | `medium` | `security` | Data sent to external URL |
+| [SEC003](#sec003-data-sent-to-external-url) | `active` | `high` | `security` | Data sent to external URL |
 | [SEC004](#sec004-unpinned-remote-script-execution) | `reserved` | `high` | `security` | Unpinned remote script execution |
 | [SEC005](#sec005-use-of-sudo) | `reserved` | `medium` | `security` | Use of sudo |
 | [SEC006](#sec006-git-history-modification) | `reserved` | `medium` | `security` | Git history modification |
@@ -107,15 +107,15 @@ token = read_configured_token("service_api_token")
 
 ## SEC003: Data sent to external URL
 
-- Status: `reserved` (reserved; not emitted)
-- Severity: `medium`
+- Status: `active`
+- Severity: `high`
 - Category: `security`
 - Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
 - Input nodes: `security-artifact`
 
 ### Why It Matters
 
-Sending files, prompts, repository data, or scan output to an external URL can disclose private project information outside the local audit boundary.
+Sending secret-like environment variables or credentials to an external URL can disclose private authentication material outside the local audit boundary.
 
 ### How To Fix
 
@@ -123,7 +123,7 @@ Keep processing local by default, document any required network destination, min
 
 ### Safe Suppression
 
-`SEC003` is reserved and cannot be suppressed until an evaluator emits it. When active, suppress only for a documented endpoint with reviewed data scope and user-approved transmission.
+Suppress `SEC003` only for a documented endpoint with reviewed data scope, least-privilege credentials, and explicit user-approved transmission.
 
 ### Examples
 
