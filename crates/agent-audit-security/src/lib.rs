@@ -5435,45 +5435,66 @@ fn find_redirection_writes(code: &str) -> Vec<(usize, String)> {
     let mut index = 0;
 
     while index < bytes.len() {
-        if bytes[index] != b'>' {
+        let Some((target_end, target)) = parse_redirection_write_target(code, index) else {
             index += 1;
             continue;
-        }
+        };
 
-        if index > 0 && bytes[index - 1] == b'&' {
-            index += 1;
-            continue;
-        }
-
-        let mut target_start = index + 1;
-        if target_start < bytes.len() && bytes[target_start] == b'>' {
-            target_start += 1;
-        }
-        while target_start < bytes.len() && bytes[target_start].is_ascii_whitespace() {
-            target_start += 1;
-        }
-        if target_start >= bytes.len() || matches!(bytes[target_start], b'&' | b'|' | b';') {
-            index += 1;
-            continue;
-        }
-
-        let mut target_end = target_start;
-        while target_end < bytes.len()
-            && !bytes[target_end].is_ascii_whitespace()
-            && !matches!(bytes[target_end], b'|' | b';' | b'&')
-        {
-            target_end += 1;
-        }
-
-        let target = code[target_start..target_end].trim();
-        if !target.is_empty() && target != "/dev/null" {
-            writes.push((index + 1, target.to_owned()));
-        }
-
+        writes.push((index + 1, target.to_owned()));
         index = target_end.max(index + 1);
     }
 
     writes
+}
+
+fn parse_redirection_write_target(code: &str, operator_index: usize) -> Option<(usize, &str)> {
+    let bytes = code.as_bytes();
+
+    if !is_shell_output_redirection_operator(bytes, operator_index) {
+        return None;
+    }
+
+    let target_start = redirection_target_start(bytes, operator_index)?;
+    let target_end = redirection_target_end(bytes, target_start);
+    let target = &code[target_start..target_end];
+
+    if target == "/dev/null" {
+        return None;
+    }
+
+    Some((target_end, target))
+}
+
+fn is_shell_output_redirection_operator(bytes: &[u8], index: usize) -> bool {
+    bytes.get(index) == Some(&b'>') && (index == 0 || bytes[index - 1] != b'&')
+}
+
+fn redirection_target_start(bytes: &[u8], operator_index: usize) -> Option<usize> {
+    let mut target_start = operator_index + 1;
+
+    if bytes.get(target_start) == Some(&b'>') {
+        target_start += 1;
+    }
+
+    while bytes.get(target_start).is_some_and(u8::is_ascii_whitespace) {
+        target_start += 1;
+    }
+
+    bytes
+        .get(target_start)
+        .is_some_and(|byte| !is_redirection_target_boundary(*byte))
+        .then_some(target_start)
+}
+
+fn redirection_target_end(bytes: &[u8], target_start: usize) -> usize {
+    bytes[target_start..]
+        .iter()
+        .position(|byte| is_redirection_target_boundary(*byte))
+        .map_or(bytes.len(), |offset| target_start + offset)
+}
+
+fn is_redirection_target_boundary(byte: u8) -> bool {
+    byte.is_ascii_whitespace() || matches!(byte, b'|' | b';' | b'&')
 }
 
 fn find_tee_writes(code: &str, tokens: &[ShellToken]) -> Vec<(usize, String)> {
@@ -6452,6 +6473,23 @@ mod tests {
                 (1, "OPENAI_API_KEY".to_owned()),
                 (44, "SERVICE_TOKEN".to_owned()),
                 (63, "TOKEN".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn shell_redirection_write_scan_preserves_boundaries_and_columns() {
+        let writes = find_redirection_writes(
+            "echo ok >out.txt 2>>logs/err.log > /dev/null &>both.log 2>&1 >final; echo >next|cat",
+        );
+
+        assert_eq!(
+            writes,
+            vec![
+                (9, "out.txt".to_owned()),
+                (19, "logs/err.log".to_owned()),
+                (62, "final".to_owned()),
+                (75, "next".to_owned()),
             ]
         );
     }
