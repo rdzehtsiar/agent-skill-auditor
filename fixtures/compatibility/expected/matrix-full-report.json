@@ -244,6 +244,30 @@
     "lockfiles": [],
     "executables": [
       {
+        "path": ".agents/skills/codex-pass/SKILL.md",
+        "line": 4,
+        "source": "frontmatter",
+        "kind": "command",
+        "language": null,
+        "reason": "declared manifest tool dependency",
+        "referenced": false,
+        "normalized": "shell",
+        "raw": "shell",
+        "confidence": "high"
+      },
+      {
+        "path": ".agents/skills/codex-script/SKILL.md",
+        "line": 4,
+        "source": "frontmatter",
+        "kind": "command",
+        "language": null,
+        "reason": "declared manifest tool dependency",
+        "referenced": false,
+        "normalized": "shell",
+        "raw": "shell",
+        "confidence": "high"
+      },
+      {
         "path": ".agents/skills/codex-script/scripts/check.sh",
         "line": null,
         "source": "filesystem",
@@ -253,6 +277,18 @@
         "referenced": true,
         "normalized": ".agents/skills/codex-script/scripts/check.sh",
         "raw": "scripts/check.sh",
+        "confidence": "high"
+      },
+      {
+        "path": ".github/skills/copilot-pass/SKILL.md",
+        "line": 4,
+        "source": "frontmatter",
+        "kind": "command",
+        "language": null,
+        "reason": "declared manifest tool dependency",
+        "referenced": false,
+        "normalized": "editor",
+        "raw": "editor",
         "confidence": "high"
       }
     ],

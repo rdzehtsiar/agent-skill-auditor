@@ -18,6 +18,9 @@ use crate::package_inventory::{
     inventory_package_installs_from_signals,
 };
 use crate::parse::parse_skill_manifest;
+use crate::permission_reconciliation::{
+    inventory_manifest_permissions_and_tools, reconcile_observed_permissions,
+};
 use crate::trust_manifest::inventory_trust_manifest;
 use crate::url_inventory::{dedup_url_inventory, inventory_manifest_urls, inventory_script_urls};
 use agent_audit_hosts::{
@@ -178,6 +181,15 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         );
         merge_supply_chain_inventory(
             &mut supply_chain,
+            inventory_manifest_permissions_and_tools(
+                &manifest_display,
+                &manifest,
+                frontmatter_key_lines.get("permissions").copied(),
+                frontmatter_key_lines.get("tools").copied(),
+            ),
+        );
+        merge_supply_chain_inventory(
+            &mut supply_chain,
             inventory_script_artifact_urls(root, skill_root, &graph)?,
         );
         merge_supply_chain_inventory(
@@ -250,6 +262,7 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         &mut supply_chain,
         inventory_package_installs_from_signals(&security_signals),
     );
+    reconcile_observed_permissions(&mut supply_chain, &security_signals);
     findings.extend(evaluate_compatibility_findings(
         &packages,
         options.config.as_ref(),

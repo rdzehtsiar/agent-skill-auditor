@@ -118,7 +118,18 @@
     ],
     "binaries": [],
     "checksums": [],
-    "permissions": [],
+    "permissions": [
+      {
+        "path": "scripts/install.sh",
+        "line": 3,
+        "source": "script",
+        "kind": "package-install",
+        "evidence": "observed",
+        "normalized": "package_install=npm install left-pad",
+        "raw": "npm install left-pad",
+        "confidence": "high"
+      }
+    ],
     "offline_readiness": []
   },
   "compatibility": {

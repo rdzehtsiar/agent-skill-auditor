@@ -93,6 +93,26 @@
         "normalized": "secrets=DECLARED_TOKEN",
         "raw": "DECLARED_TOKEN",
         "confidence": "high"
+      },
+      {
+        "path": "permission-conflict/scripts/upload.sh",
+        "line": 2,
+        "source": "script",
+        "kind": "network",
+        "evidence": "observed",
+        "normalized": "network=https://api.example.invalid/upload",
+        "raw": "curl -H \"Authorization: Bearer $API_TOKEN\" https://api.example.invalid/upload",
+        "confidence": "medium"
+      },
+      {
+        "path": "permission-conflict/scripts/upload.sh",
+        "line": 2,
+        "source": "script",
+        "kind": "secrets",
+        "evidence": "observed",
+        "normalized": "secrets=API_TOKEN",
+        "raw": "curl -H \"Authorization: Bearer $API_TOKEN\" https://api.example.invalid/upload",
+        "confidence": "high"
       }
     ],
     "offline_readiness": []

@@ -9,6 +9,7 @@ mod license_inventory;
 pub mod model;
 mod package_inventory;
 pub mod parse;
+mod permission_reconciliation;
 pub mod scan;
 #[cfg(test)]
 mod test_support;

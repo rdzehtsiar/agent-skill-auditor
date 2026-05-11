@@ -47,7 +47,18 @@
       }
     ],
     "checksums": [],
-    "permissions": [],
+    "permissions": [
+      {
+        "path": "binary-artifact/bin/helper.exe",
+        "line": null,
+        "source": "filesystem",
+        "kind": "binary-execution",
+        "evidence": "observed",
+        "normalized": "binary_execution=binary-artifact/bin/helper.exe",
+        "raw": "bin/helper.exe",
+        "confidence": "high"
+      }
+    ],
     "offline_readiness": []
   },
   "expected_findings": []

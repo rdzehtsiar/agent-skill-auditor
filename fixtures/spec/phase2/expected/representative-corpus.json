@@ -1256,11 +1256,34 @@
         "normalized": "generic/scripts-only/scripts/task.ps1",
         "raw": "scripts/task.ps1",
         "confidence": "high"
+      },
+      {
+        "path": "generic/valid-tools/SKILL.md",
+        "line": 4,
+        "source": "frontmatter",
+        "kind": "command",
+        "language": null,
+        "reason": "declared manifest tool dependency",
+        "referenced": false,
+        "normalized": "shell",
+        "raw": "shell",
+        "confidence": "high"
       }
     ],
     "binaries": [],
     "checksums": [],
-    "permissions": [],
+    "permissions": [
+      {
+        "path": "generic/valid-tools/SKILL.md",
+        "line": 6,
+        "source": "frontmatter",
+        "kind": "filesystem-read",
+        "evidence": "declared",
+        "normalized": "filesystem_read=read-files",
+        "raw": "read-files",
+        "confidence": "high"
+      }
+    ],
     "offline_readiness": []
   },
   "compatibility": {

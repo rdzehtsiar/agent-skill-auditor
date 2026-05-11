@@ -66,7 +66,18 @@
     ],
     "binaries": [],
     "checksums": [],
-    "permissions": [],
+    "permissions": [
+      {
+        "path": "package-install-with-lockfile/scripts/install.sh",
+        "line": 2,
+        "source": "script",
+        "kind": "package-install",
+        "evidence": "observed",
+        "normalized": "package_install=npm ci",
+        "raw": "npm ci",
+        "confidence": "high"
+      }
+    ],
     "offline_readiness": []
   },
   "expected_findings": []

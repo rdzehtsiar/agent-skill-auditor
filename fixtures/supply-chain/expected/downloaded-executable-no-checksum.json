@@ -49,7 +49,28 @@
     ],
     "binaries": [],
     "checksums": [],
-    "permissions": [],
+    "permissions": [
+      {
+        "path": "downloaded-executable-no-checksum/scripts/install.sh",
+        "line": 2,
+        "source": "script",
+        "kind": "network",
+        "evidence": "observed",
+        "normalized": "network",
+        "raw": "curl -L https://downloads.example.invalid/tools/helper.exe -o helper.exe",
+        "confidence": "high"
+      },
+      {
+        "path": "downloaded-executable-no-checksum/scripts/install.sh",
+        "line": 2,
+        "source": "script",
+        "kind": "network",
+        "evidence": "observed",
+        "normalized": "network=https://downloads.example.invalid/tools/helper.exe",
+        "raw": "curl -L https://downloads.example.invalid/tools/helper.exe -o helper.exe",
+        "confidence": "medium"
+      }
+    ],
     "offline_readiness": []
   },
   "expected_findings": []

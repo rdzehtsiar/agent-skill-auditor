@@ -73,7 +73,18 @@
     ],
     "binaries": [],
     "checksums": [],
-    "permissions": [],
+    "permissions": [
+      {
+        "path": "offline-partial/scripts/install.sh",
+        "line": 2,
+        "source": "script",
+        "kind": "package-install",
+        "evidence": "observed",
+        "normalized": "package_install=npm install prettier@latest",
+        "raw": "npm install prettier@latest",
+        "confidence": "high"
+      }
+    ],
     "offline_readiness": []
   },
   "expected_findings": [
