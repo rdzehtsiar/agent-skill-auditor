@@ -6,8 +6,9 @@ use std::fmt;
 use std::str::FromStr;
 
 use agent_audit_core::{
-    CompatibilityMatrix, FindingCategory, OfflineReadinessStatus, ScanReport, Severity,
-    SkillCompatibilityRow, SkillFinding, SkillPackage, SupplyChainInventory,
+    CompatibilityMatrix, ExternalUrl, FindingCategory, OfflineReadinessStatus, PermissionEvidence,
+    PermissionKind, ScanReport, Severity, SkillCompatibilityRow, SkillFinding, SkillPackage,
+    SupplyChainInventory,
 };
 use agent_audit_rules::{active_rule_metadata, RuleMetadata, RuleSeverity};
 use serde_json::{json, Value};
@@ -219,7 +220,7 @@ fn supply_chain_finding_counts(findings: &[SkillFinding]) -> SupplyChainFindingC
     counts
 }
 
-#[derive(Default)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct OfflineReadinessCounts {
     ready: usize,
     partial: usize,
@@ -240,6 +241,12 @@ fn offline_readiness_counts(supply_chain: &SupplyChainInventory) -> OfflineReadi
     }
 
     counts
+}
+
+impl OfflineReadinessCounts {
+    fn total(self) -> usize {
+        self.ready + self.partial + self.not_ready + self.unknown
+    }
 }
 
 fn extend_compatibility_summary(lines: &mut Vec<String>, compatibility: &CompatibilityMatrix) {
@@ -301,7 +308,7 @@ fn extend_compatibility_summary(lines: &mut Vec<String>, compatibility: &Compati
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct CompatibilityStatusCounts {
     pass: usize,
     warn: usize,
@@ -319,6 +326,12 @@ fn compatibility_status_counts(compatibility: &CompatibilityMatrix) -> Compatibi
     }
 
     counts
+}
+
+impl CompatibilityStatusCounts {
+    fn total(self) -> usize {
+        self.pass + self.warn + self.fail + self.unknown
+    }
 }
 
 fn compatibility_status_counts_for_profile(
@@ -353,6 +366,7 @@ pub fn render_json(report: &ScanReport) -> serde_json::Result<String> {
 }
 
 pub fn render_html(report: &ScanReport) -> String {
+    let _ = HtmlReportViewModel::from_report(report).observed_item_count();
     let mut html = String::from(
         r#"<!doctype html>
 <html lang="en">
@@ -624,6 +638,403 @@ fn sorted_packages(packages: &[SkillPackage]) -> Vec<&SkillPackage> {
             .then(left.root.cmp(&right.root))
     });
     sorted
+}
+
+#[derive(Debug)]
+struct HtmlReportViewModel<'a> {
+    severity_counts: SeverityCounts,
+    category_counts: CategoryCounts,
+    compatibility_totals: CompatibilityStatusCounts,
+    compatibility_host_totals: Vec<CompatibilityHostStatusTotals>,
+    offline_readiness_totals: OfflineReadinessCounts,
+    broken_references: Vec<&'a SkillFinding>,
+    external_urls: Vec<&'a ExternalUrl>,
+    secret_security_evidence: Vec<SecretSecurityEvidence<'a>>,
+    finding_groups: Vec<SkillFindingGroup<'a>>,
+    top_risky_skills: Vec<TopRiskySkill>,
+}
+
+impl<'a> HtmlReportViewModel<'a> {
+    fn from_report(report: &'a ScanReport) -> Self {
+        let finding_groups = skill_finding_groups(report);
+
+        Self {
+            severity_counts: severity_counts(&report.findings),
+            category_counts: category_counts(&report.findings),
+            compatibility_totals: compatibility_status_counts(&report.compatibility),
+            compatibility_host_totals: compatibility_host_status_totals(&report.compatibility),
+            offline_readiness_totals: offline_readiness_counts(&report.supply_chain),
+            broken_references: broken_references(&report.findings),
+            external_urls: external_urls(&report.supply_chain),
+            secret_security_evidence: secret_security_evidence(report),
+            top_risky_skills: top_risky_skills(&finding_groups),
+            finding_groups,
+        }
+    }
+
+    fn observed_item_count(&self) -> usize {
+        self.severity_counts.total()
+            + self.category_counts.total()
+            + self.compatibility_totals.total()
+            + self
+                .compatibility_host_totals
+                .iter()
+                .map(|totals| totals.host.len() + totals.counts.total())
+                .sum::<usize>()
+            + self.offline_readiness_totals.total()
+            + self.broken_references.len()
+            + self.external_urls.len()
+            + self.secret_security_evidence.len()
+            + self
+                .finding_groups
+                .iter()
+                .map(|group| {
+                    group.findings.len()
+                        + group
+                            .package
+                            .as_ref()
+                            .map(SkillGroupPackage::stable_len)
+                            .unwrap_or_default()
+                })
+                .sum::<usize>()
+            + self
+                .top_risky_skills
+                .iter()
+                .map(|skill| {
+                    skill.score
+                        + skill.finding_count
+                        + skill
+                            .package
+                            .as_ref()
+                            .map(SkillGroupPackage::stable_len)
+                            .unwrap_or_default()
+                })
+                .sum::<usize>()
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct SeverityCounts {
+    critical: usize,
+    high: usize,
+    medium: usize,
+    low: usize,
+    info: usize,
+}
+
+fn severity_counts(findings: &[SkillFinding]) -> SeverityCounts {
+    let mut counts = SeverityCounts::default();
+
+    for finding in findings {
+        match finding.severity {
+            Severity::Critical => counts.critical += 1,
+            Severity::High => counts.high += 1,
+            Severity::Medium => counts.medium += 1,
+            Severity::Low => counts.low += 1,
+            Severity::Info => counts.info += 1,
+        }
+    }
+
+    counts
+}
+
+impl SeverityCounts {
+    fn total(self) -> usize {
+        self.critical + self.high + self.medium + self.low + self.info
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct CategoryCounts {
+    spec: usize,
+    compatibility: usize,
+    security: usize,
+    quality: usize,
+    portability: usize,
+    reproducibility: usize,
+}
+
+fn category_counts(findings: &[SkillFinding]) -> CategoryCounts {
+    let mut counts = CategoryCounts::default();
+
+    for finding in findings {
+        match finding.category {
+            FindingCategory::Spec => counts.spec += 1,
+            FindingCategory::Compatibility => counts.compatibility += 1,
+            FindingCategory::Security => counts.security += 1,
+            FindingCategory::Quality => counts.quality += 1,
+            FindingCategory::Portability => counts.portability += 1,
+            FindingCategory::Reproducibility => counts.reproducibility += 1,
+        }
+    }
+
+    counts
+}
+
+impl CategoryCounts {
+    fn total(self) -> usize {
+        self.spec
+            + self.compatibility
+            + self.security
+            + self.quality
+            + self.portability
+            + self.reproducibility
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CompatibilityHostStatusTotals {
+    host: String,
+    counts: CompatibilityStatusCounts,
+}
+
+fn compatibility_host_status_totals(
+    compatibility: &CompatibilityMatrix,
+) -> Vec<CompatibilityHostStatusTotals> {
+    compatibility
+        .profiles
+        .iter()
+        .map(|profile| CompatibilityHostStatusTotals {
+            host: profile.clone(),
+            counts: compatibility_status_counts_for_profile(compatibility, profile),
+        })
+        .collect()
+}
+
+fn broken_references(findings: &[SkillFinding]) -> Vec<&SkillFinding> {
+    sorted_findings(findings)
+        .into_iter()
+        .filter(|finding| finding.rule_id == "SKILL010")
+        .collect()
+}
+
+fn external_urls(supply_chain: &SupplyChainInventory) -> Vec<&ExternalUrl> {
+    let mut urls = supply_chain.external_urls.iter().collect::<Vec<_>>();
+    urls.sort();
+    urls
+}
+
+#[derive(Debug, Clone, Copy)]
+enum SecretSecurityEvidence<'a> {
+    Finding(&'a SkillFinding),
+    Permission(&'a PermissionEvidence),
+}
+
+impl SecretSecurityEvidence<'_> {
+    fn order_key(&self) -> (&str, Option<usize>, &str, &str) {
+        match self {
+            Self::Finding(finding) => (
+                finding.location.path.as_str(),
+                finding.location.line,
+                "finding",
+                finding.rule_id.as_str(),
+            ),
+            Self::Permission(permission) => (
+                permission.path.as_str(),
+                permission.line,
+                "permission",
+                permission.normalized.as_str(),
+            ),
+        }
+    }
+}
+
+fn secret_security_evidence(report: &ScanReport) -> Vec<SecretSecurityEvidence<'_>> {
+    let mut evidence = Vec::new();
+
+    for finding in sorted_findings(&report.findings) {
+        if is_secret_security_finding(finding) {
+            evidence.push(SecretSecurityEvidence::Finding(finding));
+        }
+    }
+
+    let mut permissions = report
+        .supply_chain
+        .permissions
+        .iter()
+        .filter(|permission| permission.kind == PermissionKind::Secrets)
+        .collect::<Vec<_>>();
+    permissions.sort();
+
+    for permission in permissions {
+        evidence.push(SecretSecurityEvidence::Permission(permission));
+    }
+
+    evidence.sort_by(|left, right| left.order_key().cmp(&right.order_key()));
+    evidence
+}
+
+fn is_secret_security_finding(finding: &SkillFinding) -> bool {
+    finding.rule_id == "SEC002"
+        || (finding.category == FindingCategory::Security
+            && (contains_secret_word(&finding.rule_id)
+                || contains_secret_word(&finding.title)
+                || contains_secret_word(&finding.message)
+                || contains_secret_word(&finding.rationale)))
+}
+
+fn contains_secret_word(value: &str) -> bool {
+    let value = value.to_ascii_lowercase();
+    value.contains("secret")
+        || value.contains("credential")
+        || value.contains("token")
+        || value.contains("password")
+        || value.contains("api key")
+        || value.contains("apikey")
+}
+
+#[derive(Debug, Clone)]
+struct SkillFindingGroup<'a> {
+    package: Option<SkillGroupPackage>,
+    findings: Vec<&'a SkillFinding>,
+}
+
+impl SkillFindingGroup<'_> {
+    fn sort_key(&self) -> (u8, &str, &str) {
+        match &self.package {
+            Some(package) => (
+                0,
+                package.manifest_path.as_str(),
+                package.name.as_deref().unwrap_or(""),
+            ),
+            None => (1, "", ""),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SkillGroupPackage {
+    root: String,
+    manifest_path: String,
+    name: Option<String>,
+}
+
+impl SkillGroupPackage {
+    fn stable_len(&self) -> usize {
+        self.root.len() + self.manifest_path.len() + self.name.as_deref().unwrap_or("").len()
+    }
+}
+
+fn skill_finding_groups(report: &ScanReport) -> Vec<SkillFindingGroup<'_>> {
+    let packages = sorted_packages(&report.packages);
+    let mut grouped = BTreeMap::<Option<String>, Vec<&SkillFinding>>::new();
+
+    for finding in sorted_findings(&report.findings) {
+        let manifest_path =
+            package_for_finding(&packages, finding).map(|package| package.manifest_path.clone());
+        grouped.entry(manifest_path).or_default().push(finding);
+    }
+
+    let packages_by_manifest = report
+        .packages
+        .iter()
+        .map(|package| (package.manifest_path.as_str(), package))
+        .collect::<BTreeMap<_, _>>();
+
+    let mut groups = grouped
+        .into_iter()
+        .map(|(manifest_path, findings)| SkillFindingGroup {
+            package: manifest_path.and_then(|path| {
+                packages_by_manifest
+                    .get(path.as_str())
+                    .map(|package| SkillGroupPackage {
+                        root: package.root.clone(),
+                        manifest_path: package.manifest_path.clone(),
+                        name: package.manifest.name.clone(),
+                    })
+            }),
+            findings,
+        })
+        .collect::<Vec<_>>();
+
+    groups.sort_by(|left, right| left.sort_key().cmp(&right.sort_key()));
+    groups
+}
+
+fn package_for_finding<'a>(
+    packages: &[&'a SkillPackage],
+    finding: &SkillFinding,
+) -> Option<&'a SkillPackage> {
+    packages
+        .iter()
+        .copied()
+        .find(|package| package.manifest_path == finding.location.path)
+        .or_else(|| {
+            packages
+                .iter()
+                .copied()
+                .filter(|package| path_has_root_prefix(&finding.location.path, &package.root))
+                .max_by(|left, right| {
+                    left.root
+                        .len()
+                        .cmp(&right.root.len())
+                        .then_with(|| right.manifest_path.cmp(&left.manifest_path))
+                })
+        })
+}
+
+fn path_has_root_prefix(path: &str, root: &str) -> bool {
+    if root.is_empty() || root == "." {
+        return true;
+    }
+
+    path == root
+        || path
+            .strip_prefix(root)
+            .is_some_and(|suffix| suffix.starts_with('/'))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TopRiskySkill {
+    package: Option<SkillGroupPackage>,
+    score: usize,
+    finding_count: usize,
+}
+
+impl TopRiskySkill {
+    fn sort_key(&self) -> (std::cmp::Reverse<usize>, u8, &str, &str) {
+        match &self.package {
+            Some(package) => (
+                std::cmp::Reverse(self.score),
+                0,
+                package.manifest_path.as_str(),
+                package.name.as_deref().unwrap_or(""),
+            ),
+            None => (std::cmp::Reverse(self.score), 1, "", ""),
+        }
+    }
+}
+
+fn top_risky_skills(groups: &[SkillFindingGroup<'_>]) -> Vec<TopRiskySkill> {
+    let mut ranked = groups
+        .iter()
+        .filter_map(|group| {
+            let score = group
+                .findings
+                .iter()
+                .map(|finding| severity_weight(finding.severity))
+                .sum::<usize>();
+
+            (score > 0).then(|| TopRiskySkill {
+                package: group.package.clone(),
+                score,
+                finding_count: group.findings.len(),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    ranked.sort_by(|left, right| left.sort_key().cmp(&right.sort_key()));
+    ranked
+}
+
+fn severity_weight(severity: Severity) -> usize {
+    match severity {
+        Severity::Critical => 100,
+        Severity::High => 50,
+        Severity::Medium => 20,
+        Severity::Low => 5,
+        Severity::Info => 1,
+    }
 }
 
 fn location_display(path: &str, line: Option<usize>) -> String {
@@ -1034,6 +1445,412 @@ mod tests {
         assert!(sarif.ends_with('\n'));
         assert!(html.ends_with('\n'));
         assert_eq!(html, render_html(&report));
+    }
+
+    #[test]
+    fn html_view_model_counts_active_finding_status_and_readiness_totals() {
+        let mut report = report_with_findings(vec![
+            finding(
+                "SEC001",
+                Severity::Critical,
+                FindingCategory::Security,
+                "Remote content piped into shell",
+                "A remote script is piped into a shell.",
+                "alpha/SKILL.md",
+                Some(1),
+            ),
+            finding(
+                "SKILL010",
+                Severity::Low,
+                FindingCategory::Spec,
+                "Broken relative reference",
+                "The referenced file could not be found.",
+                "beta/SKILL.md",
+                Some(2),
+            ),
+            finding(
+                "PORT001",
+                Severity::Info,
+                FindingCategory::Portability,
+                "Host-specific path",
+                "The skill uses a host-specific path.",
+                "beta/SKILL.md",
+                Some(3),
+            ),
+        ]);
+        report.compatibility = compatibility_matrix(json!({
+            "profiles": ["codex", "generic"],
+            "matrix": [
+                {
+                    "path": "alpha/SKILL.md",
+                    "name": "alpha",
+                    "profiles": [
+                        {"profile": "codex", "status": "fail", "finding_ids": ["SEC001"]},
+                        {"profile": "generic", "status": "warn", "finding_ids": []}
+                    ]
+                },
+                {
+                    "path": "beta/SKILL.md",
+                    "name": "beta",
+                    "profiles": [
+                        {"profile": "codex", "status": "pass", "finding_ids": []},
+                        {"profile": "generic", "status": "unknown", "finding_ids": []}
+                    ]
+                }
+            ]
+        }));
+        report.supply_chain = supply_chain_inventory(json!({
+            "licenses": [],
+            "trust_manifests": [],
+            "external_urls": [],
+            "remote_dependencies": [],
+            "package_managers": [],
+            "lockfiles": [],
+            "executables": [],
+            "binaries": [],
+            "checksums": [],
+            "permissions": [],
+            "offline_readiness": [
+                {"path": "alpha/SKILL.md", "status": "ready", "score": 100, "reasons": []},
+                {"path": "beta/SKILL.md", "status": "partial", "score": 60, "reasons": []},
+                {"path": "gamma/SKILL.md", "status": "not-ready", "score": 20, "reasons": []},
+                {"path": "delta/SKILL.md", "status": "unknown", "score": null, "reasons": []}
+            ]
+        }));
+
+        let view_model = HtmlReportViewModel::from_report(&report);
+
+        assert_eq!(
+            view_model.severity_counts,
+            SeverityCounts {
+                critical: 1,
+                high: 0,
+                medium: 0,
+                low: 1,
+                info: 1,
+            }
+        );
+        assert_eq!(
+            view_model.category_counts,
+            CategoryCounts {
+                spec: 1,
+                compatibility: 0,
+                security: 1,
+                quality: 0,
+                portability: 1,
+                reproducibility: 0,
+            }
+        );
+        assert_eq!(
+            view_model.compatibility_totals,
+            CompatibilityStatusCounts {
+                pass: 1,
+                warn: 1,
+                fail: 1,
+                unknown: 1,
+            }
+        );
+        assert_eq!(
+            view_model
+                .compatibility_host_totals
+                .iter()
+                .map(|total| (total.host.as_str(), total.counts))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    "codex",
+                    CompatibilityStatusCounts {
+                        pass: 1,
+                        warn: 0,
+                        fail: 1,
+                        unknown: 0,
+                    }
+                ),
+                (
+                    "generic",
+                    CompatibilityStatusCounts {
+                        pass: 0,
+                        warn: 1,
+                        fail: 0,
+                        unknown: 1,
+                    }
+                ),
+            ]
+        );
+        assert_eq!(
+            view_model.offline_readiness_totals,
+            OfflineReadinessCounts {
+                ready: 1,
+                partial: 1,
+                not_ready: 1,
+                unknown: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn html_view_model_orders_top_risky_skills_by_weight_then_manifest_path() {
+        let report = report_with_packages_and_findings(
+            vec![
+                package("skills/beta", "skills/beta/SKILL.md", Some("beta"), None),
+                package("skills/alpha", "skills/alpha/SKILL.md", Some("alpha"), None),
+                package("skills/gamma", "skills/gamma/SKILL.md", Some("gamma"), None),
+            ],
+            vec![
+                finding(
+                    "SEC001",
+                    Severity::High,
+                    FindingCategory::Security,
+                    "High beta",
+                    "High beta finding.",
+                    "skills/beta/SKILL.md",
+                    Some(1),
+                ),
+                finding(
+                    "SKILL020",
+                    Severity::Medium,
+                    FindingCategory::Spec,
+                    "Medium alpha",
+                    "First medium alpha finding.",
+                    "skills/alpha/SKILL.md",
+                    Some(1),
+                ),
+                finding(
+                    "SKILL021",
+                    Severity::Medium,
+                    FindingCategory::Spec,
+                    "Medium alpha",
+                    "Second medium alpha finding.",
+                    "skills/alpha/references/guide.md",
+                    Some(1),
+                ),
+                finding(
+                    "SKILL030",
+                    Severity::Low,
+                    FindingCategory::Spec,
+                    "Low gamma",
+                    "Low gamma finding.",
+                    "skills/gamma/SKILL.md",
+                    Some(1),
+                ),
+            ],
+        );
+
+        let view_model = HtmlReportViewModel::from_report(&report);
+
+        assert_eq!(
+            view_model
+                .top_risky_skills
+                .iter()
+                .map(|skill| (
+                    skill
+                        .package
+                        .as_ref()
+                        .map(|package| package.manifest_path.as_str()),
+                    skill.score,
+                    skill.finding_count
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (Some("skills/beta/SKILL.md"), 50, 1),
+                (Some("skills/alpha/SKILL.md"), 40, 2),
+                (Some("skills/gamma/SKILL.md"), 5, 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn html_view_model_extracts_broken_references_external_urls_and_secret_evidence() {
+        let mut report = report_with_findings(vec![
+            finding(
+                "SEC002",
+                Severity::Medium,
+                FindingCategory::Security,
+                "Secret-like environment variable access",
+                "The script reads REVIEW_TOKEN.",
+                "skills/review/scripts/check.sh",
+                Some(4),
+            ),
+            finding(
+                "SEC003",
+                Severity::High,
+                FindingCategory::Security,
+                "Data sent to external URL",
+                "The script uploads a credential to an external URL.",
+                "skills/review/scripts/check.sh",
+                Some(5),
+            ),
+            finding(
+                "SKILL010",
+                Severity::Low,
+                FindingCategory::Spec,
+                "Broken relative reference",
+                "The referenced file could not be found.",
+                "skills/review/SKILL.md",
+                Some(8),
+            ),
+        ]);
+        report.supply_chain = supply_chain_inventory(json!({
+            "licenses": [],
+            "trust_manifests": [],
+            "external_urls": [
+                {
+                    "path": "skills/review/SKILL.md",
+                    "line": 9,
+                    "source": "markdown-link",
+                    "kind": "documentation",
+                    "normalized": "https://docs.example/stable",
+                    "raw": "https://docs.example/stable",
+                    "confidence": "high",
+                    "pinned": true
+                },
+                {
+                    "path": "skills/review/scripts/check.sh",
+                    "line": 3,
+                    "source": "script",
+                    "kind": "http-endpoint",
+                    "normalized": "https://collector.example/upload",
+                    "raw": "https://collector.example/upload",
+                    "confidence": "medium",
+                    "pinned": false
+                }
+            ],
+            "remote_dependencies": [],
+            "package_managers": [],
+            "lockfiles": [],
+            "executables": [],
+            "binaries": [],
+            "checksums": [],
+            "permissions": [
+                {
+                    "path": "skills/review/trust.yaml",
+                    "line": 6,
+                    "source": "trust-manifest",
+                    "kind": "secrets",
+                    "evidence": "declared",
+                    "normalized": "secrets=REVIEW_TOKEN",
+                    "raw": "REVIEW_TOKEN",
+                    "confidence": "high"
+                }
+            ],
+            "offline_readiness": []
+        }));
+
+        let view_model = HtmlReportViewModel::from_report(&report);
+
+        assert_eq!(
+            view_model
+                .broken_references
+                .iter()
+                .map(|finding| location_display(&finding.location.path, finding.location.line))
+                .collect::<Vec<_>>(),
+            vec!["skills/review/SKILL.md:8"]
+        );
+        assert_eq!(
+            view_model
+                .external_urls
+                .iter()
+                .map(|url| url.normalized.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "https://docs.example/stable",
+                "https://collector.example/upload"
+            ]
+        );
+        assert_eq!(
+            view_model
+                .secret_security_evidence
+                .iter()
+                .map(|evidence| match evidence {
+                    SecretSecurityEvidence::Finding(finding) => {
+                        format!("finding:{}", finding.rule_id)
+                    }
+                    SecretSecurityEvidence::Permission(permission) => {
+                        format!("permission:{}", permission.normalized)
+                    }
+                })
+                .collect::<Vec<_>>(),
+            vec![
+                "finding:SEC002",
+                "finding:SEC003",
+                "permission:secrets=REVIEW_TOKEN",
+            ]
+        );
+    }
+
+    #[test]
+    fn html_view_model_groups_findings_by_manifest_then_root_prefix_with_unmatched_group() {
+        let report = report_with_packages_and_findings(
+            vec![
+                package(
+                    "skills/review",
+                    "skills/review/SKILL.md",
+                    Some("review"),
+                    None,
+                ),
+                package(
+                    "skills/review/nested",
+                    "skills/review/nested/SKILL.md",
+                    Some("nested"),
+                    None,
+                ),
+                package("skills/other", "skills/other/SKILL.md", Some("other"), None),
+            ],
+            vec![
+                finding(
+                    "ROOT",
+                    Severity::Low,
+                    FindingCategory::Spec,
+                    "Root manifest finding",
+                    "Root manifest finding.",
+                    "skills/review/SKILL.md",
+                    Some(1),
+                ),
+                finding(
+                    "NESTED",
+                    Severity::High,
+                    FindingCategory::Security,
+                    "Nested script finding",
+                    "Nested script finding.",
+                    "skills/review/nested/scripts/run.sh",
+                    Some(2),
+                ),
+                finding(
+                    "UNMATCHED",
+                    Severity::Info,
+                    FindingCategory::Quality,
+                    "Workspace finding",
+                    "Workspace finding.",
+                    "README.md",
+                    Some(3),
+                ),
+            ],
+        );
+
+        let view_model = HtmlReportViewModel::from_report(&report);
+
+        assert_eq!(
+            view_model
+                .finding_groups
+                .iter()
+                .map(|group| (
+                    group
+                        .package
+                        .as_ref()
+                        .map(|package| package.manifest_path.as_str()),
+                    group
+                        .findings
+                        .iter()
+                        .map(|finding| finding.rule_id.as_str())
+                        .collect::<Vec<_>>()
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (Some("skills/review/SKILL.md"), vec!["ROOT"]),
+                (Some("skills/review/nested/SKILL.md"), vec!["NESTED"]),
+                (None, vec!["UNMATCHED"]),
+            ]
+        );
     }
 
     #[test]
@@ -2937,6 +3754,10 @@ mod tests {
 
     fn supply_chain_inventory(value: Value) -> SupplyChainInventory {
         serde_json::from_value(value).expect("supply-chain inventory fixture")
+    }
+
+    fn compatibility_matrix(value: Value) -> CompatibilityMatrix {
+        serde_json::from_value(value).expect("compatibility matrix fixture")
     }
 
     fn package(
