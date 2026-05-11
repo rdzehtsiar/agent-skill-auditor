@@ -3657,13 +3657,7 @@ fn find_shell_environment_expansions(line: &str) -> Vec<(usize, String)> {
             continue;
         }
 
-        if bytes.get(index + 1) == Some(&b'{') {
-            if let Some((name, end)) = parse_braced_shell_variable(line, index + 2) {
-                reads.push((index + 1, name));
-                index = end;
-                continue;
-            }
-        } else if let Some((name, end)) = parse_plain_shell_variable(line, index + 1) {
+        if let Some((name, end)) = parse_shell_variable_expansion(line, index) {
             reads.push((index + 1, name));
             index = end;
             continue;
@@ -3675,6 +3669,14 @@ fn find_shell_environment_expansions(line: &str) -> Vec<(usize, String)> {
     reads.sort();
     reads.dedup();
     reads
+}
+
+fn parse_shell_variable_expansion(line: &str, dollar_index: usize) -> Option<(String, usize)> {
+    if line.as_bytes().get(dollar_index + 1) == Some(&b'{') {
+        parse_braced_shell_variable(line, dollar_index + 2)
+    } else {
+        parse_plain_shell_variable(line, dollar_index + 1)
+    }
 }
 
 fn parse_braced_shell_variable(line: &str, start: usize) -> Option<(String, usize)> {
@@ -6334,6 +6336,22 @@ mod tests {
                 && signal.location.column.is_some()
                 && !signal.evidence.is_empty()
         }));
+    }
+
+    #[test]
+    fn shell_environment_expansion_scan_preserves_boundaries_and_columns() {
+        let reads = find_shell_environment_expansions(
+            "$OPENAI_API_KEY '$PASSWORD' \\$GITHUB_TOKEN ${SERVICE_TOKEN:-} ${TOKEN}",
+        );
+
+        assert_eq!(
+            reads,
+            vec![
+                (1, "OPENAI_API_KEY".to_owned()),
+                (44, "SERVICE_TOKEN".to_owned()),
+                (63, "TOKEN".to_owned()),
+            ]
+        );
     }
 
     #[test]
