@@ -10,6 +10,7 @@ pub mod model;
 mod offline_readiness;
 mod package_inventory;
 pub mod parse;
+mod path_utils;
 mod permission_reconciliation;
 pub mod scan;
 #[cfg(test)]

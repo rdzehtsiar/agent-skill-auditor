@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use agent_audit_security::{AnalyzerConfidence, SecuritySignal, SecuritySignalKind};
 
@@ -10,6 +10,7 @@ use crate::model::{
     RemoteDependency, RemoteDependencyKind, SkillArtifactKind, SkillFileKind, SkillGraph,
     SupplyChainInventory, SupplyChainSourceKind,
 };
+use crate::path_utils::{collect_skill_package_files, display_path, filename};
 
 pub fn inventory_package_files(
     scan_root: &Path,
@@ -17,7 +18,9 @@ pub fn inventory_package_files(
 ) -> AuditResult<SupplyChainInventory> {
     let mut inventory = SupplyChainInventory::default();
     let mut files = Vec::new();
-    collect_package_files(skill_root, skill_root, &mut files)?;
+    collect_skill_package_files(skill_root, skill_root, &mut files, &|path| {
+        is_package_inventory_file(&filename(path))
+    })?;
     files.sort();
 
     for path in files {
@@ -151,44 +154,6 @@ pub fn inventory_package_installs_from_scripts(
     Ok(inventory)
 }
 
-fn collect_package_files(
-    skill_root: &Path,
-    directory: &Path,
-    files: &mut Vec<PathBuf>,
-) -> AuditResult<()> {
-    let mut entries = std::fs::read_dir(directory)
-        .map_err(|source| AuditError::ReadDir {
-            path: directory.to_path_buf(),
-            source,
-        })?
-        .map(|entry| {
-            entry.map_err(|source| AuditError::ReadDir {
-                path: directory.to_path_buf(),
-                source,
-            })
-        })
-        .collect::<AuditResult<Vec<_>>>()?;
-    entries.sort_by_key(|entry| entry.path());
-
-    for entry in entries {
-        let path = entry.path();
-        let metadata = std::fs::symlink_metadata(&path).map_err(|source| AuditError::Metadata {
-            path: path.clone(),
-            source,
-        })?;
-        if metadata.is_dir() {
-            if path != skill_root && path.join("SKILL.md").is_file() {
-                continue;
-            }
-            collect_package_files(skill_root, &path, files)?;
-        } else if metadata.is_file() && is_package_inventory_file(&filename(&path)) {
-            files.push(path);
-        }
-    }
-
-    Ok(())
-}
-
 fn package_manifest_dependencies(
     path: &Path,
     display: &str,
@@ -241,13 +206,7 @@ fn package_json_dependencies(path: &str, content: &str) -> Vec<ParsedDependency>
             let Some(version) = version.as_str() else {
                 continue;
             };
-            dependencies.push(ParsedDependency {
-                name: name.to_owned(),
-                version: Some(version.to_owned()),
-                raw: format!("{name} {version}"),
-                line: dependency_line(path, content, name),
-                pinned: version_is_pinned(version),
-            });
+            dependencies.push(manifest_dependency(path, content, name, version));
         }
     }
 
@@ -278,13 +237,7 @@ fn composer_json_dependencies(path: &str, content: &str) -> Vec<ParsedDependency
             if name == "php" || name.starts_with("ext-") {
                 continue;
             }
-            dependencies.push(ParsedDependency {
-                name: name.to_owned(),
-                version: Some(version.to_owned()),
-                raw: format!("{name} {version}"),
-                line: dependency_line(path, content, name),
-                pinned: version_is_pinned(version),
-            });
+            dependencies.push(manifest_dependency(path, content, name, version));
         }
     }
 
@@ -342,6 +295,16 @@ fn parse_requirement_line(line: &str) -> Option<ParsedDependency> {
         line: None,
         pinned,
     })
+}
+
+fn manifest_dependency(path: &str, content: &str, name: &str, version: &str) -> ParsedDependency {
+    ParsedDependency {
+        name: name.to_owned(),
+        version: Some(version.to_owned()),
+        raw: format!("{name} {version}"),
+        line: dependency_line(path, content, name),
+        pinned: version_is_pinned(version),
+    }
 }
 
 fn cargo_toml_dependencies(_path: &str, content: &str) -> Vec<ParsedDependency> {
@@ -611,8 +574,8 @@ fn javascript_package_spec(token: &str) -> Option<CommandPackage> {
 }
 
 fn javascript_name_version(token: &str) -> (String, Option<String>) {
-    if token.starts_with('@') {
-        let Some(scope_end) = token[1..].find('/') else {
+    if let Some(scoped_name) = token.strip_prefix('@') {
+        let Some(scope_end) = scoped_name.find('/') else {
             return (token.to_owned(), None);
         };
         let package_start = scope_end + 2;
@@ -930,19 +893,6 @@ fn dependency_line(_path: &str, content: &str, name: &str) -> Option<usize> {
         .enumerate()
         .find(|(_, line)| line.contains(name))
         .map(|(index, _)| index + 1)
-}
-
-fn filename(path: &Path) -> String {
-    path.file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| path.to_string_lossy().replace('\\', "/"))
-}
-
-fn display_path(root: &Path, path: &Path) -> String {
-    path.strip_prefix(root)
-        .unwrap_or(path)
-        .to_string_lossy()
-        .replace('\\', "/")
 }
 
 #[cfg(test)]

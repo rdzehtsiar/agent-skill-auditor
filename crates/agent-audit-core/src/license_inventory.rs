@@ -6,6 +6,7 @@ use crate::model::{
     EvidenceConfidence, LicenseEvidence, LicenseScope, SkillManifest, SupplyChainInventory,
     SupplyChainSourceKind,
 };
+use crate::path_utils::display_path;
 
 const LICENSE_FILENAMES: &[&str] = &["LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING", "NOTICE"];
 const FRONTMATTER_LICENSE_FIELDS: &[&str] = &["license"];
@@ -67,7 +68,7 @@ fn license_file_evidence(
         .filter_map(|filename| {
             let path = directory.join(filename);
             path.is_file()
-                .then(|| license_evidence_for_file(scan_root, path, *filename, scope))
+                .then(|| license_evidence_for_file(scan_root, path, filename, scope))
         })
         .collect::<Vec<_>>();
     evidence.sort();
@@ -134,13 +135,6 @@ fn scalar_string(value: &serde_yaml::Value) -> Option<&str> {
         serde_yaml::Value::String(value) => Some(value.as_str()),
         _ => None,
     }
-}
-
-fn display_path(root: &Path, path: &Path) -> String {
-    path.strip_prefix(root)
-        .unwrap_or(path)
-        .to_string_lossy()
-        .replace('\\', "/")
 }
 
 #[cfg(test)]

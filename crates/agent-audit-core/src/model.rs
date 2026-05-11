@@ -994,19 +994,8 @@ mod tests {
 
     #[test]
     fn reports_without_supply_chain_deserialize_with_empty_inventory() {
-        let report: ScanReport = serde_json::from_value(serde_json::json!({
-            "packages": [],
-            "findings": [],
-            "suppressed_findings": [],
-            "summary": {
-                "package_count": 0,
-                "finding_count": 0,
-                "suppressed_finding_count": 0,
-                "invalid_manifest_count": 0,
-                "broken_reference_count": 0
-            }
-        }))
-        .expect("deserialize report");
+        let report: ScanReport = serde_json::from_value(empty_report_json_without_defaults())
+            .expect("deserialize report");
 
         assert_eq!(report.supply_chain, SupplyChainInventory::default());
     }
@@ -1066,19 +1055,8 @@ mod tests {
 
     #[test]
     fn reports_without_compatibility_deserialize_with_empty_matrix() {
-        let report: ScanReport = serde_json::from_value(serde_json::json!({
-            "packages": [],
-            "findings": [],
-            "suppressed_findings": [],
-            "summary": {
-                "package_count": 0,
-                "finding_count": 0,
-                "suppressed_finding_count": 0,
-                "invalid_manifest_count": 0,
-                "broken_reference_count": 0
-            }
-        }))
-        .expect("deserialize report");
+        let report: ScanReport = serde_json::from_value(empty_report_json_without_defaults())
+            .expect("deserialize report");
 
         assert!(report.compatibility.is_empty());
     }
@@ -1098,5 +1076,20 @@ mod tests {
             supply_chain: SupplyChainInventory::default(),
             compatibility: CompatibilityMatrix::default(),
         }
+    }
+
+    fn empty_report_json_without_defaults() -> serde_json::Value {
+        serde_json::json!({
+            "packages": [],
+            "findings": [],
+            "suppressed_findings": [],
+            "summary": {
+                "package_count": 0,
+                "finding_count": 0,
+                "suppressed_finding_count": 0,
+                "invalid_manifest_count": 0,
+                "broken_reference_count": 0
+            }
+        })
     }
 }

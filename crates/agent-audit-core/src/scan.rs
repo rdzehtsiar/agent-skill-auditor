@@ -21,6 +21,7 @@ use crate::package_inventory::{
     inventory_package_installs_from_signals,
 };
 use crate::parse::parse_skill_manifest;
+use crate::path_utils::{display_path, sorted_directory_entries};
 use crate::permission_reconciliation::{
     inventory_manifest_permissions_and_tools, reconcile_observed_permissions,
 };
@@ -1275,23 +1276,7 @@ fn inventory_directory(
     artifact: SkillArtifactKind,
     files: &mut Vec<SkillFile>,
 ) -> AuditResult<()> {
-    let mut entries = std::fs::read_dir(directory)
-        .map_err(|source| AuditError::ReadDir {
-            path: directory.to_path_buf(),
-            source,
-        })?
-        .map(|entry| {
-            entry.map_err(|source| AuditError::ReadDir {
-                path: directory.to_path_buf(),
-                source,
-            })
-        })
-        .collect::<AuditResult<Vec<_>>>()?;
-
-    entries.sort_by_key(|entry| entry.path());
-
-    for entry in entries {
-        let path = entry.path();
+    for path in sorted_directory_entries(directory)? {
         let metadata = std::fs::symlink_metadata(&path).map_err(|source| AuditError::Metadata {
             path: path.clone(),
             source,
@@ -1520,13 +1505,6 @@ fn security_read_error(path: &Path, error: SecurityArtifactReadError) -> AuditEr
         path: path.to_path_buf(),
         source: std::io::Error::new(kind, error),
     }
-}
-
-fn display_path(root: &Path, path: &Path) -> String {
-    path.strip_prefix(root)
-        .unwrap_or(path)
-        .to_string_lossy()
-        .replace('\\', "/")
 }
 
 fn frontmatter_key_lines(content: &str) -> BTreeMap<String, usize> {

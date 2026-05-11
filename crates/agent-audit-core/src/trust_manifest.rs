@@ -14,6 +14,7 @@ use crate::model::{
     TrustManifestPackageDependency, TrustManifestPermissions, TrustManifestProvenance,
     TrustManifestSkill,
 };
+use crate::path_utils::{display_path, filename};
 use crate::PackageManagerKind;
 
 const TRUST_MANIFEST_FILENAMES: &[&str] = &[
@@ -583,9 +584,9 @@ fn sorted_packages(
     let mut packages = values
         .into_iter()
         .map(|package| TrustManifestPackageDependency {
-            ecosystem: package.ecosystem.map(trim_non_empty).flatten(),
-            name: package.name.map(trim_non_empty).flatten(),
-            version: package.version.map(trim_non_empty).flatten(),
+            ecosystem: package.ecosystem.and_then(trim_non_empty),
+            name: package.name.and_then(trim_non_empty),
+            version: package.version.and_then(trim_non_empty),
         })
         .collect::<Vec<_>>();
     packages.sort();
@@ -595,19 +596,6 @@ fn sorted_packages(
 fn trim_non_empty(value: String) -> Option<String> {
     let value = value.trim().to_owned();
     (!value.is_empty()).then_some(value)
-}
-
-fn display_path(root: &Path, path: &Path) -> String {
-    path.strip_prefix(root)
-        .unwrap_or(path)
-        .to_string_lossy()
-        .replace('\\', "/")
-}
-
-fn filename(path: &Path) -> String {
-    path.file_name()
-        .map(|filename| filename.to_string_lossy().into_owned())
-        .unwrap_or_else(|| path.to_string_lossy().replace('\\', "/"))
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -710,17 +698,13 @@ mod tests {
                 secrets: vec!["EXAMPLE_TOKEN".to_owned()],
             })
         );
-        assert_eq!(
-            manifest.declared_dependencies,
-            TrustManifestDeclaredDependencies {
-                commands: vec!["git".to_owned()],
-                packages: vec![TrustManifestPackageDependency {
-                    ecosystem: Some("npm".to_owned()),
-                    name: Some("prettier".to_owned()),
-                    version: Some("3.2.5".to_owned()),
-                }],
-            }
-        );
+        assert_eq!(manifest.declared_dependencies.commands, vec!["git"]);
+        let [package] = manifest.declared_dependencies.packages.as_slice() else {
+            panic!("expected one declared package");
+        };
+        assert_eq!(package.ecosystem.as_deref(), Some("npm"));
+        assert_eq!(package.name.as_deref(), Some("prettier"));
+        assert_eq!(package.version.as_deref(), Some("3.2.5"));
         assert_eq!(inventory.remote_dependencies.len(), 1);
         assert_eq!(
             inventory.remote_dependencies[0].normalized,

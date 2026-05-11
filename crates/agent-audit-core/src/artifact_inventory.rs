@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use agent_audit_security::{
     classify_security_artifact, read_security_artifact_bytes, SecurityArtifactReadPolicy,
@@ -14,6 +14,7 @@ use crate::model::{
     ExecutableArtifact, ExecutableKind, SkillGraph, SkillManifest, SupplyChainInventory,
     SupplyChainSourceKind,
 };
+use crate::path_utils::{collect_skill_package_files, display_path};
 
 const OPAQUE_ASSET_SIZE_THRESHOLD_BYTES: u64 = 256 * 1024;
 const CONTENT_SNIFF_BYTES: usize = 8192;
@@ -28,7 +29,7 @@ pub fn inventory_package_artifacts(
     let mut inventory = SupplyChainInventory::default();
     let referenced = referenced_files(manifest, graph);
     let mut files = Vec::new();
-    collect_package_files(skill_root, skill_root, &mut files)?;
+    collect_skill_package_files(skill_root, skill_root, &mut files, &|_| true)?;
     files.sort();
 
     for path in &files {
@@ -87,45 +88,6 @@ pub fn inventory_package_artifacts(
 
     inventory.sort_deterministically();
     Ok(inventory)
-}
-
-fn collect_package_files(
-    skill_root: &Path,
-    directory: &Path,
-    files: &mut Vec<PathBuf>,
-) -> AuditResult<()> {
-    let mut entries = std::fs::read_dir(directory)
-        .map_err(|source| AuditError::ReadDir {
-            path: directory.to_path_buf(),
-            source,
-        })?
-        .map(|entry| {
-            entry.map_err(|source| AuditError::ReadDir {
-                path: directory.to_path_buf(),
-                source,
-            })
-        })
-        .collect::<AuditResult<Vec<_>>>()?;
-    entries.sort_by_key(|entry| entry.path());
-
-    for entry in entries {
-        let path = entry.path();
-        let metadata = std::fs::symlink_metadata(&path).map_err(|source| AuditError::Metadata {
-            path: path.clone(),
-            source,
-        })?;
-
-        if metadata.is_dir() {
-            if path != skill_root && path.join("SKILL.md").is_file() {
-                continue;
-            }
-            collect_package_files(skill_root, &path, files)?;
-        } else if metadata.is_file() {
-            files.push(path);
-        }
-    }
-
-    Ok(())
 }
 
 fn referenced_files(manifest: &SkillManifest, graph: &SkillGraph) -> BTreeSet<String> {
@@ -233,9 +195,8 @@ fn binary_artifact(
         (BinaryArtifactKind::Jar, EvidenceConfidence::High)
     } else if extension.is_some_and(|extension| extension.eq_ignore_ascii_case("bin"))
         || looks_binary(content_prefix)
+        || (opaque_asset_extension(extension) && size_bytes >= OPAQUE_ASSET_SIZE_THRESHOLD_BYTES)
     {
-        (BinaryArtifactKind::OpaqueAsset, EvidenceConfidence::Medium)
-    } else if opaque_asset_extension(extension) && size_bytes >= OPAQUE_ASSET_SIZE_THRESHOLD_BYTES {
         (BinaryArtifactKind::OpaqueAsset, EvidenceConfidence::Medium)
     } else {
         return None;
@@ -511,13 +472,6 @@ fn has_uri_scheme(path: &str) -> bool {
 fn has_windows_prefix(path: &str) -> bool {
     let bytes = path.as_bytes();
     bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic()
-}
-
-fn display_path(root: &Path, path: &Path) -> String {
-    path.strip_prefix(root)
-        .unwrap_or(path)
-        .to_string_lossy()
-        .replace('\\', "/")
 }
 
 fn security_read_error(

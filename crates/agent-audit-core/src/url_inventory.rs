@@ -59,7 +59,6 @@ fn collect_frontmatter_urls(
     for (key, value) in frontmatter {
         collect_yaml_scalar_urls(
             manifest_path,
-            key,
             value,
             frontmatter_key_lines.get(key.as_str()).copied(),
             inventory,
@@ -69,7 +68,6 @@ fn collect_frontmatter_urls(
 
 fn collect_yaml_scalar_urls(
     manifest_path: &str,
-    top_level_key: &str,
     value: &serde_yaml::Value,
     line: Option<usize>,
     inventory: &mut SupplyChainInventory,
@@ -90,7 +88,7 @@ fn collect_yaml_scalar_urls(
         }
         serde_yaml::Value::Sequence(values) => {
             for value in values {
-                collect_yaml_scalar_urls(manifest_path, top_level_key, value, line, inventory);
+                collect_yaml_scalar_urls(manifest_path, value, line, inventory);
             }
         }
         serde_yaml::Value::Mapping(mapping) => {
@@ -99,7 +97,7 @@ fn collect_yaml_scalar_urls(
                 yaml_key_sort_value(left_key).cmp(&yaml_key_sort_value(right_key))
             });
             for (_key, value) in entries {
-                collect_yaml_scalar_urls(manifest_path, top_level_key, value, line, inventory);
+                collect_yaml_scalar_urls(manifest_path, value, line, inventory);
             }
         }
         _ => {}
@@ -266,14 +264,13 @@ fn classify_url(url: &str, source: SupplyChainSourceKind) -> UrlClassification {
         ExternalUrlKind::Localhost
     } else if is_internal_host(&host) {
         ExternalUrlKind::Internal
-    } else if is_package_registry_url(&host, &path) {
+    } else if is_package_registry_url(&host, path) {
         ExternalUrlKind::PackageRegistry
-    } else if is_downloaded_artifact_path(&path) {
+    } else if is_downloaded_artifact_path(path) {
         ExternalUrlKind::DownloadedArtifact
-    } else if is_remote_script_path(&path) {
+    } else if is_remote_script_path(path) {
         ExternalUrlKind::RemoteScript
-    } else if source == SupplyChainSourceKind::MarkdownLink
-        || looks_like_documentation(&host, &path)
+    } else if source == SupplyChainSourceKind::MarkdownLink || looks_like_documentation(&host, path)
     {
         ExternalUrlKind::Documentation
     } else if !host.is_empty() {
@@ -284,7 +281,7 @@ fn classify_url(url: &str, source: SupplyChainSourceKind) -> UrlClassification {
 
     UrlClassification {
         kind,
-        pinned: pinned_for_kind(kind, &path),
+        pinned: pinned_for_kind(kind, path),
         github: None,
     }
 }
@@ -431,7 +428,7 @@ fn package_registry_dependency(
 ) -> Option<RemoteDependency> {
     let host = url_host(url)?;
     let url_path = url_path(url);
-    let package = parse_package_registry_dependency(&host, &url_path)?;
+    let package = parse_package_registry_dependency(&host, url_path)?;
     Some(RemoteDependency {
         path: path.to_owned(),
         line,
@@ -561,7 +558,7 @@ fn is_url_terminator(character: char) -> bool {
 fn trim_url_token(value: &str) -> &str {
     value
         .trim_matches(|character| matches!(character, '(' | '[' | '{'))
-        .trim_end_matches(|character| matches!(character, ')' | ']' | '}' | ',' | '.' | ';' | ':'))
+        .trim_end_matches([')', ']', '}', ',', '.', ';', ':'])
 }
 
 fn normalize_url(url: &str) -> String {
@@ -795,27 +792,41 @@ fn dedup_remote_dependencies(dependencies: &mut Vec<RemoteDependency>) {
 }
 
 fn external_url_evidence_cmp(left: &ExternalUrl, right: &ExternalUrl) -> std::cmp::Ordering {
-    evidence_location_cmp(&left.path, left.line, &right.path, right.line)
-        .then_with(|| left.source.cmp(&right.source))
-        .then_with(|| left.kind.cmp(&right.kind))
-        .then_with(|| left.raw.cmp(&right.raw))
-        .then_with(|| left.confidence.cmp(&right.confidence))
-        .then_with(|| left.pinned.cmp(&right.pinned))
+    evidence_source_kind_cmp(
+        (&left.path, left.line, left.source, left.kind),
+        (&right.path, right.line, right.source, right.kind),
+    )
+    .then_with(|| left.raw.cmp(&right.raw))
+    .then_with(|| left.confidence.cmp(&right.confidence))
+    .then_with(|| left.pinned.cmp(&right.pinned))
 }
 
 fn remote_dependency_evidence_cmp(
     left: &RemoteDependency,
     right: &RemoteDependency,
 ) -> std::cmp::Ordering {
-    evidence_location_cmp(&left.path, left.line, &right.path, right.line)
-        .then_with(|| left.source.cmp(&right.source))
-        .then_with(|| left.kind.cmp(&right.kind))
-        .then_with(|| left.package_manager.cmp(&right.package_manager))
-        .then_with(|| left.name.cmp(&right.name))
-        .then_with(|| left.version.cmp(&right.version))
-        .then_with(|| left.raw.cmp(&right.raw))
-        .then_with(|| left.confidence.cmp(&right.confidence))
-        .then_with(|| left.pinned.cmp(&right.pinned))
+    evidence_source_kind_cmp(
+        (&left.path, left.line, left.source, left.kind),
+        (&right.path, right.line, right.source, right.kind),
+    )
+    .then_with(|| left.package_manager.cmp(&right.package_manager))
+    .then_with(|| left.name.cmp(&right.name))
+    .then_with(|| left.version.cmp(&right.version))
+    .then_with(|| left.raw.cmp(&right.raw))
+    .then_with(|| left.confidence.cmp(&right.confidence))
+    .then_with(|| left.pinned.cmp(&right.pinned))
+}
+
+fn evidence_source_kind_cmp<K: Ord>(
+    left: (&str, Option<usize>, SupplyChainSourceKind, K),
+    right: (&str, Option<usize>, SupplyChainSourceKind, K),
+) -> std::cmp::Ordering {
+    let (left_path, left_line, left_source, left_kind) = left;
+    let (right_path, right_line, right_source, right_kind) = right;
+
+    evidence_location_cmp(left_path, left_line, right_path, right_line)
+        .then_with(|| left_source.cmp(&right_source))
+        .then_with(|| left_kind.cmp(&right_kind))
 }
 
 fn evidence_location_cmp(
