@@ -13,7 +13,8 @@ use crate::model::{
     PermissionEvidenceKind, PermissionKind, RemoteDependencyKind, ScanReport, ScanSummary,
     SkillArtifactKind, SkillCompatibilityRow, SkillFile, SkillFileKind, SkillFinding, SkillGraph,
     SkillManifest, SkillPackage, SkillReference, SupplyChainInventory, SupplyChainSourceKind,
-    SuppressedFinding, SuppressionMatch, TrustManifestDiagnosticKind,
+    SuppressedFinding, SuppressionMatch, TrustManifest, TrustManifestDiagnostic,
+    TrustManifestDiagnosticKind,
 };
 use crate::offline_readiness::populate_offline_readiness;
 use crate::package_inventory::{
@@ -389,38 +390,7 @@ fn supply_chain_rule_facts(
         trust_manifests: inventory
             .trust_manifests
             .iter()
-            .map(|manifest| RuleSupplyChainTrustManifestFact {
-                path: manifest.path.clone(),
-                line: manifest.line,
-                valid: manifest.valid,
-                has_pinned_provenance: manifest.provenance.as_ref().is_some_and(|provenance| {
-                    provenance
-                        .commit
-                        .as_deref()
-                        .is_some_and(|commit| commit.len() == 40)
-                }),
-                diagnostics: manifest
-                    .diagnostics
-                    .iter()
-                    .map(|diagnostic| RuleSupplyChainTrustManifestDiagnosticFact {
-                        path: diagnostic.path.clone(),
-                        line: diagnostic.line,
-                        kind: match diagnostic.kind {
-                            TrustManifestDiagnosticKind::ParseError => {
-                                RuleSupplyChainTrustManifestDiagnosticKind::ParseError
-                            }
-                            TrustManifestDiagnosticKind::SchemaError => {
-                                RuleSupplyChainTrustManifestDiagnosticKind::SchemaError
-                            }
-                            TrustManifestDiagnosticKind::UnknownField => {
-                                RuleSupplyChainTrustManifestDiagnosticKind::UnknownField
-                            }
-                        },
-                        message: diagnostic.message.clone(),
-                        field: diagnostic.field.clone(),
-                    })
-                    .collect(),
-            })
+            .map(rule_supply_chain_trust_manifest_fact)
             .collect(),
         external_urls: inventory
             .external_urls
@@ -522,6 +492,59 @@ fn supply_chain_rule_facts(
                 normalized: permission.normalized.clone(),
             })
             .collect(),
+    }
+}
+
+fn rule_supply_chain_trust_manifest_fact(
+    manifest: &TrustManifest,
+) -> RuleSupplyChainTrustManifestFact {
+    RuleSupplyChainTrustManifestFact {
+        path: manifest.path.clone(),
+        line: manifest.line,
+        valid: manifest.valid,
+        has_pinned_provenance: trust_manifest_has_pinned_provenance(manifest),
+        diagnostics: manifest
+            .diagnostics
+            .iter()
+            .map(rule_supply_chain_trust_manifest_diagnostic_fact)
+            .collect(),
+    }
+}
+
+fn trust_manifest_has_pinned_provenance(manifest: &TrustManifest) -> bool {
+    manifest.provenance.as_ref().is_some_and(|provenance| {
+        provenance
+            .commit
+            .as_deref()
+            .is_some_and(|commit| commit.len() == 40)
+    })
+}
+
+fn rule_supply_chain_trust_manifest_diagnostic_fact(
+    diagnostic: &TrustManifestDiagnostic,
+) -> RuleSupplyChainTrustManifestDiagnosticFact {
+    RuleSupplyChainTrustManifestDiagnosticFact {
+        path: diagnostic.path.clone(),
+        line: diagnostic.line,
+        kind: rule_trust_manifest_diagnostic_kind(diagnostic.kind),
+        message: diagnostic.message.clone(),
+        field: diagnostic.field.clone(),
+    }
+}
+
+fn rule_trust_manifest_diagnostic_kind(
+    kind: TrustManifestDiagnosticKind,
+) -> RuleSupplyChainTrustManifestDiagnosticKind {
+    match kind {
+        TrustManifestDiagnosticKind::ParseError => {
+            RuleSupplyChainTrustManifestDiagnosticKind::ParseError
+        }
+        TrustManifestDiagnosticKind::SchemaError => {
+            RuleSupplyChainTrustManifestDiagnosticKind::SchemaError
+        }
+        TrustManifestDiagnosticKind::UnknownField => {
+            RuleSupplyChainTrustManifestDiagnosticKind::UnknownField
+        }
     }
 }
 
