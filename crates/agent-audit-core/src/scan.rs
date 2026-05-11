@@ -229,6 +229,7 @@ fn compatibility_for_profile(
         "claude-code" => evaluate_claude_code_profile(profile, package, findings),
         "codex" => evaluate_codex_profile(profile, package, findings),
         "github-copilot" => evaluate_github_copilot_profile(profile, package, findings),
+        "vscode-copilot" => evaluate_vscode_copilot_profile(profile, package, findings),
         "generic" => evaluate_baseline_structural_profile(profile, package, findings),
         _ => ProfileCompatibilityResult {
             profile: profile.to_owned(),
@@ -381,6 +382,54 @@ fn evaluate_github_copilot_profile(
     }
 }
 
+fn evaluate_vscode_copilot_profile(
+    profile: &str,
+    package: &SkillPackage,
+    findings: &[SkillFinding],
+) -> ProfileCompatibilityResult {
+    const FAIL_RULES: &[&str] = &["SKILL001", "SKILL002", "SKILL041"];
+    const BASELINE_WARN_RULES: &[&str] = &["SKILL010", "SKILL020", "SKILL030"];
+    const COMPATIBILITY_WARN_RULES: &[&str] = &["SKILL050"];
+
+    let mut rule_order = FAIL_RULES
+        .iter()
+        .chain(BASELINE_WARN_RULES)
+        .chain(COMPATIBILITY_WARN_RULES)
+        .copied()
+        .collect::<Vec<_>>();
+    if has_vscode_copilot_unknown_frontmatter_field(package) {
+        rule_order.push("SKILL040");
+    }
+    rule_order.sort_unstable();
+    rule_order.dedup();
+
+    let finding_ids = compatibility_finding_ids_for_package_matching(
+        &package.manifest_path,
+        findings,
+        rule_order.iter(),
+        |finding| finding.rule_id != "SKILL050" || finding.message.starts_with("VS Code Copilot "),
+    );
+    let has_fail = finding_ids
+        .iter()
+        .any(|rule_id| FAIL_RULES.contains(&rule_id.as_str()));
+    let has_matrix_warning = !is_vscode_copilot_preferred_manifest_path(&package.manifest_path)
+        || has_script_reference_or_artifact(package)
+        || has_vscode_copilot_unsupported_global_metadata(package);
+    let status = if has_fail {
+        CompatibilityStatus::Fail
+    } else if finding_ids.is_empty() && !has_matrix_warning {
+        CompatibilityStatus::Pass
+    } else {
+        CompatibilityStatus::Warn
+    };
+
+    ProfileCompatibilityResult {
+        profile: profile.to_owned(),
+        status,
+        finding_ids,
+    }
+}
+
 fn evaluate_baseline_structural_profile(
     profile: &str,
     package: &SkillPackage,
@@ -446,6 +495,7 @@ fn evaluate_compatibility_findings(
     let include_claude = profiles.iter().any(|profile| profile == "claude-code");
     let include_codex = profiles.iter().any(|profile| profile == "codex");
     let include_github_copilot = profiles.iter().any(|profile| profile == "github-copilot");
+    let include_vscode_copilot = profiles.iter().any(|profile| profile == "vscode-copilot");
 
     let mut findings = Vec::new();
     if include_claude {
@@ -470,6 +520,14 @@ fn evaluate_compatibility_findings(
                 .iter()
                 .filter(|package| is_github_copilot_preferred_manifest_path(&package.manifest_path))
                 .flat_map(github_copilot_metadata_findings),
+        );
+    }
+    if include_vscode_copilot {
+        findings.extend(
+            packages
+                .iter()
+                .filter(|package| is_vscode_copilot_preferred_manifest_path(&package.manifest_path))
+                .flat_map(vscode_copilot_metadata_findings),
         );
     }
 
@@ -551,6 +609,33 @@ fn github_copilot_metadata_findings(package: &SkillPackage) -> Vec<SkillFinding>
         .collect()
 }
 
+fn vscode_copilot_metadata_findings(package: &SkillPackage) -> Vec<SkillFinding> {
+    let ignored_fields = profile_by_id("vscode-copilot")
+        .expect("vscode-copilot profile definition must exist")
+        .known_ignored_fields;
+
+    package
+        .manifest
+        .frontmatter
+        .keys()
+        .filter(|field| {
+            ignored_fields
+                .iter()
+                .any(|ignored_field| ignored_field.name == field.as_str())
+        })
+        .map(|field| {
+            compatibility_finding(
+                "SKILL050",
+                format!(
+                    "VS Code Copilot is likely to ignore the `{field}` frontmatter field; document VS Code Copilot tool expectations with portable `tools` metadata or in the Markdown body."
+                ),
+                package.manifest_path.clone(),
+                Some(1),
+            )
+        })
+        .collect()
+}
+
 fn compatibility_finding(
     rule_id: &str,
     message: String,
@@ -622,6 +707,20 @@ fn has_github_copilot_unknown_frontmatter_field(package: &SkillPackage) -> bool 
     })
 }
 
+fn has_vscode_copilot_unknown_frontmatter_field(package: &SkillPackage) -> bool {
+    let vscode_copilot =
+        profile_by_id("vscode-copilot").expect("vscode-copilot profile definition must exist");
+
+    package.manifest.frontmatter.keys().any(|field| {
+        !vscode_copilot
+            .required_fields
+            .iter()
+            .chain(vscode_copilot.accepted_optional_fields)
+            .chain(vscode_copilot.known_ignored_fields)
+            .any(|known_field| known_field.name == field.as_str())
+    })
+}
+
 fn is_profile_accepted_frontmatter_field(profiles: &[String], field: &str) -> bool {
     is_claude_accepted_frontmatter_field(profiles, field)
 }
@@ -666,11 +765,27 @@ fn is_github_copilot_preferred_manifest_path(path: &str) -> bool {
     !skill_name.is_empty() && !skill_name.contains('/')
 }
 
+fn is_vscode_copilot_preferred_manifest_path(path: &str) -> bool {
+    let path = normalize_report_path(path);
+    let Some(skill_path) = path.strip_prefix(".github/skills/") else {
+        return false;
+    };
+    let Some(skill_name) = skill_path.strip_suffix("/SKILL.md") else {
+        return false;
+    };
+
+    !skill_name.is_empty() && !skill_name.contains('/')
+}
+
 fn has_codex_permission_metadata(package: &SkillPackage) -> bool {
     package.manifest.frontmatter.contains_key("permissions")
 }
 
 fn has_github_copilot_unsupported_global_metadata(package: &SkillPackage) -> bool {
+    package.manifest.frontmatter.contains_key("permissions")
+}
+
+fn has_vscode_copilot_unsupported_global_metadata(package: &SkillPackage) -> bool {
     package.manifest.frontmatter.contains_key("permissions")
 }
 
@@ -1208,7 +1323,7 @@ description: Default compatibility fixture.
                 ),
                 (
                     "vscode-copilot",
-                    CompatibilityStatus::Unknown,
+                    CompatibilityStatus::Warn,
                     Vec::<&str>::new()
                 ),
                 ("generic", CompatibilityStatus::Pass, Vec::<&str>::new()),
@@ -1266,7 +1381,7 @@ tools:
                 ),
                 (
                     "vscode-copilot",
-                    CompatibilityStatus::Unknown,
+                    CompatibilityStatus::Warn,
                     Vec::<&str>::new()
                 ),
                 ("generic", CompatibilityStatus::Pass, Vec::<&str>::new()),
@@ -1326,8 +1441,8 @@ Read [missing](references/missing.md).
                 ),
                 (
                     "vscode-copilot",
-                    CompatibilityStatus::Unknown,
-                    Vec::<&str>::new()
+                    CompatibilityStatus::Warn,
+                    vec!["SKILL010", "SKILL040"]
                 ),
                 (
                     "generic",
@@ -2465,6 +2580,392 @@ ignore:
             compatibility_projection(&report.compatibility.matrix[0].profiles),
             vec![(
                 "github-copilot",
+                CompatibilityStatus::Pass,
+                Vec::<&str>::new()
+            )]
+        );
+    }
+
+    #[test]
+    fn scan_vscode_copilot_preferred_path_with_tools_passes() {
+        let workspace = TestWorkspace::new("scan-vscode-copilot-preferred-pass");
+        workspace.write_file(
+            ".github/skills/editor/SKILL.md",
+            r#"---
+name: editor
+description: Reviews local workspace changes.
+tools:
+  - shell
+---
+
+# Editor
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - vscode-copilot
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert!(report.findings.is_empty());
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![(
+                "vscode-copilot",
+                CompatibilityStatus::Pass,
+                Vec::<&str>::new()
+            )]
+        );
+    }
+
+    #[test]
+    fn scan_vscode_copilot_warns_for_permissions_without_finding_id() {
+        let workspace = TestWorkspace::new("scan-vscode-copilot-permissions-warn");
+        workspace.write_file(
+            ".github/skills/editor/SKILL.md",
+            r#"---
+name: editor
+description: Reviews local workspace changes.
+permissions:
+  network: false
+---
+
+# Editor
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - vscode-copilot
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert!(report.findings.is_empty());
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![(
+                "vscode-copilot",
+                CompatibilityStatus::Warn,
+                Vec::<&str>::new()
+            )]
+        );
+    }
+
+    #[test]
+    fn scan_vscode_copilot_warns_for_non_vscode_path_without_finding_id() {
+        let workspace = TestWorkspace::new("scan-vscode-copilot-path-warn");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: editor
+description: Reviews local workspace changes.
+---
+
+# Editor
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - vscode-copilot
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert!(report.findings.is_empty());
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![(
+                "vscode-copilot",
+                CompatibilityStatus::Warn,
+                Vec::<&str>::new()
+            )]
+        );
+    }
+
+    #[test]
+    fn scan_vscode_copilot_warns_for_ignored_allowed_tools_with_skill050() {
+        let workspace = TestWorkspace::new("scan-vscode-copilot-ignored-allowed-tools");
+        workspace.write_file(
+            ".github/skills/editor/SKILL.md",
+            r#"---
+name: editor
+description: Reviews local workspace changes.
+allowed-tools:
+  - Bash(code --version)
+---
+
+# Editor
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - vscode-copilot
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        let mut rule_ids = report
+            .findings
+            .iter()
+            .map(|finding| finding.rule_id.as_str())
+            .collect::<Vec<_>>();
+        rule_ids.sort_unstable();
+        assert_eq!(rule_ids, vec!["SKILL040", "SKILL050"]);
+        let vscode_copilot_finding = report
+            .findings
+            .iter()
+            .find(|finding| finding.rule_id == "SKILL050")
+            .expect("VS Code Copilot compatibility finding");
+        assert_eq!(
+            vscode_copilot_finding.category,
+            FindingCategory::Compatibility
+        );
+        assert_eq!(
+            vscode_copilot_finding.location.path,
+            ".github/skills/editor/SKILL.md"
+        );
+        assert!(vscode_copilot_finding.message.contains("`allowed-tools`"));
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![(
+                "vscode-copilot",
+                CompatibilityStatus::Warn,
+                vec!["SKILL050"]
+            )]
+        );
+    }
+
+    #[test]
+    fn scan_combined_spec_and_vscode_copilot_keeps_structural_allowed_tools_finding() {
+        let workspace = TestWorkspace::new("scan-vscode-copilot-combined-allowed-tools");
+        workspace.write_file(
+            ".github/skills/editor/SKILL.md",
+            r#"---
+name: editor
+description: Reviews local workspace changes.
+allowed-tools:
+  - Bash(code --version)
+---
+
+# Editor
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - agent-skills-spec
+  - vscode-copilot
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        let mut rule_ids = report
+            .findings
+            .iter()
+            .map(|finding| finding.rule_id.as_str())
+            .collect::<Vec<_>>();
+        rule_ids.sort_unstable();
+        assert_eq!(rule_ids, vec!["SKILL040", "SKILL050"]);
+        assert!(report
+            .findings
+            .iter()
+            .all(|finding| finding.message.contains("`allowed-tools`")));
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![
+                (
+                    "agent-skills-spec",
+                    CompatibilityStatus::Warn,
+                    vec!["SKILL040"]
+                ),
+                (
+                    "vscode-copilot",
+                    CompatibilityStatus::Warn,
+                    vec!["SKILL050"]
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn scan_vscode_copilot_warns_for_script_references_without_finding_id() {
+        let workspace = TestWorkspace::new("scan-vscode-copilot-script-warn");
+        workspace.write_file(
+            ".github/skills/editor/SKILL.md",
+            r#"---
+name: editor
+description: Reviews local workspace changes.
+---
+
+# Editor
+
+Run [check](scripts/check.sh) when explicitly requested.
+"#,
+        );
+        workspace.write_file(".github/skills/editor/scripts/check.sh", "echo check\n");
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - vscode-copilot
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert!(report.findings.is_empty());
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![(
+                "vscode-copilot",
+                CompatibilityStatus::Warn,
+                Vec::<&str>::new()
+            )]
+        );
+    }
+
+    #[test]
+    fn scan_vscode_copilot_fails_for_baseline_required_findings() {
+        let workspace = TestWorkspace::new("scan-vscode-copilot-baseline-fail");
+        workspace.write_file(
+            ".github/skills/editor/SKILL.md",
+            r#"---
+name: editor
+---
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - vscode-copilot
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![(
+                "vscode-copilot",
+                CompatibilityStatus::Fail,
+                vec!["SKILL002"]
+            )]
+        );
+    }
+
+    #[test]
+    fn scan_vscode_copilot_ignores_suppressed_skill050() {
+        let workspace = TestWorkspace::new("scan-vscode-copilot-suppressed-skill050");
+        workspace.write_file(
+            ".github/skills/editor/SKILL.md",
+            r#"---
+name: editor
+description: Reviews local workspace changes.
+allowed-tools:
+  - Bash(code --version)
+---
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - vscode-copilot
+
+ignore:
+  - rule: SKILL050
+    path: .github/skills/editor/SKILL.md
+    reason: Repository wrapper translates host-specific tool metadata.
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(
+            report
+                .findings
+                .iter()
+                .map(|finding| finding.rule_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["SKILL040"]
+        );
+        assert_eq!(report.summary.suppressed_finding_count, 1);
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![(
+                "vscode-copilot",
                 CompatibilityStatus::Pass,
                 Vec::<&str>::new()
             )]
@@ -4607,7 +5108,7 @@ description: JSON stability fixture.
                 ("claude-code", "warn", 0),
                 ("codex", "warn", 0),
                 ("github-copilot", "warn", 0),
-                ("vscode-copilot", "unknown", 0),
+                ("vscode-copilot", "warn", 0),
                 ("generic", "pass", 0),
             ]
         );
@@ -4695,7 +5196,7 @@ description: JSON stability fixture.
           },
           {
             "profile": "vscode-copilot",
-            "status": "unknown",
+            "status": "warn",
             "finding_ids": []
           },
           {
