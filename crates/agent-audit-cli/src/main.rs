@@ -1049,6 +1049,88 @@ fail_on:
     }
 
     #[test]
+    fn run_scan_fail_on_low_matches_active_compatibility_finding_after_json_output() {
+        let workspace = CliTestWorkspace::new("compatibility-fail-on-low");
+        workspace.write_file("SKILL.md", compatibility_unknown_frontmatter_skill());
+
+        let (output, result) = run_scan_attempt(ScanCommand {
+            path: workspace.root.clone(),
+            format: ReportFormat::Json,
+            config: None,
+            fail_on: vec![Severity::Low],
+            profiles: Vec::new(),
+        });
+        let error = result.expect_err("low fail_on should match compatibility finding");
+        let value: serde_json::Value =
+            serde_json::from_str(&output).expect("JSON output should be written before fail_on");
+
+        assert_eq!(value["findings"][0]["rule_id"], "SKILL040");
+        assert_eq!(value["findings"][0]["severity"], "low");
+        assert_eq!(value["findings"][0]["category"], "compatibility");
+        assert!(error
+            .to_string()
+            .contains("fail_on matched an unsuppressed finding severity"));
+    }
+
+    #[test]
+    fn run_scan_fail_on_medium_does_not_match_low_compatibility_finding() {
+        let workspace = CliTestWorkspace::new("compatibility-fail-on-medium");
+        workspace.write_file("SKILL.md", compatibility_unknown_frontmatter_skill());
+
+        let output = run_scan_output(ScanCommand {
+            path: workspace.root.clone(),
+            format: ReportFormat::Json,
+            config: None,
+            fail_on: vec![Severity::Medium],
+            profiles: Vec::new(),
+        })
+        .expect("medium fail_on should not match low compatibility finding");
+        let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
+
+        assert_eq!(value["findings"][0]["rule_id"], "SKILL040");
+        assert_eq!(value["findings"][0]["severity"], "low");
+        assert_eq!(value["findings"][0]["category"], "compatibility");
+    }
+
+    #[test]
+    fn run_scan_fail_on_low_ignores_suppressed_compatibility_finding() {
+        let workspace = CliTestWorkspace::new("compatibility-fail-on-suppressed");
+        workspace.write_file("SKILL.md", compatibility_unknown_frontmatter_skill());
+        workspace.write_file(
+            "agent-audit.yaml",
+            r#"
+fail_on:
+  - low
+ignore:
+  - rule: SKILL040
+    path: SKILL.md
+    reason: Host metadata is accepted for this compatibility fixture.
+"#,
+        );
+
+        let output = run_scan_output(ScanCommand {
+            path: workspace.root.clone(),
+            format: ReportFormat::Json,
+            config: Some(workspace.root.join("agent-audit.yaml")),
+            fail_on: Vec::new(),
+            profiles: Vec::new(),
+        })
+        .expect("suppressed compatibility finding should not trigger fail_on");
+        let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
+
+        assert_eq!(value["summary"]["finding_count"], 0);
+        assert_eq!(value["summary"]["suppressed_finding_count"], 1);
+        assert_eq!(
+            value["suppressed_findings"][0]["finding"]["rule_id"],
+            "SKILL040"
+        );
+        assert_eq!(
+            value["suppressed_findings"][0]["finding"]["category"],
+            "compatibility"
+        );
+    }
+
+    #[test]
     fn run_scan_validates_explicit_config_before_scanning() {
         let workspace = CliTestWorkspace::new("valid-config");
         workspace.write_file(
@@ -1399,6 +1481,17 @@ description: Valid profile fixture.
 # {name}
 "#
         )
+    }
+
+    fn compatibility_unknown_frontmatter_skill() -> &'static str {
+        r#"---
+name: compatibility-fail-on
+description: Compatibility fail-on fixture.
+x-owner: platform-team
+---
+
+# Compatibility Fail On
+"#
     }
 
     fn test_finding(rule_id: &str, severity: Severity) -> SkillFinding {

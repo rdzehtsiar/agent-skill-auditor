@@ -34,6 +34,17 @@ mod tests {
     }
 
     #[test]
+    fn matches_unsuppressed_compatibility_findings_by_exact_severity() {
+        let report = report_with_findings(
+            vec![compatibility_finding("SKILL040", Severity::Low)],
+            Vec::new(),
+        );
+
+        assert!(report_matches_fail_on(&report, &[Severity::Low]));
+        assert!(!report_matches_fail_on(&report, &[Severity::Medium]));
+    }
+
+    #[test]
     fn ignores_suppressed_findings_when_matching_fail_on() {
         let report = report_with_findings(
             Vec::new(),
@@ -43,6 +54,23 @@ mod tests {
                     matched_rule: "SKILL001".to_owned(),
                     matched_path: "SKILL.md".to_owned(),
                     reason: "Accepted fixture.".to_owned(),
+                },
+            }],
+        );
+
+        assert!(!report_matches_fail_on(&report, &[Severity::Low]));
+    }
+
+    #[test]
+    fn ignores_suppressed_compatibility_findings_when_matching_fail_on() {
+        let report = report_with_findings(
+            Vec::new(),
+            vec![SuppressedFinding {
+                finding: compatibility_finding("SKILL040", Severity::Low),
+                suppression: SuppressionMatch {
+                    matched_rule: "SKILL040".to_owned(),
+                    matched_path: "SKILL.md".to_owned(),
+                    reason: "Accepted host metadata fixture.".to_owned(),
                 },
             }],
         );
@@ -83,6 +111,13 @@ mod tests {
             rationale: "Fixture rationale.".to_owned(),
             remediation: "Fixture remediation.".to_owned(),
             suppression: "Fixture suppression.".to_owned(),
+        }
+    }
+
+    fn compatibility_finding(rule_id: &str, severity: Severity) -> SkillFinding {
+        SkillFinding {
+            category: FindingCategory::Compatibility,
+            ..finding(rule_id, severity)
         }
     }
 }
