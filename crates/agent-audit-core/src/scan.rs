@@ -169,7 +169,8 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         .filter(|finding| rule_counts_as_broken_reference(&finding.rule_id))
         .count();
 
-    let compatibility = compatibility_matrix_for_packages(&packages, options.config.as_ref());
+    let compatibility =
+        compatibility_matrix_for_packages(&packages, &findings, options.config.as_ref());
 
     Ok(ScanReport {
         summary: ScanSummary {
@@ -188,6 +189,7 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
 
 fn compatibility_matrix_for_packages(
     packages: &[SkillPackage],
+    findings: &[SkillFinding],
     config: Option<&AuditConfig>,
 ) -> CompatibilityMatrix {
     let profiles = selected_profiles(config);
@@ -198,16 +200,73 @@ fn compatibility_matrix_for_packages(
             name: package.manifest.name.clone(),
             profiles: profiles
                 .iter()
-                .map(|profile| ProfileCompatibilityResult {
-                    profile: profile.clone(),
-                    status: CompatibilityStatus::Unknown,
-                    finding_ids: Vec::new(),
-                })
+                .map(|profile| compatibility_for_profile(profile, package, findings))
                 .collect(),
         })
         .collect();
 
     CompatibilityMatrix { profiles, matrix }
+}
+
+fn compatibility_for_profile(
+    profile: &str,
+    package: &SkillPackage,
+    findings: &[SkillFinding],
+) -> ProfileCompatibilityResult {
+    if profile == "agent-skills-spec" {
+        return evaluate_agent_skills_spec(package, findings);
+    }
+
+    ProfileCompatibilityResult {
+        profile: profile.to_owned(),
+        status: CompatibilityStatus::Unknown,
+        finding_ids: Vec::new(),
+    }
+}
+
+fn evaluate_agent_skills_spec(
+    package: &SkillPackage,
+    findings: &[SkillFinding],
+) -> ProfileCompatibilityResult {
+    const FAIL_RULES: &[&str] = &["SKILL001", "SKILL002", "SKILL041"];
+    const WARN_RULES: &[&str] = &["SKILL010", "SKILL020", "SKILL030", "SKILL040"];
+
+    let finding_ids = compatibility_finding_ids_for_package(
+        &package.manifest_path,
+        findings,
+        FAIL_RULES.iter().chain(WARN_RULES),
+    );
+    let has_fail = finding_ids
+        .iter()
+        .any(|rule_id| FAIL_RULES.contains(&rule_id.as_str()));
+    let status = if has_fail {
+        CompatibilityStatus::Fail
+    } else if finding_ids.is_empty() {
+        CompatibilityStatus::Pass
+    } else {
+        CompatibilityStatus::Warn
+    };
+
+    ProfileCompatibilityResult {
+        profile: "agent-skills-spec".to_owned(),
+        status,
+        finding_ids,
+    }
+}
+
+fn compatibility_finding_ids_for_package<'a>(
+    manifest_path: &str,
+    findings: &[SkillFinding],
+    rule_order: impl Iterator<Item = &'a &'a str>,
+) -> Vec<String> {
+    rule_order
+        .filter(|rule_id| {
+            findings.iter().any(|finding| {
+                finding.rule_id == **rule_id && finding.location.path == manifest_path
+            })
+        })
+        .map(|rule_id| (*rule_id).to_owned())
+        .collect()
 }
 
 fn selected_profiles(config: Option<&AuditConfig>) -> Vec<String> {
@@ -711,13 +770,166 @@ description: Default compatibility fixture.
         );
         assert_eq!(
             compatibility_projection(&report.compatibility.matrix[0].profiles),
-            HOST_PROFILES
-                .iter()
-                .map(|profile| (*profile, CompatibilityStatus::Unknown, Vec::<&str>::new()))
-                .collect::<Vec<_>>()
+            vec![
+                (
+                    "agent-skills-spec",
+                    CompatibilityStatus::Pass,
+                    Vec::<&str>::new()
+                ),
+                (
+                    "claude-code",
+                    CompatibilityStatus::Unknown,
+                    Vec::<&str>::new()
+                ),
+                ("codex", CompatibilityStatus::Unknown, Vec::<&str>::new()),
+                (
+                    "github-copilot",
+                    CompatibilityStatus::Unknown,
+                    Vec::<&str>::new()
+                ),
+                (
+                    "vscode-copilot",
+                    CompatibilityStatus::Unknown,
+                    Vec::<&str>::new()
+                ),
+                ("generic", CompatibilityStatus::Unknown, Vec::<&str>::new()),
+            ]
         );
         assert_eq!(report.summary.finding_count, 0);
         assert_eq!(report.summary.suppressed_finding_count, 0);
+    }
+
+    #[test]
+    fn scan_agent_skills_spec_warns_for_unsuppressed_baseline_warnings() {
+        let workspace = TestWorkspace::new("scan-agent-spec-warn");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: baseline-warn
+description: Baseline warning fixture.
+owner: platform
+---
+
+# Baseline Warning
+
+Read [missing](references/missing.md).
+"#,
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_eq!(
+            report
+                .findings
+                .iter()
+                .map(|finding| finding.rule_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["SKILL040", "SKILL010"]
+        );
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![
+                (
+                    "agent-skills-spec",
+                    CompatibilityStatus::Warn,
+                    vec!["SKILL010", "SKILL040"]
+                ),
+                (
+                    "claude-code",
+                    CompatibilityStatus::Unknown,
+                    Vec::<&str>::new()
+                ),
+                ("codex", CompatibilityStatus::Unknown, Vec::<&str>::new()),
+                (
+                    "github-copilot",
+                    CompatibilityStatus::Unknown,
+                    Vec::<&str>::new()
+                ),
+                (
+                    "vscode-copilot",
+                    CompatibilityStatus::Unknown,
+                    Vec::<&str>::new()
+                ),
+                ("generic", CompatibilityStatus::Unknown, Vec::<&str>::new()),
+            ]
+        );
+    }
+
+    #[test]
+    fn scan_agent_skills_spec_fails_for_required_baseline_findings() {
+        let workspace = TestWorkspace::new("scan-agent-spec-fail");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+description: Missing name fixture.
+owner: platform
+---
+
+This manifest intentionally has no heading fallback.
+"#,
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_eq!(
+            report
+                .findings
+                .iter()
+                .map(|finding| finding.rule_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["SKILL001", "SKILL040"]
+        );
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles)[0],
+            (
+                "agent-skills-spec",
+                CompatibilityStatus::Fail,
+                vec!["SKILL001", "SKILL040"]
+            )
+        );
+    }
+
+    #[test]
+    fn scan_agent_skills_spec_ignores_suppressed_findings() {
+        let workspace = TestWorkspace::new("scan-agent-spec-suppressed");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+description: Suppressed missing name fixture.
+---
+
+This manifest intentionally has no heading fallback.
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+ignore:
+  - rule: SKILL001
+    path: SKILL.md
+    reason: Accepted missing name fixture.
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert!(report.findings.is_empty());
+        assert_eq!(report.summary.suppressed_finding_count, 1);
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles)[0],
+            (
+                "agent-skills-spec",
+                CompatibilityStatus::Pass,
+                Vec::<&str>::new()
+            )
+        );
     }
 
     #[test]
@@ -785,6 +997,49 @@ profiles:
         }
         assert_eq!(report.summary.finding_count, 0);
         assert_eq!(report.summary.suppressed_finding_count, 0);
+    }
+
+    #[test]
+    fn scan_explicit_config_profiles_evaluates_agent_spec_when_selected() {
+        let workspace = TestWorkspace::new("scan-agent-spec-selected-profile");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: selected-agent-spec
+---
+
+# Selected Agent Spec
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - codex
+  - agent-skills-spec
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![
+                ("codex", CompatibilityStatus::Unknown, Vec::<&str>::new()),
+                (
+                    "agent-skills-spec",
+                    CompatibilityStatus::Fail,
+                    vec!["SKILL002"]
+                ),
+            ]
+        );
     }
 
     #[test]
@@ -2642,10 +2897,14 @@ description: JSON stability fixture.
                         .len(),
                 ))
                 .collect::<Vec<_>>(),
-            HOST_PROFILES
-                .iter()
-                .map(|profile| (*profile, "unknown", 0))
-                .collect::<Vec<_>>()
+            vec![
+                ("agent-skills-spec", "pass", 0),
+                ("claude-code", "unknown", 0),
+                ("codex", "unknown", 0),
+                ("github-copilot", "unknown", 0),
+                ("vscode-copilot", "unknown", 0),
+                ("generic", "unknown", 0),
+            ]
         );
         assert!(!json_contains_workspace_root(&json, workspace.root()));
         assert!(!json.contains("timestamp"));
@@ -2711,7 +2970,7 @@ description: JSON stability fixture.
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           },
           {

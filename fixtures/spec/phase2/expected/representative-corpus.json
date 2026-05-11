@@ -1241,7 +1241,7 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           },
           {
@@ -1277,8 +1277,10 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
           },
           {
             "profile": "claude-code",
@@ -1313,8 +1315,10 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "fail",
+            "finding_ids": [
+              "SKILL002"
+            ]
           },
           {
             "profile": "claude-code",
@@ -1349,7 +1353,7 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           },
           {
@@ -1385,8 +1389,10 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
           },
           {
             "profile": "claude-code",
@@ -1421,8 +1427,10 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
           },
           {
             "profile": "claude-code",
@@ -1457,7 +1465,7 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           },
           {
@@ -1493,8 +1501,10 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL040"
+            ]
           },
           {
             "profile": "claude-code",
@@ -1529,7 +1539,7 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           },
           {
@@ -1565,8 +1575,10 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
           },
           {
             "profile": "claude-code",
@@ -1601,8 +1613,10 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
           },
           {
             "profile": "claude-code",
@@ -1637,7 +1651,7 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           },
           {
@@ -1673,7 +1687,7 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           },
           {
@@ -1709,7 +1723,7 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           },
           {
@@ -1745,7 +1759,7 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           },
           {
@@ -1781,7 +1795,7 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           },
           {
@@ -1817,8 +1831,10 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
           },
           {
             "profile": "claude-code",
@@ -1853,8 +1869,10 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
           },
           {
             "profile": "claude-code",
@@ -1889,8 +1907,10 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
           },
           {
             "profile": "claude-code",
@@ -1925,8 +1945,10 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "fail",
+            "finding_ids": [
+              "SKILL002"
+            ]
           },
           {
             "profile": "claude-code",
@@ -1961,8 +1983,10 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
           },
           {
             "profile": "claude-code",
@@ -1997,7 +2021,7 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           },
           {
@@ -2033,7 +2057,7 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           },
           {
@@ -2069,8 +2093,10 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL040"
+            ]
           },
           {
             "profile": "claude-code",
@@ -2105,7 +2131,7 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           },
           {
@@ -2141,7 +2167,7 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           },
           {
@@ -2177,7 +2203,7 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           },
           {
@@ -2213,8 +2239,10 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
           },
           {
             "profile": "claude-code",
@@ -2249,7 +2277,7 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           },
           {
@@ -2285,8 +2313,11 @@
         "profiles": [
           {
             "profile": "agent-skills-spec",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010",
+              "SKILL040"
+            ]
           },
           {
             "profile": "claude-code",
