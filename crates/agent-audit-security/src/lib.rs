@@ -1142,6 +1142,311 @@ impl SecurityRiskScore {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SecurityRiskBreakdown {
+    pub base_score: SecurityRiskScore,
+    pub components: Vec<SecurityRiskComponent>,
+    pub final_score: SecurityRiskScore,
+}
+
+impl SecurityRiskBreakdown {
+    pub fn component(&self, kind: SecurityRiskComponentKind) -> Option<&SecurityRiskComponent> {
+        self.components
+            .iter()
+            .find(|component| component.kind == kind)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct SecurityRiskComponent {
+    pub kind: SecurityRiskComponentKind,
+    pub value: i16,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SecurityRiskComponentKind {
+    Exploitability,
+    Hiddenness,
+    ExternalCommunication,
+    CredentialAccess,
+    DestructivePotential,
+    DeclaredPermission,
+    DocumentedRationale,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SecurityRiskContext<'a> {
+    pub declared_tools: &'a [SecurityDeclaredTool],
+    pub declared_permissions: &'a [SecurityDeclaredPermission],
+    pub documented_rationale: Option<&'a str>,
+}
+
+impl<'a> SecurityRiskContext<'a> {
+    pub const fn empty() -> Self {
+        Self {
+            declared_tools: &[],
+            declared_permissions: &[],
+            documented_rationale: None,
+        }
+    }
+
+    pub const fn from_package_context(package: &'a SecurityAnalyzerPackageContext<'a>) -> Self {
+        Self {
+            declared_tools: package.declared_tools,
+            declared_permissions: package.declared_permissions,
+            documented_rationale: None,
+        }
+    }
+
+    pub const fn with_documented_rationale(mut self, rationale: &'a str) -> Self {
+        self.documented_rationale = Some(rationale);
+        self
+    }
+}
+
+impl Default for SecurityRiskContext<'_> {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+pub fn compute_security_risk_breakdown(
+    signal: &SecuritySignal,
+    context: SecurityRiskContext<'_>,
+) -> SecurityRiskBreakdown {
+    let components = vec![
+        risk_component(
+            SecurityRiskComponentKind::Exploitability,
+            exploitability_score(signal),
+            "directness and ease of triggering the observed behavior",
+        ),
+        risk_component(
+            SecurityRiskComponentKind::Hiddenness,
+            hiddenness_score(signal),
+            "whether the behavior is hidden, obfuscated, or instruction-like",
+        ),
+        risk_component(
+            SecurityRiskComponentKind::ExternalCommunication,
+            external_communication_score(signal),
+            "whether data or code crosses a network boundary",
+        ),
+        risk_component(
+            SecurityRiskComponentKind::CredentialAccess,
+            credential_access_score(signal),
+            "whether secrets, credentials, or secret-like environment variables are involved",
+        ),
+        risk_component(
+            SecurityRiskComponentKind::DestructivePotential,
+            destructive_potential_score(signal),
+            "whether the behavior can overwrite, delete, escalate, or rewrite state",
+        ),
+        risk_component(
+            SecurityRiskComponentKind::DeclaredPermission,
+            declared_permission_score(signal, context),
+            "declared tools or permissions can lower review risk but do not suppress findings",
+        ),
+        risk_component(
+            SecurityRiskComponentKind::DocumentedRationale,
+            documented_rationale_score(context),
+            "documented rationale can lower review risk but does not suppress findings",
+        ),
+    ];
+    let raw_score = components
+        .iter()
+        .fold(signal.risk.value as i16, |score, component| {
+            score + component.value
+        });
+    let final_score = raw_score.clamp(SecurityRiskScore::MIN as i16, SecurityRiskScore::MAX as i16);
+
+    SecurityRiskBreakdown {
+        base_score: signal.risk,
+        components,
+        final_score: SecurityRiskScore::new(final_score.max(1) as u8),
+    }
+}
+
+fn risk_component(
+    kind: SecurityRiskComponentKind,
+    value: i16,
+    reason: &str,
+) -> SecurityRiskComponent {
+    SecurityRiskComponent {
+        kind,
+        value,
+        reason: reason.to_owned(),
+    }
+}
+
+fn exploitability_score(signal: &SecuritySignal) -> i16 {
+    match signal.kind {
+        SecuritySignalKind::RemoteCodeExecution => 20,
+        SecuritySignalKind::DynamicCodeEvaluation => 16,
+        SecuritySignalKind::SubprocessExecution => 12,
+        SecuritySignalKind::ExecutableDownload
+        | SecuritySignalKind::PackageInstallation
+        | SecuritySignalKind::PrivilegeEscalation => 10,
+        SecuritySignalKind::NetworkAccess
+        | SecuritySignalKind::SecretRead
+        | SecuritySignalKind::CredentialUse
+        | SecuritySignalKind::FileWrite => 6,
+        _ => 4,
+    }
+}
+
+fn hiddenness_score(signal: &SecuritySignal) -> i16 {
+    match signal.kind {
+        SecuritySignalKind::HiddenInstruction | SecuritySignalKind::ObfuscatedCommand => 20,
+        SecuritySignalKind::PromptInjectionInstruction => 10,
+        _ => 0,
+    }
+}
+
+fn external_communication_score(signal: &SecuritySignal) -> i16 {
+    let sink_score = match signal.sink.as_ref().map(|sink| sink.kind) {
+        Some(SecuritySinkKind::NetworkRequest) => 12,
+        _ => 0,
+    };
+    let source_score = match signal.source.as_ref().map(|source| source.kind) {
+        Some(SecuritySourceKind::NetworkResponse) => 8,
+        _ => 0,
+    };
+    let kind_score = match signal.kind {
+        SecuritySignalKind::DataExfiltration => 20,
+        SecuritySignalKind::ExecutableDownload
+        | SecuritySignalKind::NetworkAccess
+        | SecuritySignalKind::RemoteCodeExecution => 12,
+        _ => 0,
+    };
+
+    kind_score.max(sink_score).max(source_score)
+}
+
+fn credential_access_score(signal: &SecuritySignal) -> i16 {
+    let source_score = match signal.source.as_ref() {
+        Some(source) if source.kind == SecuritySourceKind::CredentialStore => 18,
+        Some(source)
+            if source.kind == SecuritySourceKind::EnvironmentVariable
+                && source
+                    .name
+                    .as_deref()
+                    .is_some_and(is_secret_like_environment_variable) =>
+        {
+            18
+        }
+        Some(source) if source.kind == SecuritySourceKind::EnvironmentVariable => 8,
+        _ => 0,
+    };
+    let kind_score = match signal.kind {
+        SecuritySignalKind::CredentialUse | SecuritySignalKind::SecretRead => 18,
+        SecuritySignalKind::EnvironmentVariableRead => 8,
+        _ => 0,
+    };
+
+    kind_score.max(source_score)
+}
+
+fn destructive_potential_score(signal: &SecuritySignal) -> i16 {
+    let sink_score = match signal.sink.as_ref().map(|sink| sink.kind) {
+        Some(SecuritySinkKind::FileDelete) => 22,
+        Some(SecuritySinkKind::GitHistoryRewrite) => 18,
+        Some(SecuritySinkKind::PrivilegeEscalation) => 14,
+        Some(SecuritySinkKind::FileWrite | SecuritySinkKind::EnvironmentWrite) => 6,
+        _ => 0,
+    };
+    let kind_score = match signal.kind {
+        SecuritySignalKind::DestructiveCommand => 22,
+        SecuritySignalKind::GitHistoryModification => 18,
+        SecuritySignalKind::PrivilegeEscalation => 14,
+        SecuritySignalKind::FileWrite => 6,
+        _ => 0,
+    };
+
+    kind_score.max(sink_score)
+}
+
+fn declared_permission_score(signal: &SecuritySignal, context: SecurityRiskContext<'_>) -> i16 {
+    if has_matching_declared_capability(signal, context) {
+        -10
+    } else {
+        0
+    }
+}
+
+fn documented_rationale_score(context: SecurityRiskContext<'_>) -> i16 {
+    match context.documented_rationale {
+        Some(rationale) if !rationale.trim().is_empty() => -5,
+        _ => 0,
+    }
+}
+
+fn has_matching_declared_capability(
+    signal: &SecuritySignal,
+    context: SecurityRiskContext<'_>,
+) -> bool {
+    context
+        .declared_tools
+        .iter()
+        .map(|tool| tool.name.as_str())
+        .chain(
+            context
+                .declared_permissions
+                .iter()
+                .map(|permission| permission.name.as_str()),
+        )
+        .any(|name| declared_capability_matches_signal(name, signal))
+}
+
+fn declared_capability_matches_signal(name: &str, signal: &SecuritySignal) -> bool {
+    let normalized = normalize_declared_capability(name);
+    match signal.kind {
+        SecuritySignalKind::CredentialUse | SecuritySignalKind::SecretRead => {
+            contains_any(&normalized, &["credential", "secret", "token", "env"])
+        }
+        SecuritySignalKind::DataExfiltration
+        | SecuritySignalKind::ExecutableDownload
+        | SecuritySignalKind::NetworkAccess
+        | SecuritySignalKind::RemoteCodeExecution => {
+            contains_any(&normalized, &["api", "http", "internet", "network", "web"])
+        }
+        SecuritySignalKind::DestructiveCommand => {
+            contains_any(&normalized, &["delete", "destructive", "remove", "shell"])
+        }
+        SecuritySignalKind::DynamicCodeEvaluation | SecuritySignalKind::SubprocessExecution => {
+            contains_any(
+                &normalized,
+                &["command", "execute", "process", "shell", "subprocess"],
+            )
+        }
+        SecuritySignalKind::EnvironmentVariableRead => {
+            contains_any(&normalized, &["env", "environment"])
+        }
+        SecuritySignalKind::FileWrite => contains_any(&normalized, &["file", "fs", "write"]),
+        SecuritySignalKind::GitHistoryModification => contains_any(&normalized, &["git"]),
+        SecuritySignalKind::PackageInstallation => {
+            contains_any(&normalized, &["install", "package", "shell"])
+        }
+        SecuritySignalKind::PrivilegeEscalation => {
+            contains_any(&normalized, &["admin", "privilege", "sudo"])
+        }
+        SecuritySignalKind::HiddenInstruction
+        | SecuritySignalKind::ObfuscatedCommand
+        | SecuritySignalKind::PromptInjectionInstruction => false,
+    }
+}
+
+fn normalize_declared_capability(name: &str) -> String {
+    name.chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(|character| character.to_lowercase())
+        .collect()
+}
+
+fn contains_any(value: &str, needles: &[&str]) -> bool {
+    needles.iter().any(|needle| value.contains(needle))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum AnalyzerConfidence {
@@ -5092,6 +5397,163 @@ mod tests {
     }
 
     #[test]
+    fn security_risk_breakdown_components_keep_deterministic_order() {
+        let signal = risk_signal(
+            SecuritySignalKind::RemoteCodeExecution,
+            90,
+            None,
+            Some(SecuritySink {
+                kind: SecuritySinkKind::ShellExecution,
+                target: Some("sh".to_owned()),
+            }),
+        );
+
+        let breakdown = compute_security_risk_breakdown(&signal, SecurityRiskContext::empty());
+
+        assert_eq!(
+            breakdown
+                .components
+                .iter()
+                .map(|component| component.kind)
+                .collect::<Vec<_>>(),
+            vec![
+                SecurityRiskComponentKind::Exploitability,
+                SecurityRiskComponentKind::Hiddenness,
+                SecurityRiskComponentKind::ExternalCommunication,
+                SecurityRiskComponentKind::CredentialAccess,
+                SecurityRiskComponentKind::DestructivePotential,
+                SecurityRiskComponentKind::DeclaredPermission,
+                SecurityRiskComponentKind::DocumentedRationale,
+            ]
+        );
+    }
+
+    #[test]
+    fn security_risk_breakdown_clamps_score_to_public_risk_score_range() {
+        let signal = risk_signal(
+            SecuritySignalKind::RemoteCodeExecution,
+            95,
+            Some(SecuritySource {
+                kind: SecuritySourceKind::NetworkResponse,
+                name: Some("https://example.test/install.sh".to_owned()),
+            }),
+            Some(SecuritySink {
+                kind: SecuritySinkKind::ShellExecution,
+                target: Some("sh".to_owned()),
+            }),
+        );
+
+        let breakdown = compute_security_risk_breakdown(&signal, SecurityRiskContext::empty());
+
+        assert_eq!(breakdown.base_score, SecurityRiskScore::new(95));
+        assert_eq!(breakdown.final_score, SecurityRiskScore::new(100));
+    }
+
+    #[test]
+    fn declared_permission_and_rationale_do_not_zero_or_suppress_risk_breakdown() {
+        let signal = risk_signal(
+            SecuritySignalKind::FileWrite,
+            5,
+            None,
+            Some(SecuritySink {
+                kind: SecuritySinkKind::FileWrite,
+                target: Some("output.txt".to_owned()),
+            }),
+        );
+        let declared_permissions = [SecurityDeclaredPermission {
+            name: "write-files".to_owned(),
+        }];
+        let context = SecurityRiskContext {
+            declared_tools: &[],
+            declared_permissions: &declared_permissions,
+            documented_rationale: Some("The skill writes a local cache file."),
+        };
+
+        let breakdown = compute_security_risk_breakdown(&signal, context);
+
+        assert_eq!(
+            breakdown
+                .component(SecurityRiskComponentKind::DeclaredPermission)
+                .expect("declared permission component")
+                .value,
+            -10
+        );
+        assert_eq!(
+            breakdown
+                .component(SecurityRiskComponentKind::DocumentedRationale)
+                .expect("documented rationale component")
+                .value,
+            -5
+        );
+        assert_eq!(breakdown.final_score, SecurityRiskScore::new(2));
+        assert_eq!(breakdown.components.len(), 7);
+    }
+
+    #[test]
+    fn security_risk_breakdown_scores_representative_signal_kinds() {
+        let cases = [
+            (
+                risk_signal(SecuritySignalKind::HiddenInstruction, 60, None, None),
+                SecurityRiskComponentKind::Hiddenness,
+                20,
+            ),
+            (
+                risk_signal(
+                    SecuritySignalKind::NetworkAccess,
+                    45,
+                    None,
+                    Some(SecuritySink {
+                        kind: SecuritySinkKind::NetworkRequest,
+                        target: Some("https://example.test/api".to_owned()),
+                    }),
+                ),
+                SecurityRiskComponentKind::ExternalCommunication,
+                12,
+            ),
+            (
+                risk_signal(
+                    SecuritySignalKind::SecretRead,
+                    60,
+                    Some(SecuritySource {
+                        kind: SecuritySourceKind::EnvironmentVariable,
+                        name: Some("OPENAI_API_KEY".to_owned()),
+                    }),
+                    None,
+                ),
+                SecurityRiskComponentKind::CredentialAccess,
+                18,
+            ),
+            (
+                risk_signal(
+                    SecuritySignalKind::DestructiveCommand,
+                    85,
+                    None,
+                    Some(SecuritySink {
+                        kind: SecuritySinkKind::FileDelete,
+                        target: Some("build".to_owned()),
+                    }),
+                ),
+                SecurityRiskComponentKind::DestructivePotential,
+                22,
+            ),
+        ];
+
+        for (signal, component_kind, expected_value) in cases {
+            let breakdown = compute_security_risk_breakdown(&signal, SecurityRiskContext::empty());
+
+            assert_eq!(
+                breakdown
+                    .component(component_kind)
+                    .expect("representative component")
+                    .value,
+                expected_value,
+                "{:?}",
+                signal.kind
+            );
+        }
+    }
+
+    #[test]
     fn analyzers_can_read_in_memory_artifact_content_directly() {
         let analyzer = FakeSyntaxAnalyzer;
         let content = b"sudo apt-get update\n";
@@ -7743,6 +8205,24 @@ printf '%s\n' "https://example.test"
             line: Some(1),
             column: Some(1),
             byte_offset: None,
+        }
+    }
+
+    fn risk_signal(
+        kind: SecuritySignalKind,
+        risk: u8,
+        source: Option<SecuritySource>,
+        sink: Option<SecuritySink>,
+    ) -> SecuritySignal {
+        SecuritySignal {
+            location: signal_location("scripts/check.sh"),
+            kind,
+            source,
+            sink,
+            risk: SecurityRiskScore::new(risk),
+            confidence: AnalyzerConfidence::High,
+            classification: ClassificationMethod::RegexFallback,
+            evidence: "matched security behavior".to_owned(),
         }
     }
 
