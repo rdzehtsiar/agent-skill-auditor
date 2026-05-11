@@ -5,12 +5,15 @@ use std::error::Error;
 use std::fmt;
 use std::str::FromStr;
 
-use agent_audit_core::{FindingCategory, ScanReport, Severity, SkillFinding, SkillPackage};
+use agent_audit_core::{
+    CompatibilityMatrix, FindingCategory, ScanReport, Severity, SkillFinding, SkillPackage,
+};
 use agent_audit_rules::{active_rule_metadata, RuleMetadata, RuleSeverity};
 use serde_json::{json, Value};
 
 pub const SUPPORTED_REPORT_FORMATS: &[&str] = &["summary", "json", "sarif", "html"];
 pub const SUPPORTED_REPORT_FORMATS_HELP: &str = "supported: summary, json, sarif, html";
+const SUMMARY_COMPATIBILITY_ROW_LIMIT: usize = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReportFormat {
@@ -100,6 +103,8 @@ pub fn render_summary(report: &ScanReport) -> String {
         ),
     ];
 
+    extend_compatibility_summary(&mut lines, &report.compatibility);
+
     let findings = sorted_findings(&report.findings);
     if findings.is_empty() {
         lines.push(String::new());
@@ -121,6 +126,112 @@ pub fn render_summary(report: &ScanReport) -> String {
     }
 
     lines.join("\n")
+}
+
+fn extend_compatibility_summary(lines: &mut Vec<String>, compatibility: &CompatibilityMatrix) {
+    if compatibility.is_empty() {
+        return;
+    }
+
+    let counts = compatibility_status_counts(compatibility);
+    lines.push(String::new());
+    lines.push("Compatibility:".to_owned());
+    lines.push(format!("Profiles: {}", compatibility.profiles.join(", ")));
+    lines.push(format!(
+        "Status totals: pass={} warn={} fail={} unknown={}",
+        counts.pass, counts.warn, counts.fail, counts.unknown
+    ));
+    lines.push("Profile totals:".to_owned());
+    for profile in &compatibility.profiles {
+        let counts = compatibility_status_counts_for_profile(compatibility, profile);
+        lines.push(format!(
+            "- {}: pass={} warn={} fail={} unknown={}",
+            profile, counts.pass, counts.warn, counts.fail, counts.unknown
+        ));
+    }
+
+    if compatibility.matrix.is_empty() {
+        return;
+    }
+
+    if compatibility.matrix.len() > SUMMARY_COMPATIBILITY_ROW_LIMIT {
+        lines.push(format!(
+            "Rows: {} packages omitted from summary",
+            compatibility.matrix.len()
+        ));
+        return;
+    }
+
+    lines.push("Rows:".to_owned());
+    for row in &compatibility.matrix {
+        let name = row
+            .name
+            .as_deref()
+            .map(|name| format!(" ({name})"))
+            .unwrap_or_default();
+        let profile_statuses = row
+            .profiles
+            .iter()
+            .map(|profile| {
+                let mut status = format!("{}={}", profile.profile, profile.status.as_str());
+                if !profile.finding_ids.is_empty() {
+                    status.push('(');
+                    status.push_str(&profile.finding_ids.join(","));
+                    status.push(')');
+                }
+                status
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        lines.push(format!("- {}{}: {}", row.path, name, profile_statuses));
+    }
+}
+
+#[derive(Default)]
+struct CompatibilityStatusCounts {
+    pass: usize,
+    warn: usize,
+    fail: usize,
+    unknown: usize,
+}
+
+fn compatibility_status_counts(compatibility: &CompatibilityMatrix) -> CompatibilityStatusCounts {
+    let mut counts = CompatibilityStatusCounts::default();
+
+    for row in &compatibility.matrix {
+        for profile in &row.profiles {
+            add_compatibility_status_count(&mut counts, profile.status.as_str());
+        }
+    }
+
+    counts
+}
+
+fn compatibility_status_counts_for_profile(
+    compatibility: &CompatibilityMatrix,
+    profile_id: &str,
+) -> CompatibilityStatusCounts {
+    let mut counts = CompatibilityStatusCounts::default();
+
+    for row in &compatibility.matrix {
+        for profile in &row.profiles {
+            if profile.profile == profile_id {
+                add_compatibility_status_count(&mut counts, profile.status.as_str());
+            }
+        }
+    }
+
+    counts
+}
+
+fn add_compatibility_status_count(counts: &mut CompatibilityStatusCounts, status: &str) {
+    match status {
+        "pass" => counts.pass += 1,
+        "warn" => counts.warn += 1,
+        "fail" => counts.fail += 1,
+        "unknown" => counts.unknown += 1,
+        _ => counts.unknown += 1,
+    }
 }
 
 pub fn render_json(report: &ScanReport) -> serde_json::Result<String> {
@@ -592,6 +703,125 @@ mod tests {
             summary,
             "Agent Skill Auditor scan summary\nPackages: 2\nFindings: 0\nSuppressed findings: 4\nInvalid manifests: 1\nBroken references: 0\n\nNo findings."
         );
+    }
+
+    #[test]
+    fn summary_output_includes_compatibility_totals_and_rows() {
+        let mut report = report_with_summary(2, 1, 0, 0, 0);
+        report.compatibility = serde_json::from_value(json!({
+            "profiles": ["agent-skills-spec", "codex", "generic"],
+            "matrix": [
+                {
+                    "path": "alpha/SKILL.md",
+                    "name": "alpha",
+                    "profiles": [
+                        {
+                            "profile": "agent-skills-spec",
+                            "status": "pass",
+                            "finding_ids": []
+                        },
+                        {
+                            "profile": "codex",
+                            "status": "warn",
+                            "finding_ids": ["SKILL050"]
+                        },
+                        {
+                            "profile": "generic",
+                            "status": "pass",
+                            "finding_ids": []
+                        }
+                    ]
+                },
+                {
+                    "path": "beta/SKILL.md",
+                    "name": null,
+                    "profiles": [
+                        {
+                            "profile": "agent-skills-spec",
+                            "status": "fail",
+                            "finding_ids": ["SKILL002"]
+                        },
+                        {
+                            "profile": "codex",
+                            "status": "unknown",
+                            "finding_ids": []
+                        },
+                        {
+                            "profile": "generic",
+                            "status": "warn",
+                            "finding_ids": ["SKILL040"]
+                        }
+                    ]
+                }
+            ]
+        }))
+        .expect("compatibility matrix fixture");
+
+        let summary = render_summary(&report);
+
+        assert_in_order(
+            &summary,
+            &[
+                "Broken references: 0",
+                "Compatibility:",
+                "Profiles: agent-skills-spec, codex, generic",
+                "Status totals: pass=2 warn=2 fail=1 unknown=1",
+                "Profile totals:",
+                "- agent-skills-spec: pass=1 warn=0 fail=1 unknown=0",
+                "- codex: pass=0 warn=1 fail=0 unknown=1",
+                "- generic: pass=1 warn=1 fail=0 unknown=0",
+                "Rows:",
+                "- alpha/SKILL.md (alpha): agent-skills-spec=pass, codex=warn(SKILL050), generic=pass",
+                "- beta/SKILL.md: agent-skills-spec=fail(SKILL002), codex=unknown, generic=warn(SKILL040)",
+                "No findings.",
+            ],
+        );
+    }
+
+    #[test]
+    fn summary_output_handles_profile_selection_without_matrix_rows() {
+        let mut report = report_with_summary(0, 0, 0, 0, 0);
+        report.compatibility = CompatibilityMatrix {
+            profiles: vec!["codex".to_owned(), "generic".to_owned()],
+            matrix: Vec::new(),
+        };
+
+        let summary = render_summary(&report);
+
+        assert!(summary.contains("Profiles: codex, generic"));
+        assert!(summary.contains("Status totals: pass=0 warn=0 fail=0 unknown=0"));
+        assert!(!summary.contains("Rows:\n"));
+    }
+
+    #[test]
+    fn summary_output_omits_large_compatibility_row_sets() {
+        let mut report = report_with_summary(6, 0, 0, 0, 0);
+        let matrix = (0..6)
+            .map(|index| {
+                json!({
+                    "path": format!("skill-{index}/SKILL.md"),
+                    "name": format!("skill-{index}"),
+                    "profiles": [
+                        {
+                            "profile": "codex",
+                            "status": "warn",
+                            "finding_ids": []
+                        }
+                    ]
+                })
+            })
+            .collect::<Vec<_>>();
+        report.compatibility = serde_json::from_value(json!({
+            "profiles": ["codex"],
+            "matrix": matrix
+        }))
+        .expect("compatibility matrix fixture");
+
+        let summary = render_summary(&report);
+
+        assert!(summary.contains("- codex: pass=0 warn=6 fail=0 unknown=0"));
+        assert!(summary.contains("Rows: 6 packages omitted from summary"));
+        assert!(!summary.contains("skill-0/SKILL.md"));
     }
 
     #[test]

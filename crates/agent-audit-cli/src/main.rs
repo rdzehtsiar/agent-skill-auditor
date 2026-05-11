@@ -559,6 +559,11 @@ description: Summary output fixture.
         assert!(output.starts_with("Agent Skill Auditor scan summary\n"));
         assert!(output.contains("Packages: 1\n"));
         assert!(output.contains("Findings: "));
+        assert!(output.contains("Compatibility:\n"));
+        assert!(output.contains(
+            "Profiles: agent-skills-spec, claude-code, codex, github-copilot, vscode-copilot, generic"
+        ));
+        assert!(output.contains("- SKILL.md (summary-output): agent-skills-spec=pass"));
         assert!(output.ends_with('\n'));
     }
 
