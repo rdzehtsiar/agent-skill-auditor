@@ -1060,13 +1060,11 @@ ignore:
 "#,
         );
 
-        let output = run_scan_output(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Summary,
-            config: Some(workspace.root.join("agent-audit.yaml")),
-            fail_on: Vec::new(),
-            profiles: Vec::new(),
-        })
+        let output = run_scan_output(configured_scan_command(
+            &workspace,
+            ReportFormat::Summary,
+            "agent-audit.yaml",
+        ))
         .expect("valid config should load before scan");
 
         assert!(output.contains("Packages: 1\n"));
@@ -1086,13 +1084,11 @@ profiles:
 "#,
         );
 
-        let output = run_scan_output(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Json,
-            config: Some(workspace.root.join("agent-audit.yaml")),
-            fail_on: Vec::new(),
-            profiles: vec!["claude-code".to_owned(), "agent-skills-spec".to_owned()],
-        })
+        let output = run_scan_output(configured_profile_scan_command(
+            &workspace,
+            ReportFormat::Json,
+            &["claude-code", "agent-skills-spec"],
+        ))
         .expect("CLI profiles should override config profiles");
         let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
 
@@ -1119,13 +1115,11 @@ profiles:
 "#,
         );
 
-        let output = run_scan_output(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Json,
-            config: Some(workspace.root.join("agent-audit.yaml")),
-            fail_on: Vec::new(),
-            profiles: Vec::new(),
-        })
+        let output = run_scan_output(configured_scan_command(
+            &workspace,
+            ReportFormat::Json,
+            "agent-audit.yaml",
+        ))
         .expect("omitted CLI profiles should leave config profiles");
         let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
 
@@ -1151,13 +1145,11 @@ profiles:
 "#,
         );
 
-        let output = run_scan_output(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Json,
-            config: Some(workspace.root.join("agent-audit.yaml")),
-            fail_on: Vec::new(),
-            profiles: vec!["all".to_owned()],
-        })
+        let output = run_scan_output(configured_profile_scan_command(
+            &workspace,
+            ReportFormat::Json,
+            &["all"],
+        ))
         .expect("all CLI profile should select registry order");
         let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
 
@@ -1193,13 +1185,11 @@ ignore:
 "#,
         );
 
-        let output = run_scan_output(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Json,
-            config: Some(workspace.root.join("agent-audit.yaml")),
-            fail_on: Vec::new(),
-            profiles: Vec::new(),
-        })
+        let output = run_scan_output(configured_scan_command(
+            &workspace,
+            ReportFormat::Json,
+            "agent-audit.yaml",
+        ))
         .expect("explicit config should suppress matching finding");
         let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
 
@@ -1231,13 +1221,10 @@ description: Missing explicit config fixture.
         );
         let config_path = workspace.root.join("missing.yaml");
 
-        let error = run_scan_output(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Summary,
-            config: Some(config_path.clone()),
-            fail_on: Vec::new(),
-            profiles: Vec::new(),
-        })
+        let error = run_scan_output(configured_scan_command_with_path(
+            &workspace,
+            config_path.clone(),
+        ))
         .expect_err("missing config should fail before scan");
         let message = error.to_string();
 
@@ -1261,13 +1248,10 @@ description: Malformed explicit config fixture.
         workspace.write_file("agent-audit.yaml", "profiles: [codex\n");
         let config_path = workspace.root.join("agent-audit.yaml");
 
-        let error = run_scan_output(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Summary,
-            config: Some(config_path.clone()),
-            fail_on: Vec::new(),
-            profiles: Vec::new(),
-        })
+        let error = run_scan_output(configured_scan_command_with_path(
+            &workspace,
+            config_path.clone(),
+        ))
         .expect_err("malformed config should fail before scan");
         let message = error.to_string();
 
@@ -1291,13 +1275,10 @@ description: Invalid explicit config fixture.
         workspace.write_file("agent-audit.yaml", "profiles:\n  - unknown-host\n");
         let config_path = workspace.root.join("agent-audit.yaml");
 
-        let error = run_scan_output(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Summary,
-            config: Some(config_path.clone()),
-            fail_on: Vec::new(),
-            profiles: Vec::new(),
-        })
+        let error = run_scan_output(configured_scan_command_with_path(
+            &workspace,
+            config_path.clone(),
+        ))
         .expect_err("invalid config should fail before scan");
         let message = error.to_string();
 
@@ -1322,13 +1303,10 @@ description: Invalid config fail_on fixture.
         workspace.write_file("agent-audit.yaml", "fail_on:\n  - LOW\n");
         let config_path = workspace.root.join("agent-audit.yaml");
 
-        let error = run_scan_output(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Summary,
-            config: Some(config_path.clone()),
-            fail_on: Vec::new(),
-            profiles: Vec::new(),
-        })
+        let error = run_scan_output(configured_scan_command_with_path(
+            &workspace,
+            config_path.clone(),
+        ))
         .expect_err("invalid config fail_on severity should fail before scan");
         let message = error.to_string();
 
@@ -1353,14 +1331,8 @@ description: No config discovery fixture.
         );
         workspace.write_file(".agent-audit.yaml", "profiles: [codex\n");
 
-        let output = run_scan_output(ScanCommand {
-            path: workspace.root.clone(),
-            format: ReportFormat::Summary,
-            config: None,
-            fail_on: Vec::new(),
-            profiles: Vec::new(),
-        })
-        .expect("implicit config discovery should not run");
+        let output = run_scan_output(scan_command(&workspace, ReportFormat::Summary))
+            .expect("implicit config discovery should not run");
 
         assert!(output.contains("Packages: 1\n"));
     }
@@ -1396,6 +1368,30 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
         ScanCommand {
             config: Some(workspace.root.join(config)),
             ..scan_command(workspace, format)
+        }
+    }
+
+    fn configured_profile_scan_command(
+        workspace: &CliTestWorkspace,
+        format: ReportFormat,
+        profiles: &[&str],
+    ) -> ScanCommand {
+        ScanCommand {
+            profiles: profiles
+                .iter()
+                .map(|profile| (*profile).to_owned())
+                .collect(),
+            ..configured_scan_command(workspace, format, "agent-audit.yaml")
+        }
+    }
+
+    fn configured_scan_command_with_path(
+        workspace: &CliTestWorkspace,
+        config: PathBuf,
+    ) -> ScanCommand {
+        ScanCommand {
+            config: Some(config),
+            ..scan_command(workspace, ReportFormat::Summary)
         }
     }
 

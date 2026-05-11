@@ -608,12 +608,16 @@ fn sorted_findings(findings: &[SkillFinding]) -> Vec<&SkillFinding> {
 }
 
 fn compare_findings(left: &SkillFinding, right: &SkillFinding) -> std::cmp::Ordering {
-    left.location
-        .path
-        .cmp(&right.location.path)
-        .then(left.location.line.cmp(&right.location.line))
-        .then(left.rule_id.cmp(&right.rule_id))
-        .then(left.message.cmp(&right.message))
+    sarif_finding_order_key(left).cmp(&sarif_finding_order_key(right))
+}
+
+fn sarif_finding_order_key(finding: &SkillFinding) -> (&str, Option<usize>, &str, &str) {
+    (
+        finding.location.path.as_str(),
+        finding.location.line,
+        finding.rule_id.as_str(),
+        finding.message.as_str(),
+    )
 }
 
 fn rule_indexes(findings: &[&SkillFinding]) -> BTreeMap<String, usize> {
