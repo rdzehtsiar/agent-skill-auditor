@@ -389,22 +389,64 @@ fn escape_html(value: &str) -> String {
 fn sarif_value(report: &ScanReport) -> Value {
     let sorted_findings = sorted_findings(&report.findings);
     let rule_indexes = rule_indexes(&sorted_findings);
+    let mut run = json!({
+        "tool": {
+            "driver": {
+                "name": "Agent Skill Auditor",
+                "semanticVersion": env!("CARGO_PKG_VERSION"),
+                "rules": sarif_rules(&sorted_findings)
+            }
+        },
+        "results": sarif_results(&sorted_findings, &rule_indexes, &report.compatibility)
+    });
+
+    if let Some(properties) = sarif_run_properties(&report.compatibility) {
+        run["properties"] = properties;
+    }
 
     json!({
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
         "version": "2.1.0",
-        "runs": [
-            {
-                "tool": {
-                    "driver": {
-                        "name": "Agent Skill Auditor",
-                        "semanticVersion": env!("CARGO_PKG_VERSION"),
-                        "rules": sarif_rules(&sorted_findings)
-                    }
-                },
-                "results": sarif_results(&sorted_findings, &rule_indexes)
-            }
-        ]
+        "runs": [run]
+    })
+}
+
+fn sarif_run_properties(compatibility: &CompatibilityMatrix) -> Option<Value> {
+    if compatibility.is_empty() {
+        return None;
+    }
+
+    Some(json!({
+        "compatibility": sarif_compatibility_matrix(compatibility)
+    }))
+}
+
+fn sarif_compatibility_matrix(compatibility: &CompatibilityMatrix) -> Value {
+    json!({
+        "profiles": compatibility.profiles,
+        "matrix": compatibility
+            .matrix
+            .iter()
+            .map(sarif_compatibility_row)
+            .collect::<Vec<_>>()
+    })
+}
+
+fn sarif_compatibility_row(row: &agent_audit_core::SkillCompatibilityRow) -> Value {
+    json!({
+        "path": row.path,
+        "name": row.name,
+        "profiles": row
+            .profiles
+            .iter()
+            .map(|profile| {
+                json!({
+                    "profile": profile.profile,
+                    "status": profile.status.as_str(),
+                    "findingIds": profile.finding_ids
+                })
+            })
+            .collect::<Vec<_>>()
     })
 }
 
@@ -505,7 +547,11 @@ fn sarif_rule_from_finding(finding: &SkillFinding) -> Value {
     })
 }
 
-fn sarif_results(findings: &[&SkillFinding], rule_indexes: &BTreeMap<String, usize>) -> Vec<Value> {
+fn sarif_results(
+    findings: &[&SkillFinding],
+    rule_indexes: &BTreeMap<String, usize>,
+    compatibility: &CompatibilityMatrix,
+) -> Vec<Value> {
     findings
         .iter()
         .map(|finding| {
@@ -525,6 +571,15 @@ fn sarif_results(findings: &[&SkillFinding], rule_indexes: &BTreeMap<String, usi
                     }
                 }),
             };
+            let mut properties = json!({
+                "agentAuditSeverity": severity_name(finding.severity),
+                "category": category_name(finding.category)
+            });
+
+            if let Some(profiles) = sarif_compatibility_profiles_for_finding(finding, compatibility)
+            {
+                properties["compatibilityProfiles"] = profiles;
+            }
 
             json!({
                 "ruleId": finding.rule_id,
@@ -538,13 +593,40 @@ fn sarif_results(findings: &[&SkillFinding], rule_indexes: &BTreeMap<String, usi
                         "physicalLocation": physical_location
                     }
                 ],
-                "properties": {
-                    "agentAuditSeverity": severity_name(finding.severity),
-                    "category": category_name(finding.category)
-                }
+                "properties": properties
             })
         })
         .collect()
+}
+
+fn sarif_compatibility_profiles_for_finding(
+    finding: &SkillFinding,
+    compatibility: &CompatibilityMatrix,
+) -> Option<Value> {
+    let profiles = compatibility
+        .matrix
+        .iter()
+        .filter(|row| row.path == finding.location.path)
+        .flat_map(|row| row.profiles.iter())
+        .filter(|profile| {
+            profile
+                .finding_ids
+                .iter()
+                .any(|rule_id| rule_id == &finding.rule_id)
+        })
+        .map(|profile| {
+            json!({
+                "profile": profile.profile,
+                "status": profile.status.as_str()
+            })
+        })
+        .collect::<Vec<_>>();
+
+    if profiles.is_empty() {
+        None
+    } else {
+        Some(Value::Array(profiles))
+    }
 }
 
 fn sarif_uri_reference(path: &str) -> String {
@@ -1360,6 +1442,67 @@ mod tests {
     }
 
     #[test]
+    fn sarif_output_includes_compact_compatibility_matrix_when_findings_are_empty() {
+        let mut report = report_with_findings(Vec::new());
+        report.compatibility = serde_json::from_value(json!({
+            "profiles": ["agent-skills-spec", "codex"],
+            "matrix": [
+                {
+                    "path": "skills/portable/SKILL.md",
+                    "name": "portable",
+                    "profiles": [
+                        {
+                            "profile": "agent-skills-spec",
+                            "status": "pass",
+                            "finding_ids": []
+                        },
+                        {
+                            "profile": "codex",
+                            "status": "warn",
+                            "finding_ids": ["SKILL050"]
+                        }
+                    ]
+                }
+            ]
+        }))
+        .expect("compatibility matrix fixture");
+
+        let value = render_sarif_value(&report);
+
+        assert_eq!(
+            value["runs"][0]["properties"]["compatibility"],
+            json!({
+                "profiles": ["agent-skills-spec", "codex"],
+                "matrix": [
+                    {
+                        "path": "skills/portable/SKILL.md",
+                        "name": "portable",
+                        "profiles": [
+                            {
+                                "profile": "agent-skills-spec",
+                                "status": "pass",
+                                "findingIds": []
+                            },
+                            {
+                                "profile": "codex",
+                                "status": "warn",
+                                "findingIds": ["SKILL050"]
+                            }
+                        ]
+                    }
+                ]
+            })
+        );
+        assert_eq!(
+            value["runs"][0]["results"]
+                .as_array()
+                .expect("results array")
+                .len(),
+            0
+        );
+    }
+
+    #[test]
     fn sarif_output_uses_only_unsuppressed_findings() {
         let mut report = report_with_findings(vec![finding(
             "SKILL002",
@@ -1557,6 +1700,110 @@ mod tests {
         assert_eq!(rule["defaultConfiguration"]["level"], "warning");
         assert_eq!(rule["properties"]["agentAuditSeverity"], "low");
         assert_eq!(rule["properties"]["category"], "compatibility");
+    }
+
+    #[test]
+    fn sarif_compatibility_results_include_profile_context_from_matrix() {
+        let mut report = report_with_findings(vec![
+            finding(
+                "SKILL050",
+                Severity::Low,
+                FindingCategory::Compatibility,
+                "Invalid host-specific metadata",
+                "Codex and Generic profile context should be attached.",
+                "skills/beta/SKILL.md",
+                Some(3),
+            ),
+            finding(
+                "SKILL040",
+                Severity::Low,
+                FindingCategory::Compatibility,
+                "Unknown frontmatter field",
+                "Claude context should be attached.",
+                "skills/alpha/SKILL.md",
+                Some(2),
+            ),
+        ]);
+        report.compatibility = serde_json::from_value(json!({
+            "profiles": ["claude-code", "codex", "generic"],
+            "matrix": [
+                {
+                    "path": "skills/beta/SKILL.md",
+                    "name": "beta",
+                    "profiles": [
+                        {
+                            "profile": "claude-code",
+                            "status": "pass",
+                            "finding_ids": []
+                        },
+                        {
+                            "profile": "codex",
+                            "status": "warn",
+                            "finding_ids": ["SKILL050"]
+                        },
+                        {
+                            "profile": "generic",
+                            "status": "unknown",
+                            "finding_ids": ["SKILL050"]
+                        }
+                    ]
+                },
+                {
+                    "path": "skills/alpha/SKILL.md",
+                    "name": "alpha",
+                    "profiles": [
+                        {
+                            "profile": "claude-code",
+                            "status": "warn",
+                            "finding_ids": ["SKILL040"]
+                        },
+                        {
+                            "profile": "codex",
+                            "status": "pass",
+                            "finding_ids": []
+                        },
+                        {
+                            "profile": "generic",
+                            "status": "pass",
+                            "finding_ids": []
+                        }
+                    ]
+                }
+            ]
+        }))
+        .expect("compatibility matrix fixture");
+
+        let value = render_sarif_value(&report);
+        let results = value["runs"][0]["results"]
+            .as_array()
+            .expect("results array");
+
+        assert_eq!(
+            sarif_result_paths(&value),
+            vec!["skills/alpha/SKILL.md", "skills/beta/SKILL.md"]
+        );
+        assert_eq!(
+            results[0]["properties"]["compatibilityProfiles"],
+            json!([
+                {
+                    "profile": "claude-code",
+                    "status": "warn"
+                }
+            ])
+        );
+        assert_eq!(
+            results[1]["properties"]["compatibilityProfiles"],
+            json!([
+                {
+                    "profile": "codex",
+                    "status": "warn"
+                },
+                {
+                    "profile": "generic",
+                    "status": "unknown"
+                }
+            ])
+        );
     }
 
     #[test]
