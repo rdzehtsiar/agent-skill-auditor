@@ -4209,85 +4209,32 @@ fn javascript_uncommented_line(line: &str, state: &mut JavaScriptLineMaskState) 
 
     while index < bytes.len() {
         if state.in_block_comment {
-            if bytes
-                .get(index..index + 2)
-                .is_some_and(|candidate| candidate == b"*/")
-            {
-                output[index] = b' ';
-                output[index + 1] = b' ';
-                state.in_block_comment = false;
-                index += 2;
-            } else {
-                output[index] = b' ';
-                index += 1;
-            }
+            index = mask_javascript_block_comment(bytes, &mut output, index, state);
             continue;
         }
 
         if state.in_template_literal {
-            output[index] = b' ';
-            let byte = bytes[index];
-            if state.template_escaped {
-                state.template_escaped = false;
-            } else if byte == b'\\' {
-                state.template_escaped = true;
-            } else if byte == b'`' {
-                state.in_template_literal = false;
-            }
-            index += 1;
+            index = mask_javascript_template_literal(bytes, &mut output, index, state);
             continue;
         }
 
         let byte = bytes[index];
-        if escaped {
-            escaped = false;
+        if scan_javascript_quoted_content(byte, &mut quote, &mut escaped) {
             index += 1;
             continue;
         }
 
-        if quote.is_some() && byte == b'\\' {
-            escaped = true;
+        if start_javascript_template_literal(byte, &mut output, index, state) {
             index += 1;
             continue;
         }
 
-        if let Some(active_quote) = quote {
-            if byte == active_quote {
-                quote = None;
-            }
-            index += 1;
-            continue;
-        }
-
-        if matches!(byte, b'\'' | b'"') {
-            quote = Some(byte);
-            index += 1;
-            continue;
-        }
-
-        if byte == b'`' {
-            output[index] = b' ';
-            state.in_template_literal = true;
-            state.template_escaped = false;
-            index += 1;
-            continue;
-        }
-
-        if bytes
-            .get(index..index + 2)
-            .is_some_and(|candidate| candidate == b"//")
-        {
+        if javascript_starts_with(bytes, index, b"//") {
             mask_byte_range(&mut output, index, bytes.len());
             break;
         }
 
-        if bytes
-            .get(index..index + 2)
-            .is_some_and(|candidate| candidate == b"/*")
-        {
-            output[index] = b' ';
-            output[index + 1] = b' ';
-            state.in_block_comment = true;
+        if start_javascript_block_comment(bytes, &mut output, index, state) {
             index += 2;
             continue;
         }
@@ -4296,6 +4243,104 @@ fn javascript_uncommented_line(line: &str, state: &mut JavaScriptLineMaskState) 
     }
 
     String::from_utf8(output).expect("masking ASCII bytes preserves UTF-8")
+}
+
+fn mask_javascript_block_comment(
+    bytes: &[u8],
+    output: &mut [u8],
+    index: usize,
+    state: &mut JavaScriptLineMaskState,
+) -> usize {
+    output[index] = b' ';
+    if javascript_starts_with(bytes, index, b"*/") {
+        output[index + 1] = b' ';
+        state.in_block_comment = false;
+        index + 2
+    } else {
+        index + 1
+    }
+}
+
+fn mask_javascript_template_literal(
+    bytes: &[u8],
+    output: &mut [u8],
+    index: usize,
+    state: &mut JavaScriptLineMaskState,
+) -> usize {
+    output[index] = b' ';
+    let byte = bytes[index];
+    if state.template_escaped {
+        state.template_escaped = false;
+    } else if byte == b'\\' {
+        state.template_escaped = true;
+    } else if byte == b'`' {
+        state.in_template_literal = false;
+    }
+    index + 1
+}
+
+fn scan_javascript_quoted_content(byte: u8, quote: &mut Option<u8>, escaped: &mut bool) -> bool {
+    if *escaped {
+        *escaped = false;
+        return true;
+    }
+
+    if quote.is_some() && byte == b'\\' {
+        *escaped = true;
+        return true;
+    }
+
+    if let Some(active_quote) = *quote {
+        if byte == active_quote {
+            *quote = None;
+        }
+        return true;
+    }
+
+    if matches!(byte, b'\'' | b'"') {
+        *quote = Some(byte);
+        return true;
+    }
+
+    false
+}
+
+fn start_javascript_template_literal(
+    byte: u8,
+    output: &mut [u8],
+    index: usize,
+    state: &mut JavaScriptLineMaskState,
+) -> bool {
+    if byte != b'`' {
+        return false;
+    }
+
+    output[index] = b' ';
+    state.in_template_literal = true;
+    state.template_escaped = false;
+    true
+}
+
+fn start_javascript_block_comment(
+    bytes: &[u8],
+    output: &mut [u8],
+    index: usize,
+    state: &mut JavaScriptLineMaskState,
+) -> bool {
+    if !javascript_starts_with(bytes, index, b"/*") {
+        return false;
+    }
+
+    output[index] = b' ';
+    output[index + 1] = b' ';
+    state.in_block_comment = true;
+    true
+}
+
+fn javascript_starts_with(bytes: &[u8], index: usize, token: &[u8]) -> bool {
+    bytes
+        .get(index..index + token.len())
+        .is_some_and(|candidate| candidate == token)
 }
 
 fn find_javascript_env_reads(line: &str) -> Vec<(usize, String)> {
@@ -6669,8 +6714,7 @@ mod tests {
 
     #[test]
     fn python_top_level_arguments_ignore_nested_and_quoted_commas() {
-        let args =
-            r#"'out,side.txt', dict(mode="w,plus", nested=[1, (2, 3)]), "escaped \", comma", mode='w'"#;
+        let args = r#"'out,side.txt', dict(mode="w,plus", nested=[1, (2, 3)]), "escaped \", comma", mode='w'"#;
 
         assert_eq!(
             python_top_level_arguments(args),
