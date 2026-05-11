@@ -2845,36 +2845,16 @@ fn python_line_without_triple_quoted_strings(line: &str, active_quote: &mut Opti
     let mut escaped = false;
 
     while index < bytes.len() {
-        if let Some(quote) = *active_quote {
-            if let Some(close_index) = find_python_triple_quote(bytes, index, quote) {
-                mask_byte_range(&mut masked, index, close_index + 3);
-                *active_quote = None;
-                index = close_index + 3;
-            } else {
-                mask_byte_range(&mut masked, index, bytes.len());
-                break;
-            }
+        if active_quote.is_some() {
+            index = mask_active_python_triple_quote(bytes, &mut masked, index, active_quote);
             continue;
         }
 
         let byte = bytes[index];
-        if escaped {
-            escaped = false;
-            index += 1;
-            continue;
-        }
-
-        if inline_quote.is_some() && byte == b'\\' {
-            escaped = true;
-            index += 1;
-            continue;
-        }
-
-        if let Some(quote) = inline_quote {
-            if byte == quote {
-                inline_quote = None;
-            }
-            index += 1;
+        if let Some(next_index) =
+            consume_python_inline_string_byte(byte, index, &mut inline_quote, &mut escaped)
+        {
+            index = next_index;
             continue;
         }
 
@@ -2882,15 +2862,10 @@ fn python_line_without_triple_quoted_strings(line: &str, active_quote: &mut Opti
             break;
         }
 
-        if matches!(byte, b'\'' | b'"') {
-            if python_starts_with_triple_quote(bytes, index, byte) {
-                mask_byte_range(&mut masked, index, index + 3);
-                *active_quote = Some(byte);
-                index += 3;
-            } else {
-                inline_quote = Some(byte);
-                index += 1;
-            }
+        if let Some(next_index) =
+            consume_python_string_start(bytes, &mut masked, index, &mut inline_quote, active_quote)
+        {
+            index = next_index;
             continue;
         }
 
@@ -2898,6 +2873,72 @@ fn python_line_without_triple_quoted_strings(line: &str, active_quote: &mut Opti
     }
 
     String::from_utf8(masked).expect("masking ASCII bytes preserves UTF-8")
+}
+
+fn mask_active_python_triple_quote(
+    bytes: &[u8],
+    masked: &mut [u8],
+    index: usize,
+    active_quote: &mut Option<u8>,
+) -> usize {
+    let quote = active_quote.expect("active triple quote must be present");
+
+    if let Some(close_index) = find_python_triple_quote(bytes, index, quote) {
+        mask_byte_range(masked, index, close_index + 3);
+        *active_quote = None;
+        close_index + 3
+    } else {
+        mask_byte_range(masked, index, bytes.len());
+        bytes.len()
+    }
+}
+
+fn consume_python_inline_string_byte(
+    byte: u8,
+    index: usize,
+    inline_quote: &mut Option<u8>,
+    escaped: &mut bool,
+) -> Option<usize> {
+    if *escaped {
+        *escaped = false;
+        return Some(index + 1);
+    }
+
+    if inline_quote.is_some() && byte == b'\\' {
+        *escaped = true;
+        return Some(index + 1);
+    }
+
+    if let Some(quote) = *inline_quote {
+        if byte == quote {
+            *inline_quote = None;
+        }
+        return Some(index + 1);
+    }
+
+    None
+}
+
+fn consume_python_string_start(
+    bytes: &[u8],
+    masked: &mut [u8],
+    index: usize,
+    inline_quote: &mut Option<u8>,
+    active_quote: &mut Option<u8>,
+) -> Option<usize> {
+    let byte = bytes[index];
+    if !matches!(byte, b'\'' | b'"') {
+        return None;
+    }
+
+    if python_starts_with_triple_quote(bytes, index, byte) {
+        mask_byte_range(masked, index, index + 3);
+        *active_quote = Some(byte);
+        Some(index + 3)
+    } else {
+        *inline_quote = Some(byte);
+        Some(index + 1)
+    }
 }
 
 fn python_starts_with_triple_quote(bytes: &[u8], index: usize, quote: u8) -> bool {
