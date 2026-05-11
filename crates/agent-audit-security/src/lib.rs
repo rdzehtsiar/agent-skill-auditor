@@ -43,21 +43,604 @@ pub enum SecurityArtifactKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SecurityLanguage {
-    Bash,
+    Shell,
     Binary,
     #[serde(rename = "javascript")]
     JavaScript,
     Json,
-    Markdown,
-    #[serde(rename = "powershell")]
-    PowerShell,
+    Ruby,
+    Go,
+    Rust,
     Python,
-    Text,
-    Toml,
     #[serde(rename = "typescript")]
     TypeScript,
     Unknown,
     Yaml,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct SecurityArtifactClassification {
+    pub path: String,
+    pub language: SecurityLanguage,
+    pub method: SecurityArtifactClassificationMethod,
+    pub signals: Vec<SecurityArtifactClassificationSignal>,
+    pub executable: bool,
+    pub text_parsing_allowed: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SecurityArtifactClassificationMethod {
+    BinaryContent,
+    Shebang,
+    Extension,
+    ContentSniff,
+    ExecutableContent,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SecurityArtifactClassificationSignal {
+    BinaryContent,
+    Shebang,
+    Extension,
+    ContentSniff,
+    ExecutableBit,
+}
+
+pub fn classify_security_artifact(
+    path: &str,
+    content_prefix: &[u8],
+    executable: bool,
+) -> Option<SecurityArtifactClassification> {
+    let normalized_path = normalize_scan_relative_path(path)?;
+    Some(classify_normalized_security_artifact(
+        normalized_path,
+        content_prefix,
+        executable,
+    ))
+}
+
+fn classify_normalized_security_artifact(
+    path: String,
+    content_prefix: &[u8],
+    executable: bool,
+) -> SecurityArtifactClassification {
+    let executable_signal =
+        executable.then_some(SecurityArtifactClassificationSignal::ExecutableBit);
+
+    // Classification precedence is intentionally conservative and deterministic:
+    // binary content prevents every text classifier, known shebangs outrank file
+    // extensions, extensions outrank content sniffing, and the executable bit can
+    // only promote extensionless shell-like text when shell syntax is also present.
+    if is_binary_content(content_prefix) {
+        return SecurityArtifactClassification {
+            path,
+            language: SecurityLanguage::Binary,
+            method: SecurityArtifactClassificationMethod::BinaryContent,
+            signals: append_optional_signal(
+                vec![SecurityArtifactClassificationSignal::BinaryContent],
+                executable_signal,
+            ),
+            executable,
+            text_parsing_allowed: false,
+        };
+    }
+
+    if let Some(language) = shebang_language(content_prefix) {
+        return SecurityArtifactClassification {
+            path,
+            language,
+            method: SecurityArtifactClassificationMethod::Shebang,
+            signals: append_optional_signal(
+                vec![SecurityArtifactClassificationSignal::Shebang],
+                executable_signal,
+            ),
+            executable,
+            text_parsing_allowed: true,
+        };
+    }
+
+    if let Some(language) = extension_language(&path) {
+        return SecurityArtifactClassification {
+            path,
+            language,
+            method: SecurityArtifactClassificationMethod::Extension,
+            signals: append_optional_signal(
+                vec![SecurityArtifactClassificationSignal::Extension],
+                executable_signal,
+            ),
+            executable,
+            text_parsing_allowed: true,
+        };
+    }
+
+    if let Some(language) = sniff_content_language(content_prefix, executable) {
+        let method = if language == SecurityLanguage::Shell && executable {
+            SecurityArtifactClassificationMethod::ExecutableContent
+        } else {
+            SecurityArtifactClassificationMethod::ContentSniff
+        };
+        return SecurityArtifactClassification {
+            path,
+            language,
+            method,
+            signals: append_optional_signal(
+                vec![SecurityArtifactClassificationSignal::ContentSniff],
+                executable_signal,
+            ),
+            executable,
+            text_parsing_allowed: true,
+        };
+    }
+
+    SecurityArtifactClassification {
+        path,
+        language: SecurityLanguage::Unknown,
+        method: SecurityArtifactClassificationMethod::Unknown,
+        signals: executable_signal.into_iter().collect(),
+        executable,
+        text_parsing_allowed: true,
+    }
+}
+
+fn append_optional_signal(
+    mut signals: Vec<SecurityArtifactClassificationSignal>,
+    signal: Option<SecurityArtifactClassificationSignal>,
+) -> Vec<SecurityArtifactClassificationSignal> {
+    if let Some(signal) = signal {
+        signals.push(signal);
+    }
+    signals
+}
+
+fn is_binary_content(content: &[u8]) -> bool {
+    if content.is_empty() {
+        return false;
+    }
+    if content.contains(&0) || std::str::from_utf8(content).is_err() {
+        return true;
+    }
+
+    let control_count = content
+        .iter()
+        .filter(|&&byte| byte.is_ascii_control() && !matches!(byte, b'\t' | b'\n' | b'\r' | 0x0c))
+        .count();
+
+    control_count >= 4 && control_count * 100 / content.len() > 30
+}
+
+fn shebang_language(content: &[u8]) -> Option<SecurityLanguage> {
+    let text = std::str::from_utf8(content).ok()?;
+    let shebang = text.strip_prefix("#!")?;
+    let first_line = shebang.lines().next().unwrap_or_default();
+    let mut tokens = first_line.split_ascii_whitespace();
+    let first = tokens.next()?;
+    if interpreter_basename(first).eq_ignore_ascii_case("env") {
+        for token in tokens {
+            if token == "-S" || token.starts_with('-') {
+                continue;
+            }
+            return interpreter_language(token);
+        }
+        None
+    } else {
+        interpreter_language(first)
+    }
+}
+
+fn interpreter_language(token: &str) -> Option<SecurityLanguage> {
+    let name = interpreter_basename(token).to_ascii_lowercase();
+    let name = name.strip_suffix(".exe").unwrap_or(&name);
+    match name {
+        "sh" | "bash" | "dash" | "zsh" | "ksh" | "fish" => Some(SecurityLanguage::Shell),
+        "python" | "python2" | "python3" => Some(SecurityLanguage::Python),
+        "node" | "nodejs" | "deno" | "bun" => Some(SecurityLanguage::JavaScript),
+        "ts-node" | "tsx" => Some(SecurityLanguage::TypeScript),
+        "ruby" | "rb" => Some(SecurityLanguage::Ruby),
+        _ => None,
+    }
+}
+
+fn interpreter_basename(token: &str) -> &str {
+    token.rsplit(['/', '\\']).next().unwrap_or(token)
+}
+
+fn extension_language(path: &str) -> Option<SecurityLanguage> {
+    let extension = path.rsplit_once('.')?.1.to_ascii_lowercase();
+    match extension.as_str() {
+        "sh" | "bash" | "zsh" | "ksh" | "dash" | "fish" => Some(SecurityLanguage::Shell),
+        "py" | "pyw" => Some(SecurityLanguage::Python),
+        "js" | "cjs" | "mjs" => Some(SecurityLanguage::JavaScript),
+        "ts" | "cts" | "mts" => Some(SecurityLanguage::TypeScript),
+        "rb" => Some(SecurityLanguage::Ruby),
+        "go" => Some(SecurityLanguage::Go),
+        "rs" => Some(SecurityLanguage::Rust),
+        "yaml" | "yml" => Some(SecurityLanguage::Yaml),
+        "json" => Some(SecurityLanguage::Json),
+        _ => None,
+    }
+}
+
+fn sniff_content_language(content: &[u8], executable: bool) -> Option<SecurityLanguage> {
+    let text = std::str::from_utf8(content).ok()?;
+    let trimmed = text.trim_start_matches('\u{feff}').trim_start();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+
+    if has_json_document_start(trimmed) {
+        return Some(SecurityLanguage::Json);
+    }
+    if trimmed.starts_with("---\n")
+        || trimmed.starts_with("---\r\n")
+        || has_yaml_directive_start(&lower)
+        || has_yaml_mapping_block(trimmed)
+    {
+        return Some(SecurityLanguage::Yaml);
+    }
+    if has_go_hint(trimmed) {
+        return Some(SecurityLanguage::Go);
+    }
+    if has_rust_hint(trimmed) {
+        return Some(SecurityLanguage::Rust);
+    }
+    if has_typescript_hint(trimmed) {
+        return Some(SecurityLanguage::TypeScript);
+    }
+    if has_javascript_hint(trimmed) {
+        return Some(SecurityLanguage::JavaScript);
+    }
+    if has_python_hint(trimmed) {
+        return Some(SecurityLanguage::Python);
+    }
+    if has_ruby_hint(trimmed) {
+        return Some(SecurityLanguage::Ruby);
+    }
+    if executable && has_shell_hint(trimmed) {
+        return Some(SecurityLanguage::Shell);
+    }
+
+    None
+}
+
+fn has_json_document_start(text: &str) -> bool {
+    if !(text.starts_with('{') || text.starts_with('[')) {
+        return false;
+    }
+
+    JsonSniffParser::new(text).parse_document()
+}
+
+struct JsonSniffParser<'a> {
+    text: &'a str,
+    index: usize,
+}
+
+impl<'a> JsonSniffParser<'a> {
+    const MAX_DEPTH: usize = 64;
+
+    fn new(text: &'a str) -> Self {
+        Self { text, index: 0 }
+    }
+
+    fn parse_document(&mut self) -> bool {
+        self.skip_json_whitespace();
+        if !matches!(self.peek_byte(), Some(b'{' | b'[')) {
+            return false;
+        }
+        self.parse_value(0) && {
+            self.skip_json_whitespace();
+            self.index == self.text.len()
+        }
+    }
+
+    fn parse_value(&mut self, depth: usize) -> bool {
+        if depth > Self::MAX_DEPTH {
+            return false;
+        }
+
+        self.skip_json_whitespace();
+        match self.peek_byte() {
+            Some(b'{') => self.parse_object(depth + 1),
+            Some(b'[') => self.parse_array(depth + 1),
+            Some(b'"') => self.parse_string(),
+            Some(b'-' | b'0'..=b'9') => self.parse_number(),
+            Some(b't') => self.consume_keyword("true"),
+            Some(b'f') => self.consume_keyword("false"),
+            Some(b'n') => self.consume_keyword("null"),
+            _ => false,
+        }
+    }
+
+    fn parse_object(&mut self, depth: usize) -> bool {
+        if !self.consume_byte(b'{') {
+            return false;
+        }
+        self.skip_json_whitespace();
+        if self.consume_byte(b'}') {
+            return true;
+        }
+
+        loop {
+            self.skip_json_whitespace();
+            if !self.parse_string() {
+                return false;
+            }
+            self.skip_json_whitespace();
+            if !self.consume_byte(b':') {
+                return false;
+            }
+            if !self.parse_value(depth) {
+                return false;
+            }
+            self.skip_json_whitespace();
+            if self.consume_byte(b'}') {
+                return true;
+            }
+            if !self.consume_byte(b',') {
+                return false;
+            }
+        }
+    }
+
+    fn parse_array(&mut self, depth: usize) -> bool {
+        if !self.consume_byte(b'[') {
+            return false;
+        }
+        self.skip_json_whitespace();
+        if self.consume_byte(b']') {
+            return true;
+        }
+
+        loop {
+            if !self.parse_value(depth) {
+                return false;
+            }
+            self.skip_json_whitespace();
+            if self.consume_byte(b']') {
+                return true;
+            }
+            if !self.consume_byte(b',') {
+                return false;
+            }
+        }
+    }
+
+    fn parse_string(&mut self) -> bool {
+        if !self.consume_byte(b'"') {
+            return false;
+        }
+
+        while let Some(byte) = self.peek_byte() {
+            match byte {
+                b'"' => {
+                    self.index += 1;
+                    return true;
+                }
+                b'\\' => {
+                    self.index += 1;
+                    if !self.parse_escape() {
+                        return false;
+                    }
+                }
+                0x00..=0x1f => return false,
+                _ => self.index += 1,
+            }
+        }
+
+        false
+    }
+
+    fn parse_escape(&mut self) -> bool {
+        match self.peek_byte() {
+            Some(b'"' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't') => {
+                self.index += 1;
+                true
+            }
+            Some(b'u') => {
+                self.index += 1;
+                for _ in 0..4 {
+                    if !matches!(self.peek_byte(), Some(byte) if byte.is_ascii_hexdigit()) {
+                        return false;
+                    }
+                    self.index += 1;
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn parse_number(&mut self) -> bool {
+        let start = self.index;
+        self.consume_byte(b'-');
+
+        match self.peek_byte() {
+            Some(b'0') => self.index += 1,
+            Some(b'1'..=b'9') => {
+                self.index += 1;
+                while matches!(self.peek_byte(), Some(b'0'..=b'9')) {
+                    self.index += 1;
+                }
+            }
+            _ => return false,
+        }
+
+        if self.consume_byte(b'.') {
+            if !matches!(self.peek_byte(), Some(b'0'..=b'9')) {
+                return false;
+            }
+            while matches!(self.peek_byte(), Some(b'0'..=b'9')) {
+                self.index += 1;
+            }
+        }
+
+        if matches!(self.peek_byte(), Some(b'e' | b'E')) {
+            self.index += 1;
+            let _ = self.consume_byte(b'+') || self.consume_byte(b'-');
+            if !matches!(self.peek_byte(), Some(b'0'..=b'9')) {
+                return false;
+            }
+            while matches!(self.peek_byte(), Some(b'0'..=b'9')) {
+                self.index += 1;
+            }
+        }
+
+        self.index > start
+    }
+
+    fn consume_keyword(&mut self, keyword: &str) -> bool {
+        if self.text[self.index..].starts_with(keyword) {
+            self.index += keyword.len();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn skip_json_whitespace(&mut self) {
+        while matches!(self.peek_byte(), Some(b' ' | b'\n' | b'\r' | b'\t')) {
+            self.index += 1;
+        }
+    }
+
+    fn consume_byte(&mut self, expected: u8) -> bool {
+        if self.peek_byte() == Some(expected) {
+            self.index += 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn peek_byte(&self) -> Option<u8> {
+        self.text.as_bytes().get(self.index).copied()
+    }
+}
+
+fn has_yaml_directive_start(lowercase_text: &str) -> bool {
+    let directive = lowercase_text.lines().next().unwrap_or_default();
+    let Some(rest) = directive.strip_prefix("%yaml") else {
+        return false;
+    };
+
+    rest.is_empty() || rest.starts_with(char::is_whitespace)
+}
+
+fn has_yaml_mapping_block(text: &str) -> bool {
+    let mut mapping_entries = 0;
+    let mut pending_nested_value = false;
+
+    for line in text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .take(8)
+    {
+        if pending_nested_value && line.starts_with("- ") {
+            return true;
+        }
+
+        let Some((key, value)) = line.split_once(':') else {
+            return false;
+        };
+        if !is_yaml_mapping_key(key) || !(value.is_empty() || value.starts_with(' ')) {
+            return false;
+        }
+
+        mapping_entries += 1;
+        if mapping_entries >= 2 {
+            return true;
+        }
+        pending_nested_value = value.trim().is_empty();
+    }
+
+    false
+}
+
+fn is_yaml_mapping_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    matches!(chars.next(), Some(first) if first.is_ascii_lowercase())
+        && chars.all(|character| {
+            character.is_ascii_lowercase()
+                || character.is_ascii_digit()
+                || matches!(character, '_' | '-')
+        })
+}
+
+fn has_go_hint(text: &str) -> bool {
+    let Some(line) = first_meaningful_line(text) else {
+        return false;
+    };
+    line.starts_with("package ") && text.contains("\nfunc ")
+}
+
+fn has_rust_hint(text: &str) -> bool {
+    text.contains("fn main(")
+        || text.contains("\nfn ")
+        || text.starts_with("use std::")
+        || text.contains("\nuse std::")
+}
+
+fn has_typescript_hint(text: &str) -> bool {
+    text.starts_with("interface ")
+        || text.starts_with("type ")
+        || text.contains(": string")
+        || text.contains(": number")
+        || text.contains(": boolean")
+}
+
+fn has_javascript_hint(text: &str) -> bool {
+    let first_line = first_meaningful_line(text).unwrap_or_default();
+    text.starts_with("const ")
+        || text.starts_with("let ")
+        || text.starts_with("var ")
+        || (first_line.starts_with("import ")
+            && (first_line.contains(" from ")
+                || first_line.contains('"')
+                || first_line.contains('\'')
+                || first_line.ends_with(';')))
+        || text.contains("require(")
+        || text.contains("module.exports")
+}
+
+fn has_python_hint(text: &str) -> bool {
+    text.starts_with("import ")
+        || text.starts_with("from ")
+        || text.starts_with("def ")
+        || text.starts_with("class ")
+        || text.contains("if __name__ == \"__main__\":")
+        || text.contains("if __name__ == '__main__':")
+}
+
+fn has_ruby_hint(text: &str) -> bool {
+    text.starts_with("require ")
+        || text.starts_with("puts ")
+        || text.contains("\ndef ")
+        || text.contains("\nclass ")
+}
+
+fn has_shell_hint(text: &str) -> bool {
+    let Some(line) = first_meaningful_line(text) else {
+        return false;
+    };
+    line.starts_with("set -")
+        || line.starts_with("echo ")
+        || line.starts_with("export ")
+        || line.starts_with("cd ")
+        || line.starts_with("if [ ")
+        || line.starts_with("for ")
+        || text.contains("\nthen\n")
+        || text.contains("; do")
+}
+
+fn first_meaningful_line(text: &str) -> Option<&str> {
+    text.lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty() && !line.starts_with('#'))
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -437,14 +1020,14 @@ mod tests {
             SecurityArtifact {
                 path: "scripts/install.sh".to_owned(),
                 kind: SecurityArtifactKind::Script,
-                language: SecurityLanguage::Bash,
+                language: SecurityLanguage::Shell,
                 size_bytes: 120,
                 executable: true,
             },
             SecurityArtifact {
                 path: "SKILL.md".to_owned(),
                 kind: SecurityArtifactKind::Manifest,
-                language: SecurityLanguage::Markdown,
+                language: SecurityLanguage::Unknown,
                 size_bytes: 80,
                 executable: false,
             },
@@ -484,7 +1067,7 @@ mod tests {
             artifacts: vec![SecurityArtifact {
                 path: "scripts/install.sh".to_owned(),
                 kind: SecurityArtifactKind::Script,
-                language: SecurityLanguage::Bash,
+                language: SecurityLanguage::Shell,
                 size_bytes: 120,
                 executable: true,
             }],
@@ -498,7 +1081,7 @@ mod tests {
                     {
                         "path": "scripts/install.sh",
                         "kind": "script",
-                        "language": "bash",
+                        "language": "shell",
                         "size_bytes": 120,
                         "executable": true
                     }
@@ -703,11 +1286,11 @@ mod tests {
         assert_eq!(
             serde_json::to_value([
                 SecurityLanguage::JavaScript,
-                SecurityLanguage::PowerShell,
+                SecurityLanguage::Shell,
                 SecurityLanguage::TypeScript,
             ])
             .expect("serialize security languages"),
-            serde_json::json!(["javascript", "powershell", "typescript"])
+            serde_json::json!(["javascript", "shell", "typescript"])
         );
         assert_eq!(
             serde_json::to_value([
@@ -726,6 +1309,23 @@ mod tests {
             .expect("serialize selection reasons"),
             serde_json::json!(["known-artifact-directory", "executable"])
         );
+        assert_eq!(
+            serde_json::to_value([
+                SecurityArtifactClassificationMethod::BinaryContent,
+                SecurityArtifactClassificationMethod::ContentSniff,
+                SecurityArtifactClassificationMethod::ExecutableContent,
+            ])
+            .expect("serialize classification methods"),
+            serde_json::json!(["binary-content", "content-sniff", "executable-content"])
+        );
+        assert_eq!(
+            serde_json::to_value([
+                SecurityArtifactClassificationSignal::BinaryContent,
+                SecurityArtifactClassificationSignal::ExecutableBit,
+            ])
+            .expect("serialize classification signals"),
+            serde_json::json!(["binary-content", "executable-bit"])
+        );
     }
 
     #[test]
@@ -736,6 +1336,231 @@ mod tests {
             signals: vec![sudo_signal("scripts/install.sh", 9, 4)],
         }
         .is_empty());
+    }
+
+    #[test]
+    fn classification_detects_binary_before_text_signals() {
+        let classification = classify_security_artifact(
+            "scripts\\payload.py",
+            b"#!/usr/bin/env python\n\0\x01\x02\x03",
+            true,
+        )
+        .expect("safe path");
+
+        assert_eq!(classification.path, "scripts/payload.py");
+        assert_eq!(classification.language, SecurityLanguage::Binary);
+        assert_eq!(
+            classification.method,
+            SecurityArtifactClassificationMethod::BinaryContent
+        );
+        assert_eq!(
+            classification.signals,
+            vec![
+                SecurityArtifactClassificationSignal::BinaryContent,
+                SecurityArtifactClassificationSignal::ExecutableBit,
+            ]
+        );
+        assert!(!classification.text_parsing_allowed);
+    }
+
+    #[test]
+    fn classification_uses_shebang_without_extension() {
+        let classification =
+            classify_security_artifact("scripts/bootstrap", b"#!/usr/bin/env ruby\n", false)
+                .expect("safe path");
+
+        assert_eq!(classification.language, SecurityLanguage::Ruby);
+        assert_eq!(
+            classification.method,
+            SecurityArtifactClassificationMethod::Shebang
+        );
+        assert_eq!(
+            classification.signals,
+            vec![SecurityArtifactClassificationSignal::Shebang]
+        );
+        assert!(classification.text_parsing_allowed);
+    }
+
+    #[test]
+    fn classification_lets_shebang_outrank_conflicting_extension() {
+        let classification =
+            classify_security_artifact("scripts/install.sh", b"#!/usr/bin/env python3\n", true)
+                .expect("safe path");
+
+        assert_eq!(classification.language, SecurityLanguage::Python);
+        assert_eq!(
+            classification.method,
+            SecurityArtifactClassificationMethod::Shebang
+        );
+    }
+
+    #[test]
+    fn classification_uses_extension_before_conflicting_content_sniff() {
+        let classification =
+            classify_security_artifact("scripts/build.js", b"def build():\n    pass\n", false)
+                .expect("safe path");
+
+        assert_eq!(classification.language, SecurityLanguage::JavaScript);
+        assert_eq!(
+            classification.method,
+            SecurityArtifactClassificationMethod::Extension
+        );
+        assert_eq!(
+            classification.signals,
+            vec![SecurityArtifactClassificationSignal::Extension]
+        );
+    }
+
+    #[test]
+    fn classification_maps_supported_extensions_deterministically() {
+        let cases = [
+            ("scripts/run.sh", SecurityLanguage::Shell),
+            ("scripts/run.py", SecurityLanguage::Python),
+            ("scripts/run.mjs", SecurityLanguage::JavaScript),
+            ("scripts/run.ts", SecurityLanguage::TypeScript),
+            ("scripts/run.rb", SecurityLanguage::Ruby),
+            ("scripts/run.go", SecurityLanguage::Go),
+            ("scripts/run.rs", SecurityLanguage::Rust),
+            ("references/config.yaml", SecurityLanguage::Yaml),
+            ("references/config.json", SecurityLanguage::Json),
+        ];
+
+        for (path, language) in cases {
+            let first =
+                classify_security_artifact(path, b"plain text\n", false).expect("safe path");
+            let second =
+                classify_security_artifact(path, b"plain text\n", false).expect("safe path");
+
+            assert_eq!(first, second);
+            assert_eq!(first.language, language);
+            assert_eq!(
+                first.method,
+                SecurityArtifactClassificationMethod::Extension
+            );
+            assert!(first.text_parsing_allowed);
+        }
+    }
+
+    #[test]
+    fn classification_sniffs_obvious_text_formats() {
+        let json_object =
+            classify_security_artifact("references/schema", b"{\"name\":\"skill\"}", false)
+                .expect("safe path");
+        let json_array = classify_security_artifact("references/list", b"[\"notes\"]", false)
+            .expect("safe path");
+        let yaml = classify_security_artifact("references/config", b"---\nname: skill\n", false)
+            .expect("safe path");
+
+        assert_eq!(json_object.language, SecurityLanguage::Json);
+        assert_eq!(
+            json_object.method,
+            SecurityArtifactClassificationMethod::ContentSniff
+        );
+        assert_eq!(json_array.language, SecurityLanguage::Json);
+        assert_eq!(
+            json_array.method,
+            SecurityArtifactClassificationMethod::ContentSniff
+        );
+        assert_eq!(yaml.language, SecurityLanguage::Yaml);
+        assert_eq!(
+            yaml.method,
+            SecurityArtifactClassificationMethod::ContentSniff
+        );
+    }
+
+    #[test]
+    fn classification_does_not_sniff_invalid_json_like_text() {
+        for content in [b"{not json}".as_slice(), b"[notes]".as_slice()] {
+            let classification =
+                classify_security_artifact("references/notes", content, false).expect("safe path");
+
+            assert_eq!(classification.language, SecurityLanguage::Unknown);
+            assert_eq!(
+                classification.method,
+                SecurityArtifactClassificationMethod::Unknown
+            );
+        }
+    }
+
+    #[test]
+    fn classification_does_not_sniff_single_prose_label_as_yaml() {
+        let classification =
+            classify_security_artifact("references/notes", b"TODO: review install script\n", false)
+                .expect("safe path");
+
+        assert_eq!(classification.language, SecurityLanguage::Unknown);
+        assert_eq!(
+            classification.method,
+            SecurityArtifactClassificationMethod::Unknown
+        );
+    }
+
+    #[test]
+    fn classification_sniffs_obvious_script_languages() {
+        let cases = [
+            (
+                b"package main\n\nfunc main() {}\n".as_slice(),
+                SecurityLanguage::Go,
+            ),
+            (b"fn main() {}\n".as_slice(), SecurityLanguage::Rust),
+            (
+                b"interface Options { name: string }\n".as_slice(),
+                SecurityLanguage::TypeScript,
+            ),
+            (
+                b"const name = require('node:fs');\n".as_slice(),
+                SecurityLanguage::JavaScript,
+            ),
+            (b"import os\n".as_slice(), SecurityLanguage::Python),
+        ];
+
+        for (content, language) in cases {
+            let classification =
+                classify_security_artifact("scripts/helper", content, false).expect("safe path");
+            assert_eq!(classification.language, language);
+            assert_eq!(
+                classification.method,
+                SecurityArtifactClassificationMethod::ContentSniff
+            );
+        }
+    }
+
+    #[test]
+    fn classification_uses_executable_bit_only_with_shell_like_content() {
+        let shell = classify_security_artifact("scripts/install", b"set -eu\necho ready\n", true)
+            .expect("safe path");
+        let executable_text =
+            classify_security_artifact("scripts/readme", b"plain operational notes\n", true)
+                .expect("safe path");
+
+        assert_eq!(shell.language, SecurityLanguage::Shell);
+        assert_eq!(
+            shell.method,
+            SecurityArtifactClassificationMethod::ExecutableContent
+        );
+        assert_eq!(
+            shell.signals,
+            vec![
+                SecurityArtifactClassificationSignal::ContentSniff,
+                SecurityArtifactClassificationSignal::ExecutableBit,
+            ]
+        );
+        assert_eq!(executable_text.language, SecurityLanguage::Unknown);
+        assert_eq!(
+            executable_text.method,
+            SecurityArtifactClassificationMethod::Unknown
+        );
+        assert_eq!(
+            executable_text.signals,
+            vec![SecurityArtifactClassificationSignal::ExecutableBit]
+        );
+    }
+
+    #[test]
+    fn classification_rejects_unsafe_public_paths() {
+        assert!(classify_security_artifact("../scripts/run.sh", b"echo nope\n", true).is_none());
+        assert!(classify_security_artifact("https://example.test/run.sh", b"", false).is_none());
+        assert!(classify_security_artifact("C:\\tmp\\run.sh", b"", false).is_none());
     }
 
     fn sudo_signal(path: &str, line: usize, column: usize) -> SecuritySignal {
