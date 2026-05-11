@@ -1,0 +1,121 @@
+{
+  "packages": [
+    {
+      "root": "",
+      "manifest_path": "SKILL.md",
+      "manifest": {
+        "name": "suppressed-package-install",
+        "description": "Fixture for suppressing a reviewed security finding.",
+        "frontmatter": {
+          "description": "Fixture for suppressing a reviewed security finding.",
+          "name": "suppressed-package-install"
+        },
+        "body": "\n# Suppressed Package Install\n\nRun `scripts/install.sh` during setup.\n",
+        "headings": [
+          "Suppressed Package Install"
+        ],
+        "links": [],
+        "inline_code": [
+          "scripts/install.sh"
+        ],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [
+          "scripts"
+        ],
+        "files": [
+          {
+            "path": "scripts/install.sh",
+            "artifact": "scripts",
+            "kind": "file",
+            "size_bytes": 60,
+            "readonly": false
+          }
+        ]
+      }
+    }
+  ],
+  "findings": [],
+  "suppressed_findings": [
+    {
+      "finding": {
+        "rule_id": "SEC009",
+        "severity": "low",
+        "category": "security",
+        "title": "Package install without lockfile",
+        "message": "The artifact runs a JavaScript package install without nearby lockfile or exact version pinning evidence. This can make installs resolve different packages over time and increases reproducibility and supply-chain risk.",
+        "location": {
+          "path": "scripts/install.sh",
+          "line": 3
+        },
+        "rationale": "Package installs without a lockfile or equivalent pinning can resolve different dependency versions across machines and over time.",
+        "remediation": "Use lockfile-backed install commands, root-level or same-subtree ecosystem lockfiles, or complete exact package pins. The initial policy treats npm/pnpm/yarn/bun, pip, cargo, gem, and system package installs without those offline-verifiable signals as `SEC009`.",
+        "suppression": "Suppress `SEC009` only when another reviewed, offline-verifiable mechanism pins the package set and preserves reproducible installation behavior."
+      },
+      "suppression": {
+        "matched_rule": "SEC009",
+        "matched_path": "scripts/install.sh",
+        "reason": "Package install command is pinned by an external reviewed process for this fixture."
+      }
+    }
+  ],
+  "summary": {
+    "package_count": 1,
+    "finding_count": 0,
+    "suppressed_finding_count": 1,
+    "invalid_manifest_count": 0,
+    "broken_reference_count": 0
+  },
+  "compatibility": {
+    "profiles": [
+      "agent-skills-spec",
+      "claude-code",
+      "codex",
+      "github-copilot",
+      "vscode-copilot",
+      "generic"
+    ],
+    "matrix": [
+      {
+        "path": "SKILL.md",
+        "name": "suppressed-package-install",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "warn",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "warn",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "warn",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "warn",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "pass",
+            "finding_ids": []
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -410,6 +410,93 @@ mod tests {
     }
 
     #[test]
+    fn phase4_security_corpus_matches_full_json_snapshot() {
+        let first_report = scan_security_corpus(ScanOptions::default());
+        let second_report = scan_security_corpus(ScanOptions::default());
+
+        let first_json = render_json(&first_report).expect("render security corpus JSON");
+        let second_json = render_json(&second_report).expect("rerender security corpus JSON");
+        let expected_json = expected_security_corpus_json();
+
+        assert_eq!(first_json.as_bytes(), second_json.as_bytes());
+        assert_eq!(first_json, expected_json);
+        assert!(!first_json.contains("timestamp"));
+        assert!(!first_json.contains("generated_at"));
+        assert!(!json_contains_path(&first_json, &workspace_root()));
+
+        let value: serde_json::Value =
+            serde_json::from_str(&first_json).expect("parse security corpus JSON");
+        assert_eq!(value["summary"]["package_count"], 16);
+        assert_eq!(value["summary"]["finding_count"], 24);
+        assert_eq!(value["summary"]["suppressed_finding_count"], 0);
+
+        let finding_keys = json_finding_order_keys(&value);
+        let mut sorted_finding_keys = finding_keys.clone();
+        sorted_finding_keys.sort();
+        assert_eq!(finding_keys, sorted_finding_keys);
+
+        let finding_paths = value["findings"]
+            .as_array()
+            .expect("findings array")
+            .iter()
+            .map(|finding| finding["location"]["path"].as_str().expect("finding path"))
+            .collect::<Vec<_>>();
+        assert!(!finding_paths
+            .iter()
+            .any(|path| path.starts_with("benign-local-script/")));
+        assert!(!finding_paths
+            .iter()
+            .any(|path| path.starts_with("read-only-python/")));
+        assert!(finding_paths
+            .iter()
+            .any(|path| path == &"multi-language/scripts/client.js"));
+        assert!(finding_paths
+            .iter()
+            .any(|path| path == &"multi-language/scripts/send.py"));
+        assert!(finding_paths
+            .iter()
+            .any(|path| path == &"multi-language/scripts/write.ts"));
+    }
+
+    #[test]
+    fn phase4_security_suppression_fixture_matches_full_json_snapshot() {
+        let fixture_root = security_root().join("suppressed-package-install");
+        let config = parse_audit_config(
+            &fs::read_to_string(fixture_root.join("agent-audit.yaml")).expect("read config"),
+        )
+        .expect("parse security suppression config");
+        let options = ScanOptions {
+            config: Some(config),
+            ..ScanOptions::default()
+        };
+
+        let first_report = scan_path(&fixture_root, &options).expect("scan suppression fixture");
+        let second_report = scan_path(&fixture_root, &options).expect("rescan suppression fixture");
+        let first_json = render_json(&first_report).expect("render security suppression JSON");
+        let second_json = render_json(&second_report).expect("rerender security suppression JSON");
+        let expected_json = expected_security_suppression_json();
+
+        assert_eq!(first_json.as_bytes(), second_json.as_bytes());
+        assert_eq!(first_json, expected_json);
+        assert!(!first_json.contains("timestamp"));
+        assert!(!first_json.contains("generated_at"));
+        assert!(!json_contains_path(&first_json, &workspace_root()));
+
+        let value: serde_json::Value =
+            serde_json::from_str(&first_json).expect("parse security suppression JSON");
+        assert_eq!(value["summary"]["finding_count"], 0);
+        assert_eq!(value["summary"]["suppressed_finding_count"], 1);
+        assert_eq!(
+            value["suppressed_findings"][0]["finding"]["rule_id"],
+            "SEC009"
+        );
+        assert_eq!(
+            value["suppressed_findings"][0]["suppression"]["reason"],
+            "Package install command is pinned by an external reviewed process for this fixture."
+        );
+    }
+
+    #[test]
     fn json_report_schema_documents_compatibility_matrix_contract() {
         let schema = report_schema();
 
@@ -494,6 +581,14 @@ mod tests {
         workspace_root().join("fixtures/spec/phase2")
     }
 
+    fn security_root() -> PathBuf {
+        workspace_root().join("fixtures/security")
+    }
+
+    fn scan_security_corpus(options: ScanOptions) -> ScanReport {
+        scan_path(&security_root(), &options).expect("scan security corpus")
+    }
+
     fn scan_compatibility_fixture(relative_path: &str, options: ScanOptions) -> ScanReport {
         scan_path(&compatibility_root().join(relative_path), &options)
             .unwrap_or_else(|error| panic!("scan compatibility fixture {relative_path}: {error}"))
@@ -532,6 +627,17 @@ mod tests {
     fn expected_compatibility_matrix_json() -> &'static str {
         let expected =
             include_str!("../../../fixtures/compatibility/expected/matrix-full-report.json");
+        expected.strip_suffix('\n').unwrap_or(expected)
+    }
+
+    fn expected_security_corpus_json() -> &'static str {
+        let expected = include_str!("../../../fixtures/security/expected/corpus-full-report.json");
+        expected.strip_suffix('\n').unwrap_or(expected)
+    }
+
+    fn expected_security_suppression_json() -> &'static str {
+        let expected =
+            include_str!("../../../fixtures/security/expected/suppressed-package-install.json");
         expected.strip_suffix('\n').unwrap_or(expected)
     }
 

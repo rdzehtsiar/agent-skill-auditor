@@ -1,0 +1,4 @@
+ignore:
+  - rule: SEC009
+    path: scripts/install.sh
+    reason: Package install command is pinned by an external reviewed process for this fixture.
