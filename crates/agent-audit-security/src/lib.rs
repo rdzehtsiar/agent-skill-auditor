@@ -2,6 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs::{self, File};
+use std::io::Read;
+use std::path::Path;
 
 pub const INITIAL_SECURITY_RULE_IDS: &[&str] = &[
     "SEC001", "SEC002", "SEC003", "SEC004", "SEC005", "SEC006", "SEC007", "SEC008", "SEC009",
@@ -87,6 +90,165 @@ pub enum SecurityArtifactClassificationSignal {
     Extension,
     ContentSniff,
     ExecutableBit,
+}
+
+pub const DEFAULT_SECURITY_ARTIFACT_READ_LIMIT_BYTES: usize = 1024 * 1024;
+
+/// Deterministic bounded-read policy for static security artifact analysis.
+///
+/// Readers inspect at most `max_bytes + 1` bytes from the provided file path,
+/// return a byte prefix capped at `max_bytes`, and mark the result as truncated
+/// when the extra sentinel byte is present. This keeps oversized artifacts from
+/// being loaded fully while preserving enough information for conservative
+/// classification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SecurityArtifactReadPolicy {
+    pub max_bytes: usize,
+}
+
+impl Default for SecurityArtifactReadPolicy {
+    fn default() -> Self {
+        Self {
+            max_bytes: DEFAULT_SECURITY_ARTIFACT_READ_LIMIT_BYTES,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SecurityArtifactRead {
+    pub path: String,
+    pub bytes: Vec<u8>,
+    pub status: SecurityArtifactReadStatus,
+    pub observed_size_bytes: u64,
+    pub metadata_size_bytes: Option<u64>,
+}
+
+impl SecurityArtifactRead {
+    /// Returns text only when the bounded byte prefix is valid UTF-8 and does
+    /// not look binary. Invalid UTF-8 and binary-like bytes remain byte data.
+    pub fn utf8_text(&self) -> Option<&str> {
+        if is_binary_content(&self.bytes) {
+            return None;
+        }
+
+        std::str::from_utf8(&self.bytes).ok()
+    }
+
+    pub fn classify(&self, executable: bool) -> SecurityArtifactClassification {
+        classify_normalized_security_artifact(self.path.clone(), &self.bytes, executable)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SecurityArtifactReadStatus {
+    Empty,
+    Full,
+    Truncated,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SecurityArtifactReadError {
+    InvalidDisplayPath {
+        path: String,
+    },
+    NotFile {
+        path: String,
+    },
+    OpenFailed {
+        path: String,
+        kind: std::io::ErrorKind,
+    },
+    ReadFailed {
+        path: String,
+        kind: std::io::ErrorKind,
+    },
+}
+
+impl std::fmt::Display for SecurityArtifactReadError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidDisplayPath { path } => {
+                write!(formatter, "invalid security artifact display path: {path}")
+            }
+            Self::NotFile { path } => {
+                write!(formatter, "security artifact is not a regular file: {path}")
+            }
+            Self::OpenFailed { path, kind } => {
+                write!(
+                    formatter,
+                    "failed to open security artifact {path}: {kind:?}"
+                )
+            }
+            Self::ReadFailed { path, kind } => {
+                write!(
+                    formatter,
+                    "failed to read security artifact {path}: {kind:?}"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for SecurityArtifactReadError {}
+
+pub fn read_security_artifact_bytes(
+    artifact_path: impl AsRef<Path>,
+    display_path: &str,
+    policy: SecurityArtifactReadPolicy,
+) -> Result<SecurityArtifactRead, SecurityArtifactReadError> {
+    let path = normalize_scan_relative_path(display_path).ok_or_else(|| {
+        SecurityArtifactReadError::InvalidDisplayPath {
+            path: display_path.replace('\\', "/"),
+        }
+    })?;
+
+    let artifact_path = artifact_path.as_ref();
+    let metadata = fs::symlink_metadata(artifact_path).map_err(|error| {
+        SecurityArtifactReadError::OpenFailed {
+            path: path.clone(),
+            kind: error.kind(),
+        }
+    })?;
+
+    if !metadata.is_file() {
+        return Err(SecurityArtifactReadError::NotFile { path });
+    }
+    let metadata_size_bytes = Some(metadata.len());
+
+    let mut file =
+        File::open(artifact_path).map_err(|error| SecurityArtifactReadError::OpenFailed {
+            path: path.clone(),
+            kind: error.kind(),
+        })?;
+
+    let sentinel_limit = (policy.max_bytes as u64).saturating_add(1);
+    let mut limited = file.by_ref().take(sentinel_limit);
+    let mut bytes = Vec::new();
+    limited
+        .read_to_end(&mut bytes)
+        .map_err(|error| SecurityArtifactReadError::ReadFailed {
+            path: path.clone(),
+            kind: error.kind(),
+        })?;
+
+    let observed_size_bytes = bytes.len() as u64;
+    let status = if bytes.is_empty() {
+        SecurityArtifactReadStatus::Empty
+    } else if bytes.len() > policy.max_bytes {
+        bytes.truncate(policy.max_bytes);
+        SecurityArtifactReadStatus::Truncated
+    } else {
+        SecurityArtifactReadStatus::Full
+    };
+
+    Ok(SecurityArtifactRead {
+        path,
+        bytes,
+        status,
+        observed_size_bytes,
+        metadata_size_bytes,
+    })
 }
 
 pub fn classify_security_artifact(
@@ -1001,6 +1163,11 @@ pub enum ClassificationMethod {
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static TEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
     #[test]
     fn initial_security_rule_ids_are_stable_and_unique() {
@@ -1326,6 +1493,15 @@ mod tests {
             .expect("serialize classification signals"),
             serde_json::json!(["binary-content", "executable-bit"])
         );
+        assert_eq!(
+            serde_json::to_value([
+                SecurityArtifactReadStatus::Empty,
+                SecurityArtifactReadStatus::Full,
+                SecurityArtifactReadStatus::Truncated,
+            ])
+            .expect("serialize read statuses"),
+            serde_json::json!(["empty", "full", "truncated"])
+        );
     }
 
     #[test]
@@ -1336,6 +1512,145 @@ mod tests {
             signals: vec![sudo_signal("scripts/install.sh", 9, 4)],
         }
         .is_empty());
+    }
+
+    #[test]
+    fn safe_artifact_read_handles_empty_files() {
+        let workspace = TestWorkspace::new("empty");
+        let path = workspace.write_file("empty.txt", b"");
+
+        let read = read_security_artifact_bytes(
+            &path,
+            "references\\empty.txt",
+            SecurityArtifactReadPolicy { max_bytes: 8 },
+        )
+        .expect("read empty artifact");
+
+        assert_eq!(read.path, "references/empty.txt");
+        assert_eq!(read.bytes, b"");
+        assert_eq!(read.status, SecurityArtifactReadStatus::Empty);
+        assert_eq!(read.observed_size_bytes, 0);
+        assert_eq!(read.metadata_size_bytes, Some(0));
+        assert_eq!(read.utf8_text(), Some(""));
+    }
+
+    #[test]
+    fn safe_artifact_read_rejects_directories_before_opening() {
+        let workspace = TestWorkspace::new("directory");
+        let path = workspace.root.join("scripts");
+        fs::create_dir_all(&path).expect("create artifact directory");
+
+        let error = read_security_artifact_bytes(
+            &path,
+            "scripts",
+            SecurityArtifactReadPolicy { max_bytes: 8 },
+        )
+        .expect_err("reject directory artifact");
+
+        assert_eq!(
+            error,
+            SecurityArtifactReadError::NotFile {
+                path: "scripts".to_owned()
+            }
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn safe_artifact_read_rejects_symlinks_before_following_target() {
+        use std::os::unix::fs::symlink;
+
+        let workspace = TestWorkspace::new("symlink");
+        let target = workspace.write_file("target.sh", b"echo outside\n");
+        let link = workspace.root.join("scripts").join("linked.sh");
+        fs::create_dir_all(link.parent().expect("link parent")).expect("create link parent");
+        symlink(&target, &link).expect("create artifact symlink");
+
+        let error = read_security_artifact_bytes(
+            &link,
+            "scripts/linked.sh",
+            SecurityArtifactReadPolicy { max_bytes: 32 },
+        )
+        .expect_err("reject symlink artifact");
+
+        assert_eq!(
+            error,
+            SecurityArtifactReadError::NotFile {
+                path: "scripts/linked.sh".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn safe_artifact_read_keeps_invalid_utf8_as_bytes() {
+        let workspace = TestWorkspace::new("invalid-utf8");
+        let path = workspace.write_file("payload.bin", &[0xff, 0xfe, b'a', b'\n']);
+
+        let read = read_security_artifact_bytes(
+            &path,
+            "assets/payload.bin",
+            SecurityArtifactReadPolicy { max_bytes: 16 },
+        )
+        .expect("read invalid utf8 artifact");
+        let classification = read.classify(false);
+
+        assert_eq!(read.bytes, vec![0xff, 0xfe, b'a', b'\n']);
+        assert_eq!(read.status, SecurityArtifactReadStatus::Full);
+        assert_eq!(read.observed_size_bytes, 4);
+        assert_eq!(read.metadata_size_bytes, Some(4));
+        assert_eq!(read.utf8_text(), None);
+        assert_eq!(classification.language, SecurityLanguage::Binary);
+        assert!(!classification.text_parsing_allowed);
+    }
+
+    #[test]
+    fn safe_artifact_read_keeps_nul_binary_bytes_out_of_text_parsing() {
+        let workspace = TestWorkspace::new("binary-nul");
+        let path = workspace.write_file("payload", b"#!/bin/sh\n\0echo unsafe\n");
+
+        let read = read_security_artifact_bytes(
+            &path,
+            "scripts/payload",
+            SecurityArtifactReadPolicy { max_bytes: 64 },
+        )
+        .expect("read binary artifact");
+        let classification = read.classify(true);
+
+        assert_eq!(read.status, SecurityArtifactReadStatus::Full);
+        assert_eq!(read.utf8_text(), None);
+        assert_eq!(classification.language, SecurityLanguage::Binary);
+        assert_eq!(
+            classification.method,
+            SecurityArtifactClassificationMethod::BinaryContent
+        );
+        assert_eq!(
+            classification.signals,
+            vec![
+                SecurityArtifactClassificationSignal::BinaryContent,
+                SecurityArtifactClassificationSignal::ExecutableBit,
+            ]
+        );
+        assert!(!classification.text_parsing_allowed);
+    }
+
+    #[test]
+    fn safe_artifact_read_truncates_oversized_files_with_sentinel_byte() {
+        let workspace = TestWorkspace::new("oversized");
+        let path = workspace.write_file("large.txt", b"abcdefghijklmnopqrstuvwxyz");
+
+        let read = read_security_artifact_bytes(
+            &path,
+            "references/large.txt",
+            SecurityArtifactReadPolicy { max_bytes: 8 },
+        )
+        .expect("read oversized artifact");
+
+        assert_eq!(read.path, "references/large.txt");
+        assert_eq!(read.bytes, b"abcdefgh");
+        assert_eq!(read.status, SecurityArtifactReadStatus::Truncated);
+        assert_eq!(read.observed_size_bytes, 9);
+        assert_eq!(read.metadata_size_bytes, Some(26));
+        assert_eq!(read.utf8_text(), Some("abcdefgh"));
     }
 
     #[test]
@@ -1638,5 +1953,36 @@ mod tests {
             .iter()
             .map(|artifact| artifact.path.as_str())
             .collect()
+    }
+
+    struct TestWorkspace {
+        root: PathBuf,
+    }
+
+    impl TestWorkspace {
+        fn new(name: &str) -> Self {
+            let counter = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
+            let root = std::env::temp_dir()
+                .join("agent_audit_security_tests")
+                .join(format!("{}-{}-{}", name, std::process::id(), counter));
+            fs::create_dir_all(&root).expect("create test workspace");
+
+            Self { root }
+        }
+
+        fn write_file(&self, relative_path: &str, bytes: &[u8]) -> PathBuf {
+            let path = self.root.join(relative_path);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).expect("create test file parent");
+            }
+            fs::write(&path, bytes).expect("write test file");
+            path
+        }
+    }
+
+    impl Drop for TestWorkspace {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
     }
 }
