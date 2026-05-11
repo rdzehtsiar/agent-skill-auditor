@@ -13,13 +13,11 @@ const FRONTMATTER_LICENSE_FIELDS: &[&str] = &["license"];
 pub fn inventory_license_files(scan_root: &Path, skill_root: &Path) -> SupplyChainInventory {
     let mut inventory = SupplyChainInventory::default();
 
-    if scan_root != skill_root {
-        inventory.licenses.extend(license_file_evidence(
-            scan_root,
-            scan_root,
-            LicenseScope::Repository,
-        ));
-    }
+    inventory.licenses.extend(license_file_evidence(
+        scan_root,
+        scan_root,
+        LicenseScope::Repository,
+    ));
     inventory.licenses.extend(license_file_evidence(
         scan_root,
         skill_root,
@@ -148,6 +146,7 @@ fn display_path(root: &Path, path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{AuditConfig, SupplyChainPolicy};
     use crate::scan::{scan_path, ScanOptions};
     use crate::test_support::TestWorkspace;
 
@@ -177,7 +176,7 @@ mod tests {
     }
 
     #[test]
-    fn scan_inventories_skill_license_for_root_skill() {
+    fn scan_inventories_repository_and_skill_license_for_root_skill() {
         let workspace = TestWorkspace::new("license-skill-only");
         workspace.write_file("LICENSE", "MIT License\n");
         workspace.write_file("SKILL.md", "# Root Skill\n\nUseful skill.\n");
@@ -186,15 +185,88 @@ mod tests {
 
         assert_eq!(
             license_projection(&report.supply_chain.licenses),
-            vec![(
-                "LICENSE",
-                None,
-                SupplyChainSourceKind::Filesystem,
-                LicenseScope::Skill,
-                "MIT",
-                Some("LICENSE"),
-                EvidenceConfidence::Medium,
-            )]
+            vec![
+                (
+                    "LICENSE",
+                    None,
+                    SupplyChainSourceKind::Filesystem,
+                    LicenseScope::Repository,
+                    "MIT",
+                    Some("LICENSE"),
+                    EvidenceConfidence::Medium,
+                ),
+                (
+                    "LICENSE",
+                    None,
+                    SupplyChainSourceKind::Filesystem,
+                    LicenseScope::Skill,
+                    "MIT",
+                    Some("LICENSE"),
+                    EvidenceConfidence::Medium,
+                )
+            ]
+        );
+    }
+
+    #[test]
+    fn strict_scan_accepts_root_license_as_repository_evidence_for_root_skill() {
+        let workspace = TestWorkspace::new("strict-root-license");
+        workspace.write_file("LICENSE", "Apache License 2.0 fixture text.\n");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: strict-root-license
+description: Strict root license fixture.
+---
+
+# Strict Root License
+"#,
+        );
+        workspace.write_file(
+            "agent-audit.trust.yaml",
+            r#"skill:
+  name: strict-root-license
+  version: 1.0.0
+provenance:
+  source: github.com/example/strict-root-license
+  commit: 0123456789abcdef0123456789abcdef01234567
+  signed: false
+permissions:
+  network: false
+  filesystem_write: none
+  secrets: []
+declared_dependencies:
+  commands: []
+  packages: []
+"#,
+        );
+        let mut config = AuditConfig::empty();
+        config.supply_chain.policy = SupplyChainPolicy::Strict;
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan strict root skill");
+
+        assert_eq!(
+            report
+                .supply_chain
+                .licenses
+                .iter()
+                .map(|license| license.scope)
+                .collect::<Vec<_>>(),
+            vec![LicenseScope::Repository, LicenseScope::Skill]
+        );
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|finding| finding.rule_id == "SUPPLY001"),
+            "root LICENSE at scan root should satisfy strict repository license evidence"
         );
     }
 

@@ -14,6 +14,7 @@ pub struct AuditConfig {
     pub profiles: Vec<String>,
     pub fail_on: Vec<Severity>,
     pub ignore: Vec<ConfigIgnoreEntry>,
+    pub supply_chain: SupplyChainConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,6 +22,29 @@ pub struct ConfigIgnoreEntry {
     pub rule: String,
     pub path: String,
     pub reason: String,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SupplyChainConfig {
+    pub policy: SupplyChainPolicy,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum SupplyChainPolicy {
+    #[default]
+    Default,
+    Strict,
+}
+
+impl AuditConfig {
+    pub fn empty() -> Self {
+        Self {
+            profiles: Vec::new(),
+            fail_on: Vec::new(),
+            ignore: Vec::new(),
+            supply_chain: SupplyChainConfig::default(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -32,6 +56,8 @@ struct RawConfig {
     fail_on: Option<Vec<String>>,
     #[serde(default)]
     ignore: Option<Vec<RawIgnoreEntry>>,
+    #[serde(default)]
+    supply_chain: Option<RawSupplyChainConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -40,6 +66,12 @@ struct RawIgnoreEntry {
     rule: Option<String>,
     path: Option<String>,
     reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawSupplyChainConfig {
+    policy: Option<String>,
 }
 
 pub fn parse_audit_config(content: &str) -> AuditResult<AuditConfig> {
@@ -53,11 +85,13 @@ pub fn parse_audit_config(content: &str) -> AuditResult<AuditConfig> {
     let profiles = validate_profiles(raw.profiles.unwrap_or_default())?;
     let fail_on = validate_fail_on(raw.fail_on.unwrap_or_default())?;
     let ignore = validate_ignore(raw.ignore.unwrap_or_default())?;
+    let supply_chain = validate_supply_chain(raw.supply_chain)?;
 
     Ok(AuditConfig {
         profiles,
         fail_on,
         ignore,
+        supply_chain,
     })
 }
 
@@ -127,6 +161,24 @@ fn validate_ignore_entry(index: usize, entry: RawIgnoreEntry) -> AuditResult<Con
         rule: rule.to_owned(),
         path,
         reason: reason.to_owned(),
+    })
+}
+
+fn validate_supply_chain(raw: Option<RawSupplyChainConfig>) -> AuditResult<SupplyChainConfig> {
+    let Some(raw) = raw else {
+        return Ok(SupplyChainConfig::default());
+    };
+
+    Ok(SupplyChainConfig {
+        policy: match raw.policy.as_deref().map(str::trim) {
+            None | Some("") | Some("default") => SupplyChainPolicy::Default,
+            Some("strict") => SupplyChainPolicy::Strict,
+            Some(policy) => {
+                return Err(validation_error(format!(
+                    "supply_chain.policy uses unknown policy `{policy}`; expected one of: default, strict"
+                )));
+            }
+        },
     })
 }
 
@@ -213,14 +265,7 @@ mod tests {
                 reason: "Legacy fixture intentionally keeps a stale reference.".to_owned(),
             }]
         );
-        assert_eq!(
-            empty,
-            AuditConfig {
-                profiles: Vec::new(),
-                fail_on: Vec::new(),
-                ignore: Vec::new(),
-            }
-        );
+        assert_eq!(empty, AuditConfig::empty());
     }
 
     #[test]
@@ -292,6 +337,7 @@ ignore:
         assert_eq!(parse("").profiles, Vec::<String>::new());
         assert_eq!(parse("{}").fail_on, Vec::<Severity>::new());
         assert!(parse("profiles:\nfail_on:\nignore:\n").ignore.is_empty());
+        assert_eq!(parse("").supply_chain.policy, SupplyChainPolicy::Default);
     }
 
     #[test]
@@ -311,6 +357,44 @@ ignore:
         assert!(matches!(error, AuditError::ConfigParse { .. }));
         assert!(error.to_string().contains("unknown field"));
         assert!(error.to_string().contains("profile"));
+    }
+
+    #[test]
+    fn parses_supply_chain_strict_policy() {
+        let config = parse(
+            r#"
+supply_chain:
+  policy: strict
+"#,
+        );
+
+        assert_eq!(config.supply_chain.policy, SupplyChainPolicy::Strict);
+    }
+
+    #[test]
+    fn parses_supply_chain_default_policy() {
+        for content in [
+            "supply_chain: {}\n",
+            "supply_chain:\n  policy: default\n",
+            "supply_chain:\n  policy: \" \"\n",
+        ] {
+            let config = parse(content);
+
+            assert_eq!(config.supply_chain.policy, SupplyChainPolicy::Default);
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_supply_chain_policy() {
+        let error = parse_error("supply_chain:\n  policy: required\n");
+        let message = error.to_string();
+
+        assert!(
+            matches!(error, AuditError::ConfigValidation { .. }),
+            "expected validation error, got {error:?}"
+        );
+        assert!(message.contains("unknown policy `required`"));
+        assert!(message.contains("expected one of: default, strict"));
     }
 
     #[test]

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use agent_audit_core::{
     parse_audit_config, parse_severity, report_matches_fail_on, scan_path, AuditConfig, AuditError,
-    ScanOptions, ScanReport, Severity,
+    ScanOptions, ScanReport, Severity, SupplyChainPolicy,
 };
 use agent_audit_hosts::HOST_PROFILES;
 use agent_audit_report::{
@@ -61,6 +61,16 @@ struct ScanCommand {
         help = "Select compatibility profile(s); repeat or comma-separate values; use 'all' for every supported profile"
     )]
     profiles: Vec<String>,
+    #[arg(
+        long,
+        help = "Compatibility no-op; supply-chain inventory and rules already run by default"
+    )]
+    supply_chain: bool,
+    #[arg(
+        long,
+        help = "Require local trust manifest and license evidence, emitting missing metadata findings"
+    )]
+    strict_supply_chain: bool,
 }
 
 fn main() -> Result<()> {
@@ -84,8 +94,9 @@ fn run_scan_with_writer(command: ScanCommand, writer: &mut impl Write) -> Result
         .as_deref()
         .map(load_explicit_config)
         .transpose()?;
+    let _supply_chain_requested = command.supply_chain;
     let fail_on = effective_fail_on(&command.fail_on, config.as_ref()).to_vec();
-    let config = effective_config(config, &command.profiles);
+    let config = effective_config(config, &command.profiles, command.strict_supply_chain);
 
     let report = scan_path(
         &command.path,
@@ -128,22 +139,35 @@ fn effective_fail_on<'a>(
     config.map_or(&[], |config| config.fail_on.as_slice())
 }
 
-fn effective_config(config: Option<AuditConfig>, cli_profiles: &[String]) -> Option<AuditConfig> {
-    if cli_profiles.is_empty() {
+fn effective_config(
+    config: Option<AuditConfig>,
+    cli_profiles: &[String],
+    strict_supply_chain: bool,
+) -> Option<AuditConfig> {
+    if cli_profiles.is_empty() && !strict_supply_chain {
         return config;
     }
 
-    let profiles = effective_cli_profiles(cli_profiles);
     Some(match config {
         Some(mut config) => {
-            config.profiles = profiles;
+            if !cli_profiles.is_empty() {
+                config.profiles = effective_cli_profiles(cli_profiles);
+            }
+            if strict_supply_chain {
+                config.supply_chain.policy = SupplyChainPolicy::Strict;
+            }
             config
         }
-        None => AuditConfig {
-            profiles,
-            fail_on: Vec::new(),
-            ignore: Vec::new(),
-        },
+        None => {
+            let mut config = AuditConfig::empty();
+            if !cli_profiles.is_empty() {
+                config.profiles = effective_cli_profiles(cli_profiles);
+            }
+            if strict_supply_chain {
+                config.supply_chain.policy = SupplyChainPolicy::Strict;
+            }
+            config
+        }
     })
 }
 
@@ -276,6 +300,22 @@ mod tests {
     }
 
     #[test]
+    fn scan_help_lists_supply_chain_policy_options() {
+        let mut command = Cli::command();
+        let help = command
+            .find_subcommand_mut("scan")
+            .expect("scan subcommand should be registered")
+            .render_long_help()
+            .to_string();
+
+        assert!(help.contains("--supply-chain"));
+        assert!(help.contains("Compatibility no-op"));
+        assert!(help.contains("supply-chain inventory and rules already run by default"));
+        assert!(help.contains("--strict-supply-chain"));
+        assert!(help.contains("Require local trust manifest and license evidence"));
+    }
+
+    #[test]
     fn parses_default_scan_command() {
         let cli = Cli::parse_from(["agent-audit", "scan"]);
 
@@ -286,6 +326,26 @@ mod tests {
                 assert_eq!(command.config, None);
                 assert_eq!(command.fail_on, Vec::<Severity>::new());
                 assert_eq!(command.profiles, Vec::<String>::new());
+                assert!(!command.supply_chain);
+                assert!(!command.strict_supply_chain);
+            }
+        }
+    }
+
+    #[test]
+    fn parses_supply_chain_selection_flags() {
+        let cli = Cli::parse_from([
+            "agent-audit",
+            "scan",
+            "fixtures/spec/basic",
+            "--supply-chain",
+            "--strict-supply-chain",
+        ]);
+
+        match cli.command {
+            Command::Scan(command) => {
+                assert!(command.supply_chain);
+                assert!(command.strict_supply_chain);
             }
         }
     }
@@ -1434,6 +1494,119 @@ description: No config discovery fixture.
         assert!(output.contains("Packages: 1\n"));
     }
 
+    #[test]
+    fn run_scan_default_does_not_emit_missing_supply_chain_metadata_findings() {
+        let workspace = CliTestWorkspace::new("default-supply-chain-policy");
+        workspace.write_file("SKILL.md", valid_skill("default-supply-chain-policy"));
+
+        let output =
+            run_scan_output(scan_command(&workspace, ReportFormat::Json)).expect("run JSON scan");
+        let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
+
+        assert!(!has_finding(&value, "SUPPLY001"));
+        assert!(!has_finding(&value, "SUPPLY002"));
+        assert!(!has_finding(&value, "SUPPLY011"));
+    }
+
+    #[test]
+    fn run_scan_supply_chain_flag_keeps_default_policy() {
+        let workspace = CliTestWorkspace::new("supply-chain-default-policy");
+        workspace.write_file("SKILL.md", valid_skill("supply-chain-default-policy"));
+
+        let output = run_scan_output(ScanCommand {
+            supply_chain: true,
+            ..scan_command(&workspace, ReportFormat::Json)
+        })
+        .expect("supply-chain view flag should not enable strict policy");
+        let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
+
+        assert!(value.get("supply_chain").is_some());
+        assert!(!has_finding(&value, "SUPPLY011"));
+    }
+
+    #[test]
+    fn run_scan_strict_supply_chain_requires_trust_manifest_and_license_evidence() {
+        let workspace = CliTestWorkspace::new("strict-supply-chain-policy");
+        workspace.write_file("SKILL.md", valid_skill("strict-supply-chain-policy"));
+
+        let output = run_scan_output(ScanCommand {
+            strict_supply_chain: true,
+            ..scan_command(&workspace, ReportFormat::Json)
+        })
+        .expect("strict supply-chain scan should render findings without fail_on");
+        let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
+
+        assert!(has_finding(&value, "SUPPLY001"));
+        assert!(has_finding(&value, "SUPPLY002"));
+        assert!(has_finding(&value, "SUPPLY011"));
+    }
+
+    #[test]
+    fn run_scan_config_strict_supply_chain_policy_requires_metadata() {
+        let workspace = CliTestWorkspace::new("config-strict-supply-chain-policy");
+        workspace.write_file("SKILL.md", valid_skill("config-strict-supply-chain-policy"));
+        workspace.write_file(
+            "agent-audit.yaml",
+            r#"
+supply_chain:
+  policy: strict
+"#,
+        );
+
+        let output = run_scan_output(configured_scan_command(
+            &workspace,
+            ReportFormat::Json,
+            "agent-audit.yaml",
+        ))
+        .expect("config strict supply-chain policy should render findings");
+        let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
+
+        assert!(has_finding(&value, "SUPPLY002"));
+        assert!(has_finding(&value, "SUPPLY011"));
+    }
+
+    #[test]
+    fn run_scan_cli_strict_supply_chain_overrides_default_config_policy() {
+        let workspace = CliTestWorkspace::new("cli-strict-supply-chain-policy");
+        workspace.write_file("SKILL.md", valid_skill("cli-strict-supply-chain-policy"));
+        workspace.write_file(
+            "agent-audit.yaml",
+            r#"
+supply_chain:
+  policy: default
+"#,
+        );
+
+        let output = run_scan_output(ScanCommand {
+            strict_supply_chain: true,
+            ..configured_scan_command(&workspace, ReportFormat::Json, "agent-audit.yaml")
+        })
+        .expect("CLI strict supply-chain policy should override config default");
+        let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
+
+        assert!(has_finding(&value, "SUPPLY011"));
+    }
+
+    #[test]
+    fn run_scan_fail_on_low_matches_strict_supply_chain_findings_after_json_output() {
+        let workspace = CliTestWorkspace::new("strict-supply-chain-fail-on");
+        workspace.write_file("SKILL.md", valid_skill("strict-supply-chain-fail-on"));
+
+        let (output, result) = run_scan_attempt(ScanCommand {
+            fail_on: vec![Severity::Low],
+            strict_supply_chain: true,
+            ..scan_command(&workspace, ReportFormat::Json)
+        });
+        let error = result.expect_err("low fail_on should match strict supply-chain findings");
+        let value: serde_json::Value =
+            serde_json::from_str(&output).expect("JSON output should be written before fail_on");
+
+        assert!(has_finding(&value, "SUPPLY001"));
+        assert!(error
+            .to_string()
+            .contains("fail_on matched an unsuppressed finding severity"));
+    }
+
     fn missing_name_skill() -> &'static str {
         r#"---
 description: Missing name fail_on fixture.
@@ -1454,6 +1627,8 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
             config: None,
             fail_on: Vec::new(),
             profiles: Vec::new(),
+            supply_chain: false,
+            strict_supply_chain: false,
         }
     }
 
@@ -1585,6 +1760,14 @@ Run scripts/install.sh during setup.
             .iter()
             .map(|profile| profile["profile"].as_str().expect("profile name"))
             .collect()
+    }
+
+    fn has_finding(value: &serde_json::Value, rule_id: &str) -> bool {
+        value["findings"]
+            .as_array()
+            .expect("findings array")
+            .iter()
+            .any(|finding| finding["rule_id"] == rule_id)
     }
 
     struct CliTestWorkspace {
