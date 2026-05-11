@@ -1318,6 +1318,7 @@ mod tests {
     use agent_audit_hosts::{CompatibilityStatus, HOST_PROFILES};
     use agent_audit_rules::{
         rule_metadata, RuleCategory as RegistryCategory, RuleSeverity as RegistrySeverity,
+        ACTIVE_RULE_IDS,
     };
     use std::io::ErrorKind;
 
@@ -3926,27 +3927,89 @@ Read [parent](../outside.md), [absolute](/outside.md), and [windows](C:/outside.
         let report = scan_path(&fixture_root, &ScanOptions::default())
             .expect("scan security fixture corpus");
 
+        let active_sec_rules = ACTIVE_RULE_IDS
+            .iter()
+            .copied()
+            .filter(|rule_id| rule_id.starts_with("SEC"))
+            .collect::<Vec<_>>();
+        for rule_id in active_sec_rules {
+            assert!(
+                report.findings.iter().any(|finding| {
+                    finding.category == FindingCategory::Security && finding.rule_id == rule_id
+                }),
+                "security corpus did not cover {rule_id}: {:#?}",
+                report.findings
+            );
+        }
+        assert_security_finding(&report, "SEC001", "curl-bash/scripts/install.sh", Some(3));
+        assert_security_finding(
+            &report,
+            "SEC002",
+            "env-exfiltration/scripts/upload.sh",
+            Some(3),
+        );
+        assert_security_finding(
+            &report,
+            "SEC003",
+            "env-exfiltration/scripts/upload.sh",
+            Some(3),
+        );
+        assert_security_finding(
+            &report,
+            "SEC007",
+            "write-outside/scripts/write-outside.sh",
+            Some(3),
+        );
+        assert_security_finding(
+            &report,
+            "SEC009",
+            "package-install-unpinned/scripts/install.sh",
+            Some(3),
+        );
+        assert_security_finding(&report, "SEC011", "prompt-injection/SKILL.md", Some(8));
+        assert_security_finding(
+            &report,
+            "SEC012",
+            "hidden-instruction-comments/SKILL.md",
+            Some(8),
+        );
+        let json = serde_json::to_string_pretty(&report).expect("serialize report");
+        assert!(!json_contains_workspace_root(&json, &fixture_root));
+    }
+
+    #[test]
+    fn scan_security_benign_fixtures_stay_clean_for_sec_findings() {
+        for fixture in [
+            "benign-local-script",
+            "read-only-python",
+            "normal-instructions",
+        ] {
+            let report = scan_security_fixture(fixture);
+
+            assert!(
+                report
+                    .findings
+                    .iter()
+                    .all(|finding| !(finding.category == FindingCategory::Security
+                        && finding.rule_id.starts_with("SEC"))),
+                "{fixture} emitted SEC findings: {:#?}",
+                report.findings
+            );
+        }
+    }
+
+    #[test]
+    fn scan_security_sudo_install_fixture_keeps_reserved_sec005_metadata_only() {
+        let report = scan_security_fixture("sudo-install");
+
         assert!(
             report
                 .findings
                 .iter()
-                .any(|finding| finding.category == FindingCategory::Security
-                    && finding.rule_id.starts_with("SEC")),
-            "security corpus emitted no active SEC findings: {:#?}",
+                .all(|finding| finding.rule_id != "SEC005"),
+            "sudo fixture emitted reserved SEC005 finding: {:#?}",
             report.findings
         );
-        assert!(report
-            .findings
-            .iter()
-            .any(|finding| finding.rule_id == "SEC009"));
-        assert!(report
-            .findings
-            .iter()
-            .any(|finding| finding.rule_id == "SEC011"));
-        assert!(report
-            .findings
-            .iter()
-            .any(|finding| finding.rule_id == "SEC012"));
     }
 
     #[test]
