@@ -55,6 +55,10 @@ dependencies = [
 [[package]]
 name = "agent-audit-security"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "agent-audit-test"
