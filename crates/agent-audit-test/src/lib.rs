@@ -60,6 +60,8 @@ mod tests {
         "trust_manifests",
     ];
     const IMPLEMENTED_SUPPLY_CHAIN_SECTION_KEYS: &[&str] = &[
+        "binaries",
+        "checksums",
         "executables",
         "external_urls",
         "licenses",

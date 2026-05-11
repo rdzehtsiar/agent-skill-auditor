@@ -71,10 +71,34 @@
         "normalized": "sh",
         "raw": "sh",
         "confidence": "high"
+      },
+      {
+        "path": "offline-ready/scripts/check.sh",
+        "line": null,
+        "source": "filesystem",
+        "kind": "script",
+        "language": "shell",
+        "reason": "script extension .sh",
+        "referenced": true,
+        "normalized": "offline-ready/scripts/check.sh",
+        "raw": "scripts/check.sh",
+        "confidence": "high"
       }
     ],
     "binaries": [],
-    "checksums": [],
+    "checksums": [
+      {
+        "path": "offline-ready/checksums.txt",
+        "line": 1,
+        "source": "filesystem",
+        "algorithm": "sha256",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "target_path": "offline-ready/SKILL.md",
+        "normalized": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "raw": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  SKILL.md",
+        "confidence": "high"
+      }
+    ],
     "permissions": [
       {
         "path": "offline-ready/agent-audit.trust.yaml",

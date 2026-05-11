@@ -1232,7 +1232,32 @@
     "remote_dependencies": [],
     "package_managers": [],
     "lockfiles": [],
-    "executables": [],
+    "executables": [
+      {
+        "path": "generic/artifact-complete/scripts/check.sh",
+        "line": null,
+        "source": "filesystem",
+        "kind": "script",
+        "language": "shell",
+        "reason": "script extension .sh",
+        "referenced": false,
+        "normalized": "generic/artifact-complete/scripts/check.sh",
+        "raw": "scripts/check.sh",
+        "confidence": "high"
+      },
+      {
+        "path": "generic/scripts-only/scripts/task.ps1",
+        "line": null,
+        "source": "filesystem",
+        "kind": "script",
+        "language": null,
+        "reason": "script extension .ps1",
+        "referenced": false,
+        "normalized": "generic/scripts-only/scripts/task.ps1",
+        "raw": "scripts/task.ps1",
+        "confidence": "high"
+      }
+    ],
     "binaries": [],
     "checksums": [],
     "permissions": [],

@@ -43,7 +43,20 @@
       }
     ],
     "lockfiles": [],
-    "executables": [],
+    "executables": [
+      {
+        "path": "package-install-without-lockfile/scripts/install.sh",
+        "line": null,
+        "source": "filesystem",
+        "kind": "script",
+        "language": "shell",
+        "reason": "script extension .sh",
+        "referenced": true,
+        "normalized": "package-install-without-lockfile/scripts/install.sh",
+        "raw": "scripts/install.sh",
+        "confidence": "high"
+      }
+    ],
     "binaries": [],
     "checksums": [],
     "permissions": [],

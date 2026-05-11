@@ -8,8 +8,44 @@
     "remote_dependencies": [],
     "package_managers": [],
     "lockfiles": [],
-    "executables": [],
-    "binaries": [],
+    "executables": [
+      {
+        "path": "binary-artifact/bin/helper.exe",
+        "line": null,
+        "source": "filesystem",
+        "kind": "binary",
+        "language": null,
+        "reason": "executable extension .exe",
+        "referenced": true,
+        "normalized": "binary-artifact/bin/helper.exe",
+        "raw": "bin/helper.exe",
+        "confidence": "high"
+      }
+    ],
+    "binaries": [
+      {
+        "path": "binary-artifact/assets/archive.zip",
+        "line": null,
+        "source": "filesystem",
+        "kind": "archive",
+        "size_bytes": 22,
+        "referenced": false,
+        "normalized": "binary-artifact/assets/archive.zip",
+        "raw": "assets/archive.zip",
+        "confidence": "high"
+      },
+      {
+        "path": "binary-artifact/bin/helper.exe",
+        "line": null,
+        "source": "filesystem",
+        "kind": "executable",
+        "size_bytes": 25,
+        "referenced": true,
+        "normalized": "binary-artifact/bin/helper.exe",
+        "raw": "bin/helper.exe",
+        "confidence": "high"
+      }
+    ],
     "checksums": [],
     "permissions": [],
     "offline_readiness": []

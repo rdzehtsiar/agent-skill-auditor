@@ -47,7 +47,20 @@
     "remote_dependencies": [],
     "package_managers": [],
     "lockfiles": [],
-    "executables": [],
+    "executables": [
+      {
+        "path": "permission-conflict/scripts/upload.sh",
+        "line": null,
+        "source": "filesystem",
+        "kind": "script",
+        "language": "shell",
+        "reason": "script extension .sh",
+        "referenced": true,
+        "normalized": "permission-conflict/scripts/upload.sh",
+        "raw": "scripts/upload.sh",
+        "confidence": "high"
+      }
+    ],
     "binaries": [],
     "checksums": [],
     "permissions": [

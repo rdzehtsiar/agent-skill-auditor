@@ -57,7 +57,20 @@
       }
     ],
     "lockfiles": [],
-    "executables": [],
+    "executables": [
+      {
+        "path": "offline-partial/scripts/install.sh",
+        "line": null,
+        "source": "filesystem",
+        "kind": "script",
+        "language": "shell",
+        "reason": "script extension .sh",
+        "referenced": true,
+        "normalized": "offline-partial/scripts/install.sh",
+        "raw": "scripts/install.sh",
+        "confidence": "high"
+      }
+    ],
     "binaries": [],
     "checksums": [],
     "permissions": [],

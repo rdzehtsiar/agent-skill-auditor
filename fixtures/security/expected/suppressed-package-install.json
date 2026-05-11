@@ -102,7 +102,20 @@
       }
     ],
     "lockfiles": [],
-    "executables": [],
+    "executables": [
+      {
+        "path": "scripts/install.sh",
+        "line": null,
+        "source": "filesystem",
+        "kind": "script",
+        "language": "shell",
+        "reason": "script extension .sh",
+        "referenced": true,
+        "normalized": "scripts/install.sh",
+        "raw": "scripts/install.sh",
+        "confidence": "high"
+      }
+    ],
     "binaries": [],
     "checksums": [],
     "permissions": [],

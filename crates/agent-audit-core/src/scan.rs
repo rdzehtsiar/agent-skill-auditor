@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use crate::artifact_inventory::inventory_package_artifacts;
 use crate::config::{AuditConfig, ConfigIgnoreEntry};
 use crate::discovery::discover_skill_manifests;
 use crate::error::{AuditError, AuditResult};
@@ -182,6 +183,10 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         merge_supply_chain_inventory(
             &mut supply_chain,
             inventory_package_installs_from_scripts(root, skill_root, &graph)?,
+        );
+        merge_supply_chain_inventory(
+            &mut supply_chain,
+            inventory_package_artifacts(root, skill_root, &manifest, &graph)?,
         );
 
         let frontmatter_fields = manifest
