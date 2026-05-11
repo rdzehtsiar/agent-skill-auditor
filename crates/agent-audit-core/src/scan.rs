@@ -3168,6 +3168,138 @@ ignore:
     }
 
     #[test]
+    fn scan_suppressed_skill050_is_excluded_from_selected_profile_matrix_only() {
+        let workspace = TestWorkspace::new("scan-suppressed-skill050-selected-profile");
+        workspace.write_file(
+            ".agents/skills/reviewer/SKILL.md",
+            r#"---
+name: reviewer
+description: Reviews code changes.
+allowed-tools:
+  - Bash(git diff:*)
+---
+
+# Reviewer
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - agent-skills-spec
+  - codex
+
+ignore:
+  - rule: SKILL050
+    path: .agents/skills/reviewer/SKILL.md
+    reason: Codex wrapper translates Claude-style tool metadata.
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(report.summary.finding_count, 1);
+        assert_eq!(report.summary.suppressed_finding_count, 1);
+        assert_eq!(report.findings[0].rule_id, "SKILL040");
+        assert_eq!(report.findings[0].category, FindingCategory::Compatibility);
+        assert_eq!(report.suppressed_findings[0].finding.rule_id, "SKILL050");
+        assert_eq!(
+            report.suppressed_findings[0].finding.category,
+            FindingCategory::Compatibility
+        );
+        assert_eq!(
+            report.suppressed_findings[0].suppression.reason,
+            "Codex wrapper translates Claude-style tool metadata."
+        );
+        assert!(crate::fail::report_matches_fail_on(&report, &[Severity::Low]));
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![
+                (
+                    "agent-skills-spec",
+                    CompatibilityStatus::Warn,
+                    vec!["SKILL040"]
+                ),
+                ("codex", CompatibilityStatus::Pass, Vec::<&str>::new()),
+            ]
+        );
+    }
+
+    #[test]
+    fn scan_suppressed_skill040_is_excluded_from_baseline_matrix_and_fail_on() {
+        let workspace = TestWorkspace::new("scan-suppressed-skill040-baseline");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: reviewer
+description: Reviews code changes.
+x-owner: platform-security
+---
+
+# Reviewer
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - agent-skills-spec
+  - generic
+
+ignore:
+  - rule: SKILL040
+    path: SKILL.md
+    reason: Owner metadata is retained for an internal deterministic fixture.
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert!(report.findings.is_empty());
+        assert_eq!(report.summary.finding_count, 0);
+        assert_eq!(report.summary.suppressed_finding_count, 1);
+        assert_eq!(report.suppressed_findings[0].finding.rule_id, "SKILL040");
+        assert_eq!(
+            report.suppressed_findings[0].finding.category,
+            FindingCategory::Compatibility
+        );
+        assert_eq!(
+            report.suppressed_findings[0].suppression.matched_path,
+            "SKILL.md"
+        );
+        assert_eq!(
+            report.suppressed_findings[0].suppression.reason,
+            "Owner metadata is retained for an internal deterministic fixture."
+        );
+        assert!(!crate::fail::report_matches_fail_on(&report, &[Severity::Low]));
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![
+                (
+                    "agent-skills-spec",
+                    CompatibilityStatus::Pass,
+                    Vec::<&str>::new()
+                ),
+                ("generic", CompatibilityStatus::Pass, Vec::<&str>::new()),
+            ]
+        );
+    }
+
+    #[test]
     fn scan_copilot_profiles_warn_for_permissions_without_findings() {
         let workspace = TestWorkspace::new("scan-copilot-permissions-matrix-only");
         workspace.write_file(
