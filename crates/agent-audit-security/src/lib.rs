@@ -4355,24 +4355,10 @@ fn find_javascript_env_reads(line: &str) -> Vec<(usize, String)> {
         }
 
         let member_start = process_start + "process.env".len();
-        if line.as_bytes().get(member_start) == Some(&b'.') {
-            let name_start = member_start + 1;
-            if let Some((name, end)) = parse_javascript_identifier_at(line, name_start) {
-                reads.push((name_start + 1, name));
-                search_start = end;
-                continue;
-            }
-        } else if line.as_bytes().get(member_start) == Some(&b'[') {
-            let literal_start = skip_ascii_whitespace(line, member_start + 1);
-            if let Some((name, literal_end)) = parse_javascript_string_literal(line, literal_start)
-            {
-                let close = skip_ascii_whitespace(line, literal_end);
-                if line.as_bytes().get(close) == Some(&b']') {
-                    reads.push((literal_start + 1, name));
-                    search_start = close + 1;
-                    continue;
-                }
-            }
+        if let Some((read, end)) = parse_javascript_env_read_at(line, member_start) {
+            reads.push(read);
+            search_start = end;
+            continue;
         }
 
         search_start = member_start.saturating_add(1);
@@ -4381,6 +4367,41 @@ fn find_javascript_env_reads(line: &str) -> Vec<(usize, String)> {
     reads.sort();
     reads.dedup();
     reads
+}
+
+fn parse_javascript_env_read_at(
+    line: &str,
+    member_start: usize,
+) -> Option<((usize, String), usize)> {
+    match line.as_bytes().get(member_start) {
+        Some(b'.') => parse_javascript_dot_env_read(line, member_start),
+        Some(b'[') => parse_javascript_bracket_env_read(line, member_start),
+        _ => None,
+    }
+}
+
+fn parse_javascript_dot_env_read(
+    line: &str,
+    member_start: usize,
+) -> Option<((usize, String), usize)> {
+    let name_start = member_start + 1;
+    let (name, end) = parse_javascript_identifier_at(line, name_start)?;
+    Some(((name_start + 1, name), end))
+}
+
+fn parse_javascript_bracket_env_read(
+    line: &str,
+    member_start: usize,
+) -> Option<((usize, String), usize)> {
+    let literal_start = skip_ascii_whitespace(line, member_start + 1);
+    let (name, literal_end) = parse_javascript_string_literal(line, literal_start)?;
+    let close = skip_ascii_whitespace(line, literal_end);
+
+    if line.as_bytes().get(close) != Some(&b']') {
+        return None;
+    }
+
+    Some(((literal_start + 1, name), close + 1))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
