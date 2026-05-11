@@ -4,6 +4,9 @@ Agent Skill Auditor uses host profiles to turn general `SKILL.md` scan facts int
 
 Compatibility output is conservative. A `pass` means the implemented checks did not find a profile-specific issue; it is not a live host validation.
 
+For representative CLI commands and expected report behavior, see
+[Compatibility Command Checks](./compatibility-commands.md).
+
 ## Supported Profiles
 
 Profiles are reported in this default registry order:
