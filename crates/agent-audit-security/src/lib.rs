@@ -4045,43 +4045,18 @@ fn python_top_level_arguments(args: &str) -> Vec<&str> {
     let mut start = 0;
     let mut index = 0;
     let mut depth = 0usize;
-    let mut quote = None;
-    let mut escaped = false;
+    let mut quote_state = PythonQuoteState::default();
 
     while index < bytes.len() {
         let byte = bytes[index];
-        if escaped {
-            escaped = false;
+        if quote_state.consume(byte) {
             index += 1;
             continue;
         }
 
-        if quote.is_some() && byte == b'\\' {
-            escaped = true;
-            index += 1;
-            continue;
-        }
-
-        if matches!(byte, b'\'' | b'"') {
-            if quote == Some(byte) {
-                quote = None;
-            } else if quote.is_none() {
-                quote = Some(byte);
-            }
-            index += 1;
-            continue;
-        }
-
-        if quote.is_none() {
-            match byte {
-                b'(' | b'[' | b'{' => depth += 1,
-                b')' | b']' | b'}' => depth = depth.saturating_sub(1),
-                b',' if depth == 0 => {
-                    arguments.push(&args[start..index]);
-                    start = index + 1;
-                }
-                _ => {}
-            }
+        if !quote_state.is_quoted() && python_argument_separator(byte, &mut depth) {
+            arguments.push(&args[start..index]);
+            start = index + 1;
         }
 
         index += 1;
@@ -4092,6 +4067,21 @@ fn python_top_level_arguments(args: &str) -> Vec<&str> {
     }
 
     arguments
+}
+
+fn python_argument_separator(byte: u8, depth: &mut usize) -> bool {
+    match byte {
+        b',' if *depth == 0 => true,
+        b'(' | b'[' | b'{' => {
+            *depth += 1;
+            false
+        }
+        b')' | b']' | b'}' => {
+            *depth = depth.saturating_sub(1);
+            false
+        }
+        _ => false,
+    }
 }
 
 fn python_string_literals(line: &str) -> Vec<String> {
@@ -6675,6 +6665,22 @@ mod tests {
             ]
         );
         assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn python_top_level_arguments_ignore_nested_and_quoted_commas() {
+        let args =
+            r#"'out,side.txt', dict(mode="w,plus", nested=[1, (2, 3)]), "escaped \", comma", mode='w'"#;
+
+        assert_eq!(
+            python_top_level_arguments(args),
+            vec![
+                "'out,side.txt'",
+                r#" dict(mode="w,plus", nested=[1, (2, 3)])"#,
+                r#" "escaped \", comma""#,
+                " mode='w'",
+            ]
+        );
     }
 
     #[test]
