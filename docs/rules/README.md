@@ -18,7 +18,7 @@ Rule status is explicit: `active` rules may emit findings and be suppressed, whi
 | [SEC006](#sec006-git-history-modification) | `reserved` | `medium` | `security` | Git history modification |
 | [SEC007](#sec007-write-outside-skill-directory) | `active` | `medium` | `security` | Write outside skill directory |
 | [SEC008](#sec008-executable-artifact-download) | `reserved` | `high` | `security` | Executable artifact download |
-| [SEC009](#sec009-package-install-without-lockfile) | `reserved` | `low` | `security` | Package install without lockfile |
+| [SEC009](#sec009-package-install-without-lockfile) | `active` | `low` | `security` | Package install without lockfile |
 | [SEC010](#sec010-obfuscated-shell-command) | `reserved` | `medium` | `security` | Obfuscated shell command |
 | [SEC011](#sec011-prompt-injection-like-instruction) | `active` | `medium` | `security` | Prompt-injection-like instruction |
 | [SEC012](#sec012-hidden-instruction-in-comment-or-code-block) | `active` | `medium` | `security` | Hidden instruction in comment or code block |
@@ -329,7 +329,7 @@ sha256sum -c tool.exe.sha256
 
 ## SEC009: Package install without lockfile
 
-- Status: `reserved` (reserved; not emitted)
+- Status: `active`
 - Severity: `low`
 - Category: `security`
 - Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
@@ -341,11 +341,11 @@ Package installs without a lockfile or equivalent pinning can resolve different 
 
 ### How To Fix
 
-Use lockfile-backed install commands, pin dependency versions, or document a reproducible dependency setup path.
+Use lockfile-backed install commands, root-level or same-subtree ecosystem lockfiles, or complete exact package pins. The initial policy treats npm/pnpm/yarn/bun, pip, cargo, gem, and system package installs without those offline-verifiable signals as `SEC009`.
 
 ### Safe Suppression
 
-`SEC009` is reserved and cannot be suppressed until an evaluator emits it. When active, suppress only when the package set is otherwise pinned and reproducible.
+Suppress `SEC009` only when another reviewed, offline-verifiable mechanism pins the package set and preserves reproducible installation behavior.
 
 ### Examples
 

@@ -249,12 +249,11 @@ pub const STRUCTURAL_RULE_IDS: &[&str] = &[
 ];
 
 pub const ACTIVE_RULE_IDS: &[&str] = &[
-    "SEC001", "SEC002", "SEC003", "SEC007", "SEC011", "SEC012", "SKILL001", "SKILL002", "SKILL010",
-    "SKILL020", "SKILL030", "SKILL040", "SKILL041", "SKILL050",
+    "SEC001", "SEC002", "SEC003", "SEC007", "SEC009", "SEC011", "SEC012", "SKILL001", "SKILL002",
+    "SKILL010", "SKILL020", "SKILL030", "SKILL040", "SKILL041", "SKILL050",
 ];
 
-pub const RESERVED_RULE_IDS: &[&str] =
-    &["SEC004", "SEC005", "SEC006", "SEC008", "SEC009", "SEC010"];
+pub const RESERVED_RULE_IDS: &[&str] = &["SEC004", "SEC005", "SEC006", "SEC008", "SEC010"];
 
 pub const ALL_HOST_PROFILES: &[&str] = HOST_PROFILES;
 
@@ -505,16 +504,16 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
     },
     RuleMetadata {
         id: RuleId::Sec009,
-        status: RuleStatus::Reserved,
+        status: RuleStatus::Active,
         title: "Package install without lockfile",
         severity: RuleSeverity::Low,
         category: RuleCategory::Security,
         applicable_profiles: ALL_HOST_PROFILES,
         input_node_types: SECURITY_ARTIFACT_INPUT,
         rationale: "Package installs without a lockfile or equivalent pinning can resolve different dependency versions across machines and over time.",
-        remediation: "Use lockfile-backed install commands, pin dependency versions, or document a reproducible dependency setup path.",
+        remediation: "Use lockfile-backed install commands, root-level or same-subtree ecosystem lockfiles, or complete exact package pins. The initial policy treats npm/pnpm/yarn/bun, pip, cargo, gem, and system package installs without those offline-verifiable signals as `SEC009`.",
         suppression_guidance:
-            "`SEC009` is reserved and cannot be suppressed until an evaluator emits it. When active, suppress only when the package set is otherwise pinned and reproducible.",
+            "Suppress `SEC009` only when another reviewed, offline-verifiable mechanism pins the package set and preserves reproducible installation behavior.",
         examples: SEC009_EXAMPLES,
     },
     RuleMetadata {
@@ -709,6 +708,18 @@ pub struct RulePackageFacts {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RulePackageInstallContext {
+    pub package_root: String,
+    pub manifest_path: String,
+    pub files: Vec<RulePackageFileFact>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RulePackageFileFact {
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuleManifestFacts {
     Parsed(RuleParsedManifestFacts),
     UnreadOversized,
@@ -804,6 +815,414 @@ pub fn evaluate_security_signal_rules(signals: &[SecuritySignal]) -> Vec<Evaluat
 
     sort_evaluated_findings(&mut findings);
     findings
+}
+
+pub fn evaluate_package_install_rules(
+    signals: &[SecuritySignal],
+    contexts: &[RulePackageInstallContext],
+) -> Vec<EvaluatedRuleFinding> {
+    let mut findings = BTreeMap::new();
+
+    for (signal, install) in
+        signals
+            .iter()
+            .filter_map(package_install_signal)
+            .filter(|(signal, _)| {
+                matches!(
+                    signal.confidence,
+                    AnalyzerConfidence::Medium | AnalyzerConfidence::High
+                )
+            })
+    {
+        let context = package_context_for_signal(signal, contexts);
+        if package_install_has_reproducibility_evidence(install, signal, context) {
+            continue;
+        }
+
+        findings.insert(
+            sec009_dedup_key(signal, install),
+            package_install_without_lockfile_finding(signal, install),
+        );
+    }
+
+    let mut findings = findings.into_values().collect::<Vec<_>>();
+    sort_evaluated_findings(&mut findings);
+    findings
+}
+
+fn package_install_signal(signal: &SecuritySignal) -> Option<(&SecuritySignal, PackageInstall)> {
+    if signal.kind != SecuritySignalKind::PackageInstallation {
+        return None;
+    }
+
+    let sink = signal.sink.as_ref()?;
+    if sink.kind != SecuritySinkKind::PackageInstall {
+        return None;
+    }
+
+    let target = sink.target.as_deref().unwrap_or_default();
+    PackageInstall::from_signal_text(target, &signal.evidence).map(|install| (signal, install))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum PackageInstall {
+    JavaScript,
+    Python,
+    Cargo,
+    Gem,
+    System,
+}
+
+impl PackageInstall {
+    fn from_signal_text(target: &str, evidence: &str) -> Option<Self> {
+        let text = format!(
+            "{} {}",
+            target.to_ascii_lowercase(),
+            evidence.to_ascii_lowercase()
+        );
+
+        if contains_command_word(&text, "pip") || text.contains("python -m pip install") {
+            Some(Self::Python)
+        } else if contains_command_word(&text, "npm")
+            || contains_command_word(&text, "pnpm")
+            || contains_command_word(&text, "yarn")
+            || contains_command_word(&text, "bun")
+        {
+            Some(Self::JavaScript)
+        } else if contains_command_word(&text, "cargo") {
+            Some(Self::Cargo)
+        } else if contains_command_word(&text, "gem") {
+            Some(Self::Gem)
+        } else if contains_command_word(&text, "apt")
+            || contains_command_word(&text, "apt-get")
+            || contains_command_word(&text, "brew")
+            || contains_command_word(&text, "dnf")
+            || contains_command_word(&text, "yum")
+        {
+            Some(Self::System)
+        } else {
+            None
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::JavaScript => "JavaScript package",
+            Self::Python => "Python package",
+            Self::Cargo => "Cargo package",
+            Self::Gem => "Ruby gem",
+            Self::System => "system package",
+        }
+    }
+}
+
+fn package_context_for_signal<'a>(
+    signal: &SecuritySignal,
+    contexts: &'a [RulePackageInstallContext],
+) -> Option<&'a RulePackageInstallContext> {
+    contexts
+        .iter()
+        .filter(|context| signal_path_is_in_package(&signal.location.path, &context.package_root))
+        .max_by_key(|context| context.package_root.len())
+}
+
+fn signal_path_is_in_package(path: &str, package_root: &str) -> bool {
+    let package_root = normalize_rule_path(package_root);
+    if package_root.is_empty() {
+        return !path.starts_with("../") && !path.contains(":/");
+    }
+
+    path == package_root || path.starts_with(&format!("{package_root}/"))
+}
+
+fn normalize_rule_path(path: &str) -> String {
+    path.replace('\\', "/")
+}
+
+fn package_install_has_reproducibility_evidence(
+    install: PackageInstall,
+    signal: &SecuritySignal,
+    context: Option<&RulePackageInstallContext>,
+) -> bool {
+    command_is_lockfile_backed(install, &signal.evidence)
+        || command_has_exact_package_pin(install, &signal.evidence)
+        || context.is_some_and(|context| {
+            context_has_relevant_lockfile(install, context, &signal.location.path)
+        })
+}
+
+fn command_is_lockfile_backed(install: PackageInstall, evidence: &str) -> bool {
+    let evidence = evidence.to_ascii_lowercase();
+    match install {
+        PackageInstall::JavaScript => contains_command_phrase(&evidence, "npm ci"),
+        PackageInstall::Cargo => contains_command_word(&evidence, "--locked"),
+        _ => false,
+    }
+}
+
+fn command_has_exact_package_pin(install: PackageInstall, evidence: &str) -> bool {
+    let tokens = shellish_tokens(evidence);
+    match install {
+        PackageInstall::JavaScript => tokens.iter().any(|token| javascript_spec_is_pinned(token)),
+        PackageInstall::Python => tokens.iter().any(|token| python_spec_is_pinned(token)),
+        PackageInstall::Cargo => tokens
+            .windows(2)
+            .any(|window| window[0] == "--version" && exact_semverish_version(&window[1])),
+        PackageInstall::Gem => tokens.windows(2).any(|window| {
+            matches!(window[0].as_str(), "-v" | "--version") && exact_semverish_version(&window[1])
+        }),
+        PackageInstall::System => tokens.iter().any(|token| system_spec_is_pinned(token)),
+    }
+}
+
+fn context_has_relevant_lockfile(
+    install: PackageInstall,
+    context: &RulePackageInstallContext,
+    signal_path: &str,
+) -> bool {
+    let Some(signal_relative_path) =
+        package_relative_path(signal_path, context.package_root.as_str())
+    else {
+        return false;
+    };
+
+    context.files.iter().any(|file| {
+        let Some(lockfile_relative_path) =
+            package_relative_path(file.path.as_str(), context.package_root.as_str())
+        else {
+            return false;
+        };
+        let basename = path_basename(&lockfile_relative_path).to_ascii_lowercase();
+        let lockfile_matches_install = match install {
+            PackageInstall::JavaScript => matches!(
+                basename.as_str(),
+                "package-lock.json"
+                    | "npm-shrinkwrap.json"
+                    | "yarn.lock"
+                    | "pnpm-lock.yaml"
+                    | "bun.lock"
+                    | "bun.lockb"
+            ),
+            PackageInstall::Python => matches!(
+                basename.as_str(),
+                "poetry.lock" | "pipfile.lock" | "uv.lock" | "pylock.toml" | "requirements.lock"
+            ),
+            PackageInstall::Cargo => basename == "cargo.lock",
+            PackageInstall::Gem => basename == "gemfile.lock",
+            PackageInstall::System => false,
+        };
+
+        lockfile_matches_install
+            && lockfile_scope_covers_signal(&lockfile_relative_path, &signal_relative_path)
+    })
+}
+
+fn package_relative_path(path: &str, package_root: &str) -> Option<String> {
+    let path = normalize_rule_path(path);
+    let package_root = normalize_rule_path(package_root);
+
+    if package_root.is_empty() {
+        if path.starts_with("../") || path.contains(":/") {
+            None
+        } else {
+            Some(path)
+        }
+    } else if path == package_root {
+        Some(String::new())
+    } else if let Some(relative_path) = path.strip_prefix(&format!("{package_root}/")) {
+        Some(relative_path.to_owned())
+    } else {
+        Some(path)
+    }
+}
+
+fn lockfile_scope_covers_signal(lockfile_relative_path: &str, signal_relative_path: &str) -> bool {
+    let lockfile_dir = path_parent(lockfile_relative_path);
+    lockfile_dir.is_empty()
+        || signal_relative_path == lockfile_dir
+        || signal_relative_path.starts_with(&format!("{lockfile_dir}/"))
+}
+
+fn path_parent(path: &str) -> String {
+    path.rsplit_once('/').map_or(String::new(), |(parent, _)| {
+        parent.trim_matches('/').to_owned()
+    })
+}
+
+fn path_basename(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
+}
+
+fn javascript_spec_is_pinned(token: &str) -> bool {
+    let token = strip_quotes(token);
+    let Some((name, version)) = token.rsplit_once('@') else {
+        return false;
+    };
+
+    !name.is_empty() && !version.is_empty() && exact_semverish_version(version)
+}
+
+fn python_spec_is_pinned(token: &str) -> bool {
+    let token = strip_quotes(token);
+    let Some((_, version)) = token.split_once("==").or_else(|| token.split_once("===")) else {
+        return false;
+    };
+
+    exact_semverish_version(version)
+}
+
+fn system_spec_is_pinned(token: &str) -> bool {
+    let token = strip_quotes(token);
+    let Some((name, version)) = token.split_once('=') else {
+        return false;
+    };
+
+    !name.is_empty() && exact_system_package_version(version)
+}
+
+fn normalized_version(version: &str) -> &str {
+    let version = version
+        .trim()
+        .trim_start_matches('v')
+        .trim_matches(|character| matches!(character, ',' | ';' | ')' | ']' | '}'));
+
+    version
+}
+
+fn exact_semverish_version(version: &str) -> bool {
+    let version = normalized_version(version);
+
+    version_has_exact_prefix(version) && !contains_version_range_marker(version)
+}
+
+fn exact_system_package_version(version: &str) -> bool {
+    let version = normalized_version(version);
+
+    !version.is_empty()
+        && version
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_digit())
+        && !contains_version_range_marker(version)
+        && (version_has_exact_prefix(version)
+            || version.contains('-')
+            || version.contains(':')
+            || version
+                .chars()
+                .any(|character| character.is_ascii_alphabetic()))
+}
+
+fn version_has_exact_prefix(version: &str) -> bool {
+    let Some(core) = version.split(['-', '+']).next() else {
+        return false;
+    };
+
+    let mut parts = core.split('.');
+    let (Some(major), Some(minor), Some(patch), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return false;
+    };
+
+    [major, minor, patch]
+        .into_iter()
+        .all(|part| !part.is_empty() && part.chars().all(|character| character.is_ascii_digit()))
+}
+
+fn contains_version_range_marker(version: &str) -> bool {
+    let version = version
+        .trim()
+        .trim_matches(|character| matches!(character, ',' | ';' | ')' | ']' | '}'));
+
+    version.is_empty()
+        || version
+            .chars()
+            .next()
+            .is_some_and(|character| matches!(character, '^' | '~' | '>' | '<' | '='))
+        || version.contains("..")
+        || version.contains('*')
+        || version.contains('x')
+        || version.contains('X')
+}
+
+fn shellish_tokens(text: &str) -> Vec<String> {
+    text.split(|character: char| {
+        character.is_ascii_whitespace()
+            || matches!(
+                character,
+                '"' | '\'' | '`' | ',' | ';' | '(' | ')' | '[' | ']'
+            )
+    })
+    .filter(|token| !token.is_empty())
+    .map(|token| token.trim().to_ascii_lowercase())
+    .collect()
+}
+
+fn strip_quotes(value: &str) -> &str {
+    value.trim_matches(|character| matches!(character, '"' | '\'' | '`'))
+}
+
+fn contains_command_word(text: &str, word: &str) -> bool {
+    let mut search_start = 0;
+    while let Some(relative_index) = text[search_start..].find(word) {
+        let start = search_start + relative_index;
+        let end = start + word.len();
+        if command_word_boundary_before(text, start) && command_word_boundary_after(text, end) {
+            return true;
+        }
+        search_start = end;
+    }
+
+    false
+}
+
+fn contains_command_phrase(text: &str, phrase: &str) -> bool {
+    let Some(start) = text.find(phrase) else {
+        return false;
+    };
+    let end = start + phrase.len();
+
+    command_word_boundary_before(text, start) && command_word_boundary_after(text, end)
+}
+
+fn command_word_boundary_before(text: &str, start: usize) -> bool {
+    start == 0
+        || text
+            .as_bytes()
+            .get(start - 1)
+            .is_some_and(|byte| !byte.is_ascii_alphanumeric() && !matches!(byte, b'_' | b'-'))
+}
+
+fn command_word_boundary_after(text: &str, end: usize) -> bool {
+    end == text.len()
+        || text
+            .as_bytes()
+            .get(end)
+            .is_some_and(|byte| !byte.is_ascii_alphanumeric() && !matches!(byte, b'_' | b'-'))
+}
+
+fn sec009_dedup_key(
+    signal: &SecuritySignal,
+    install: PackageInstall,
+) -> (String, Option<usize>, PackageInstall) {
+    (signal.location.path.clone(), signal.location.line, install)
+}
+
+fn package_install_without_lockfile_finding(
+    signal: &SecuritySignal,
+    install: PackageInstall,
+) -> EvaluatedRuleFinding {
+    EvaluatedRuleFinding {
+        rule_id: RuleId::Sec009,
+        message: format!(
+            "The artifact runs a {} install without nearby lockfile or exact version pinning evidence. This can make installs resolve different packages over time and increases reproducibility and supply-chain risk.",
+            install.label()
+        ),
+        location: RuleFindingLocation {
+            path: signal.location.path.clone(),
+            line: signal.location.line,
+        },
+    }
 }
 
 fn is_remote_content_piped_to_shell_signal(signal: &SecuritySignal) -> bool {
@@ -2504,6 +2923,254 @@ mod tests {
     }
 
     #[test]
+    fn sec009_reports_package_installs_without_lockfile_or_pin() {
+        let signals = vec![
+            package_install_signal_at("scripts/npm.sh", 1, "npm install left-pad", "npm install"),
+            package_install_signal_at("scripts/pip.sh", 2, "pip install demo", "pip install"),
+            package_install_signal_at(
+                "scripts/cargo.sh",
+                3,
+                "cargo install ripgrep",
+                "cargo install",
+            ),
+            package_install_signal_at("scripts/gem.sh", 4, "gem install rake", "gem install"),
+            package_install_signal_at(
+                "scripts/apt.sh",
+                5,
+                "apt-get install -y jq",
+                "apt-get install",
+            ),
+        ];
+
+        let findings =
+            evaluate_package_install_rules(&signals, &[package_install_context("", &[])]);
+
+        assert_eq!(
+            finding_projection(&findings),
+            vec![
+                (RuleId::Sec009, "scripts/apt.sh", Some(5)),
+                (RuleId::Sec009, "scripts/cargo.sh", Some(3)),
+                (RuleId::Sec009, "scripts/gem.sh", Some(4)),
+                (RuleId::Sec009, "scripts/npm.sh", Some(1)),
+                (RuleId::Sec009, "scripts/pip.sh", Some(2)),
+            ]
+        );
+        assert!(findings.iter().all(|finding| finding
+            .message
+            .contains("reproducibility and supply-chain risk")));
+    }
+
+    #[test]
+    fn sec009_accepts_relevant_lockfiles_and_exact_pins() {
+        let signals = vec![
+            package_install_signal_at(
+                "js/scripts/install.sh",
+                1,
+                "npm install left-pad",
+                "npm install",
+            ),
+            package_install_signal_at(
+                "python/scripts/install.sh",
+                1,
+                "pip install demo==1.2.3",
+                "pip install",
+            ),
+            package_install_signal_at(
+                "cargo/scripts/install.sh",
+                1,
+                "cargo install ripgrep --version 14.1.0",
+                "cargo install",
+            ),
+            package_install_signal_at(
+                "ruby/scripts/install.sh",
+                1,
+                "gem install rake -v 13.1.0",
+                "gem install",
+            ),
+            package_install_signal_at(
+                "system/scripts/install.sh",
+                1,
+                "apt-get install jq=1.6-2.1ubuntu3",
+                "apt-get install",
+            ),
+        ];
+        let contexts = vec![
+            package_install_context("js", &["package-lock.json"]),
+            package_install_context("python", &[]),
+            package_install_context("cargo", &[]),
+            package_install_context("ruby", &[]),
+            package_install_context("system", &[]),
+        ];
+
+        let findings = evaluate_package_install_rules(&signals, &contexts);
+
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn sec009_accepts_root_lockfile_for_package_scripts() {
+        let signals = vec![
+            package_install_signal_at(
+                "scripts/install.sh",
+                1,
+                "npm install left-pad",
+                "npm install",
+            ),
+            package_install_signal_at(
+                "tooling/scripts/install.sh",
+                2,
+                "npm install left-pad",
+                "npm install",
+            ),
+        ];
+        let contexts = vec![package_install_context("", &["package-lock.json"])];
+
+        let findings = evaluate_package_install_rules(&signals, &contexts);
+
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn sec009_accepts_nested_lockfile_for_same_subtree() {
+        let signals = vec![package_install_signal_at(
+            "nested/scripts/install.sh",
+            1,
+            "npm install left-pad",
+            "npm install",
+        )];
+        let contexts = vec![package_install_context("", &["nested/package-lock.json"])];
+
+        let findings = evaluate_package_install_rules(&signals, &contexts);
+
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn sec009_reports_when_only_unrelated_nested_lockfile_exists() {
+        let signals = vec![
+            package_install_signal_at(
+                "scripts/install.sh",
+                1,
+                "npm install left-pad",
+                "npm install",
+            ),
+            package_install_signal_at(
+                "tooling/scripts/install.sh",
+                2,
+                "npm install left-pad",
+                "npm install",
+            ),
+        ];
+        let contexts = vec![package_install_context(
+            "",
+            &["references/package-lock.json", "examples/package-lock.json"],
+        )];
+
+        let findings = evaluate_package_install_rules(&signals, &contexts);
+
+        assert_eq!(
+            finding_projection(&findings),
+            vec![
+                (RuleId::Sec009, "scripts/install.sh", Some(1)),
+                (RuleId::Sec009, "tooling/scripts/install.sh", Some(2)),
+            ]
+        );
+    }
+
+    #[test]
+    fn sec009_reports_partial_semver_like_pins() {
+        let signals = vec![
+            package_install_signal_at(
+                "scripts/npm-major.sh",
+                1,
+                "npm install left-pad@1",
+                "npm install",
+            ),
+            package_install_signal_at(
+                "scripts/npm-minor.sh",
+                2,
+                "npm install left-pad@1.2",
+                "npm install",
+            ),
+            package_install_signal_at(
+                "scripts/npm-range.sh",
+                3,
+                "npm install left-pad@^1.2.3",
+                "npm install",
+            ),
+            package_install_signal_at(
+                "scripts/pip-minor.sh",
+                4,
+                "pip install demo==1.2",
+                "pip install",
+            ),
+            package_install_signal_at(
+                "scripts/cargo-minor.sh",
+                5,
+                "cargo install ripgrep --version 14.1",
+                "cargo install",
+            ),
+            package_install_signal_at(
+                "scripts/gem-major.sh",
+                6,
+                "gem install rake -v 13",
+                "gem install",
+            ),
+            package_install_signal_at(
+                "scripts/apt-major.sh",
+                7,
+                "apt-get install jq=1",
+                "apt-get install",
+            ),
+        ];
+
+        let findings =
+            evaluate_package_install_rules(&signals, &[package_install_context("", &[])]);
+
+        assert_eq!(
+            finding_projection(&findings),
+            vec![
+                (RuleId::Sec009, "scripts/apt-major.sh", Some(7)),
+                (RuleId::Sec009, "scripts/cargo-minor.sh", Some(5)),
+                (RuleId::Sec009, "scripts/gem-major.sh", Some(6)),
+                (RuleId::Sec009, "scripts/npm-major.sh", Some(1)),
+                (RuleId::Sec009, "scripts/npm-minor.sh", Some(2)),
+                (RuleId::Sec009, "scripts/npm-range.sh", Some(3)),
+                (RuleId::Sec009, "scripts/pip-minor.sh", Some(4)),
+            ]
+        );
+    }
+
+    #[test]
+    fn sec009_uses_nearest_package_context_for_lockfiles() {
+        let signals = vec![
+            package_install_signal_at(
+                "parent/child/scripts/install.sh",
+                1,
+                "npm install left-pad",
+                "npm install",
+            ),
+            package_install_signal_at(
+                "parent/scripts/install.sh",
+                1,
+                "npm install left-pad",
+                "npm install",
+            ),
+        ];
+        let contexts = vec![
+            package_install_context("parent", &["package-lock.json"]),
+            package_install_context("parent/child", &[]),
+        ];
+
+        let findings = evaluate_package_install_rules(&signals, &contexts);
+
+        assert_eq!(
+            finding_projection(&findings),
+            vec![(RuleId::Sec009, "parent/child/scripts/install.sh", Some(1))]
+        );
+    }
+
+    #[test]
     fn sec011_matches_prompt_injection_instruction_signals() {
         let signals = analyze_instruction_security_text(
             "SKILL.md",
@@ -3386,5 +4053,48 @@ mod tests {
         signal.location.path = path.to_owned();
         signal.location.line = Some(line);
         signal
+    }
+
+    fn package_install_signal_at(
+        path: &str,
+        line: usize,
+        evidence: &str,
+        target: &str,
+    ) -> SecuritySignal {
+        SecuritySignal {
+            location: agent_audit_security::SecurityLocation {
+                path: path.to_owned(),
+                line: Some(line),
+                column: Some(1),
+                byte_offset: None,
+            },
+            kind: SecuritySignalKind::PackageInstallation,
+            source: None,
+            sink: Some(SecuritySink {
+                kind: SecuritySinkKind::PackageInstall,
+                target: Some(target.to_owned()),
+            }),
+            risk: SecurityRiskScore::new(65),
+            confidence: AnalyzerConfidence::High,
+            classification: ClassificationMethod::RegexFallback,
+            evidence: evidence.to_owned(),
+        }
+    }
+
+    fn package_install_context(root: &str, files: &[&str]) -> RulePackageInstallContext {
+        RulePackageInstallContext {
+            package_root: root.to_owned(),
+            manifest_path: if root.is_empty() {
+                "SKILL.md".to_owned()
+            } else {
+                format!("{root}/SKILL.md")
+            },
+            files: files
+                .iter()
+                .map(|path| RulePackageFileFact {
+                    path: (*path).to_owned(),
+                })
+                .collect(),
+        }
     }
 }

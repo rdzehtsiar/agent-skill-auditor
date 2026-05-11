@@ -16,10 +16,11 @@ use agent_audit_hosts::{
     profile_by_id, CompatibilityStatus, ProfileCompatibilityResult, HOST_PROFILES,
 };
 use agent_audit_rules::{
-    active_rule_metadata, evaluate_security_signal_rules, evaluate_structural_rules,
-    rule_counts_as_broken_reference, rule_counts_as_invalid_manifest, EvaluatedRuleFinding,
-    RuleCategory as RegistryCategory, RuleFrontmatterFieldFact, RuleMalformedFrontmatterFact,
-    RuleManifestFacts, RulePackageFacts, RuleParsedManifestFacts, RuleReferenceFact,
+    active_rule_metadata, evaluate_package_install_rules, evaluate_security_signal_rules,
+    evaluate_structural_rules, rule_counts_as_broken_reference, rule_counts_as_invalid_manifest,
+    EvaluatedRuleFinding, RuleCategory as RegistryCategory, RuleFrontmatterFieldFact,
+    RuleMalformedFrontmatterFact, RuleManifestFacts, RulePackageFacts, RulePackageFileFact,
+    RulePackageInstallContext, RuleParsedManifestFacts, RuleReferenceFact,
     RuleSeverity as RegistrySeverity,
 };
 use agent_audit_security::{
@@ -57,6 +58,7 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
     let profiles = selected_profiles(options.config.as_ref());
     let mut packages = Vec::new();
     let mut package_facts = Vec::new();
+    let mut package_install_contexts = Vec::new();
     let mut security_signals = Vec::new();
 
     for manifest_path in manifests {
@@ -176,6 +178,12 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
                 oversized: content.len() as u64 > options.max_manifest_bytes,
             }),
         });
+        package_install_contexts.push(package_install_context(
+            root,
+            skill_root,
+            &manifest_display,
+            &graph,
+        )?);
 
         packages.push(SkillPackage {
             root: display_path(root, skill_root),
@@ -191,6 +199,11 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         .collect::<Vec<_>>();
     findings.extend(
         evaluate_security_signal_rules(&security_signals)
+            .into_iter()
+            .map(skill_finding_from_evaluated_rule),
+    );
+    findings.extend(
+        evaluate_package_install_rules(&security_signals, &package_install_contexts)
             .into_iter()
             .map(skill_finding_from_evaluated_rule),
     );
@@ -1032,6 +1045,58 @@ fn file_kind(metadata: &std::fs::Metadata) -> SkillFileKind {
     } else {
         SkillFileKind::Other
     }
+}
+
+fn package_install_context(
+    scan_root: &Path,
+    skill_root: &Path,
+    manifest_path: &str,
+    graph: &SkillGraph,
+) -> AuditResult<RulePackageInstallContext> {
+    let mut files = graph
+        .files
+        .iter()
+        .filter(|file| file.kind == SkillFileKind::File)
+        .map(|file| RulePackageFileFact {
+            path: file.path.clone(),
+        })
+        .collect::<Vec<_>>();
+
+    let mut root_entries = std::fs::read_dir(skill_root)
+        .map_err(|source| AuditError::ReadDir {
+            path: skill_root.to_path_buf(),
+            source,
+        })?
+        .map(|entry| {
+            entry.map_err(|source| AuditError::ReadDir {
+                path: skill_root.to_path_buf(),
+                source,
+            })
+        })
+        .collect::<AuditResult<Vec<_>>>()?;
+    root_entries.sort_by_key(|entry| entry.path());
+
+    for entry in root_entries {
+        let path = entry.path();
+        let metadata = std::fs::symlink_metadata(&path).map_err(|source| AuditError::Metadata {
+            path: path.clone(),
+            source,
+        })?;
+        if metadata.is_file() {
+            files.push(RulePackageFileFact {
+                path: display_path(skill_root, &path),
+            });
+        }
+    }
+
+    files.sort_by(|left, right| left.path.cmp(&right.path));
+    files.dedup_by(|left, right| left.path == right.path);
+
+    Ok(RulePackageInstallContext {
+        package_root: display_path(scan_root, skill_root),
+        manifest_path: manifest_path.to_owned(),
+        files,
+    })
 }
 
 fn analyze_package_security_artifacts(
@@ -3792,6 +3857,65 @@ Read [parent](../outside.md), [absolute](/outside.md), and [windows](C:/outside.
             "normal fixture emitted instruction security findings: {:#?}",
             report.findings
         );
+    }
+
+    #[test]
+    fn scan_security_package_install_unpinned_fixture_emits_sec009() {
+        let report = scan_security_fixture("package-install-unpinned");
+        let sec009 = report
+            .findings
+            .iter()
+            .filter(|finding| finding.rule_id == "SEC009")
+            .collect::<Vec<_>>();
+
+        assert_eq!(sec009.len(), 5, "findings: {:#?}", report.findings);
+        assert_eq!(
+            sec009
+                .iter()
+                .map(|finding| (finding.location.path.as_str(), finding.location.line))
+                .collect::<Vec<_>>(),
+            vec![
+                ("scripts/install.sh", Some(3)),
+                ("scripts/install.sh", Some(4)),
+                ("scripts/install.sh", Some(5)),
+                ("scripts/install.sh", Some(6)),
+                ("scripts/install.sh", Some(7)),
+            ]
+        );
+        assert!(sec009.iter().all(|finding| {
+            finding.category == FindingCategory::Security
+                && finding.severity == Severity::Low
+                && finding.message.contains("supply-chain risk")
+        }));
+    }
+
+    #[test]
+    fn scan_security_package_install_pinned_and_lockfile_fixtures_avoid_sec009() {
+        for fixture in ["package-install-pinned", "package-install-lockfile-backed"] {
+            let report = scan_security_fixture(fixture);
+
+            assert!(
+                report
+                    .findings
+                    .iter()
+                    .all(|finding| finding.rule_id != "SEC009"),
+                "{fixture} emitted SEC009 findings: {:#?}",
+                report.findings
+            );
+        }
+    }
+
+    #[test]
+    fn scan_security_package_install_report_paths_are_portable() {
+        let report = scan_security_fixture("package-install-unpinned");
+        let json = serde_json::to_string_pretty(&report).expect("serialize report");
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("fixtures/security/package-install-unpinned");
+
+        assert!(!json_contains_workspace_root(&json, &fixture_root));
+        assert!(json.contains("\"path\": \"scripts/install.sh\""));
+        assert!(!json.contains("fixtures/security/package-install-unpinned"));
     }
 
     #[test]
