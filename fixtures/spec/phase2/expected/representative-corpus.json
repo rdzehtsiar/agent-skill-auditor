@@ -1224,5 +1224,1097 @@
     "suppressed_finding_count": 0,
     "invalid_manifest_count": 5,
     "broken_reference_count": 4
+  },
+  "compatibility": {
+    "profiles": [
+      "agent-skills-spec",
+      "claude-code",
+      "codex",
+      "github-copilot",
+      "vscode-copilot",
+      "generic"
+    ],
+    "matrix": [
+      {
+        "path": ".agents/skills/artifacts/SKILL.md",
+        "name": "corpus-agent-artifacts",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": ".agents/skills/broken-reference/SKILL.md",
+        "name": "corpus-agent-broken-reference",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": ".agents/skills/missing-description/SKILL.md",
+        "name": "corpus-agent-missing-description",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": ".agents/skills/triage/SKILL.md",
+        "name": "corpus-agent-triage",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": ".claude/skills/duplicate-a/SKILL.md",
+        "name": "corpus-host-duplicate",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": ".claude/skills/duplicate-b/SKILL.md",
+        "name": "corpus-host-duplicate",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": ".claude/skills/planning/SKILL.md",
+        "name": "corpus-claude-planning",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": ".claude/skills/unknown-frontmatter/SKILL.md",
+        "name": "corpus-claude-unknown",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": ".github/skills/assets/SKILL.md",
+        "name": "corpus-github-assets",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": ".github/skills/broken-reference/SKILL.md",
+        "name": "corpus-github-broken-reference",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": ".github/skills/missing-name/SKILL.md",
+        "name": null,
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": ".github/skills/release-notes/SKILL.md",
+        "name": "corpus-github-release-notes",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "deep/products/alpha/.agents/skills/nested-agent/SKILL.md",
+        "name": "corpus-deep-nested-agent",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "deep/products/beta/SKILL.md",
+        "name": "corpus-deep-product-beta",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "generic/artifact-complete/SKILL.md",
+        "name": "corpus-artifact-complete",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "generic/assets-only/SKILL.md",
+        "name": "corpus-assets-only",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "generic/broken-reference/SKILL.md",
+        "name": "corpus-broken-reference",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "generic/duplicate-a/SKILL.md",
+        "name": "corpus-duplicate",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "generic/duplicate-b/SKILL.md",
+        "name": "corpus-duplicate",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "generic/missing-description/SKILL.md",
+        "name": "corpus-missing-description",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "generic/missing-name/SKILL.md",
+        "name": null,
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "generic/references-only/SKILL.md",
+        "name": "corpus-references-only",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "generic/scripts-only/SKILL.md",
+        "name": "corpus-scripts-only",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "generic/unknown-field/SKILL.md",
+        "name": "corpus-unknown-field",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "generic/valid-basic/SKILL.md",
+        "name": "corpus-valid-basic",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "generic/valid-tools/SKILL.md",
+        "name": "corpus-valid-tools",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "nested/team/platform/review/SKILL.md",
+        "name": "corpus-platform-review",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "nested/team/portability/missing-name/SKILL.md",
+        "name": null,
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "nested/team/quality/docs/SKILL.md",
+        "name": "corpus-quality-docs",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "nested/team/security/checks/SKILL.md",
+        "name": "corpus-security-checks",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      }
+    ]
   }
 }

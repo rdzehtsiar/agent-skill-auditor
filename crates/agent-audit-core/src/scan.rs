@@ -7,11 +7,12 @@ use crate::config::{AuditConfig, ConfigIgnoreEntry};
 use crate::discovery::discover_skill_manifests;
 use crate::error::{AuditError, AuditResult};
 use crate::model::{
-    CompatibilityMatrix, ScanReport, ScanSummary, SkillArtifactKind, SkillFile, SkillFileKind,
-    SkillFinding, SkillGraph, SkillManifest, SkillPackage, SkillReference, SuppressedFinding,
-    SuppressionMatch,
+    CompatibilityMatrix, ScanReport, ScanSummary, SkillArtifactKind, SkillCompatibilityRow,
+    SkillFile, SkillFileKind, SkillFinding, SkillGraph, SkillManifest, SkillPackage,
+    SkillReference, SuppressedFinding, SuppressionMatch,
 };
 use crate::parse::parse_skill_manifest;
+use agent_audit_hosts::{CompatibilityStatus, ProfileCompatibilityResult, HOST_PROFILES};
 use agent_audit_rules::{
     active_rule_metadata, evaluate_structural_rules, rule_counts_as_broken_reference,
     rule_counts_as_invalid_manifest, EvaluatedRuleFinding, RuleCategory as RegistryCategory,
@@ -168,6 +169,8 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         .filter(|finding| rule_counts_as_broken_reference(&finding.rule_id))
         .count();
 
+    let compatibility = compatibility_matrix_for_packages(&packages, options.config.as_ref());
+
     Ok(ScanReport {
         summary: ScanSummary {
             package_count: packages.len(),
@@ -179,8 +182,42 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         packages,
         findings,
         suppressed_findings,
-        compatibility: CompatibilityMatrix::default(),
+        compatibility,
     })
+}
+
+fn compatibility_matrix_for_packages(
+    packages: &[SkillPackage],
+    config: Option<&AuditConfig>,
+) -> CompatibilityMatrix {
+    let profiles = selected_profiles(config);
+    let matrix = packages
+        .iter()
+        .map(|package| SkillCompatibilityRow {
+            path: package.manifest_path.clone(),
+            name: package.manifest.name.clone(),
+            profiles: profiles
+                .iter()
+                .map(|profile| ProfileCompatibilityResult {
+                    profile: profile.clone(),
+                    status: CompatibilityStatus::Unknown,
+                    finding_ids: Vec::new(),
+                })
+                .collect(),
+        })
+        .collect();
+
+    CompatibilityMatrix { profiles, matrix }
+}
+
+fn selected_profiles(config: Option<&AuditConfig>) -> Vec<String> {
+    match config {
+        Some(config) if !config.profiles.is_empty() => config.profiles.clone(),
+        _ => HOST_PROFILES
+            .iter()
+            .map(|profile| (*profile).to_owned())
+            .collect(),
+    }
 }
 
 fn skill_finding_from_evaluated_rule(finding: EvaluatedRuleFinding) -> SkillFinding {
@@ -589,6 +626,7 @@ mod tests {
     use crate::config::parse_audit_config;
     use crate::model::{FindingCategory, Severity, SkillFinding};
     use crate::test_support::TestWorkspace;
+    use agent_audit_hosts::{CompatibilityStatus, HOST_PROFILES};
     use agent_audit_rules::{
         rule_metadata, RuleCategory as RegistryCategory, RuleSeverity as RegistrySeverity,
     };
@@ -646,6 +684,107 @@ and [heading](#valid-skill).
         );
         assert_eq!(report.packages[0].graph.files[0].kind, SkillFileKind::File);
         assert_eq!(report.packages[0].graph.files[0].size_bytes, 11);
+    }
+
+    #[test]
+    fn scan_default_compatibility_matrix_uses_all_profiles_in_registry_order() {
+        let workspace = TestWorkspace::new("scan-default-compatibility");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: default-compatibility
+description: Default compatibility fixture.
+---
+
+# Default Compatibility
+"#,
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_eq!(report.compatibility.profiles, string_vec(HOST_PROFILES));
+        assert_eq!(report.compatibility.matrix.len(), 1);
+        assert_eq!(report.compatibility.matrix[0].path, "SKILL.md");
+        assert_eq!(
+            report.compatibility.matrix[0].name.as_deref(),
+            Some("default-compatibility")
+        );
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            HOST_PROFILES
+                .iter()
+                .map(|profile| (*profile, CompatibilityStatus::Unknown, Vec::<&str>::new()))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(report.summary.finding_count, 0);
+        assert_eq!(report.summary.suppressed_finding_count, 0);
+    }
+
+    #[test]
+    fn scan_explicit_config_profiles_limit_matrix_and_preserve_order() {
+        let workspace = TestWorkspace::new("scan-configured-compatibility");
+        workspace.write_file(
+            "zeta/SKILL.md",
+            r#"---
+name: zeta
+description: Zeta compatibility fixture.
+---
+
+# Zeta
+"#,
+        );
+        workspace.write_file(
+            "alpha/SKILL.md",
+            r#"---
+name: alpha
+description: Alpha compatibility fixture.
+---
+
+# Alpha
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - generic
+  - codex
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(report.compatibility.profiles, vec!["generic", "codex"]);
+        assert_eq!(
+            report
+                .compatibility
+                .matrix
+                .iter()
+                .map(|row| (row.path.as_str(), row.name.as_deref()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("alpha/SKILL.md", Some("alpha")),
+                ("zeta/SKILL.md", Some("zeta")),
+            ]
+        );
+        for row in &report.compatibility.matrix {
+            assert_eq!(
+                compatibility_projection(&row.profiles),
+                vec![
+                    ("generic", CompatibilityStatus::Unknown, Vec::<&str>::new()),
+                    ("codex", CompatibilityStatus::Unknown, Vec::<&str>::new()),
+                ]
+            );
+        }
+        assert_eq!(report.summary.finding_count, 0);
+        assert_eq!(report.summary.suppressed_finding_count, 0);
     }
 
     #[test]
@@ -2481,6 +2620,33 @@ description: JSON stability fixture.
             value["packages"][0]["manifest"]["description"],
             "JSON stability fixture."
         );
+        assert_eq!(
+            value["compatibility"]["profiles"],
+            serde_json::json!(HOST_PROFILES)
+        );
+        assert_eq!(
+            value["compatibility"]["matrix"][0]["path"],
+            "skill/SKILL.md"
+        );
+        assert_eq!(
+            value["compatibility"]["matrix"][0]["profiles"]
+                .as_array()
+                .expect("compatibility profiles")
+                .iter()
+                .map(|profile| (
+                    profile["profile"].as_str().expect("profile"),
+                    profile["status"].as_str().expect("status"),
+                    profile["finding_ids"]
+                        .as_array()
+                        .expect("finding ids")
+                        .len(),
+                ))
+                .collect::<Vec<_>>(),
+            HOST_PROFILES
+                .iter()
+                .map(|profile| (*profile, "unknown", 0))
+                .collect::<Vec<_>>()
+        );
         assert!(!json_contains_workspace_root(&json, workspace.root()));
         assert!(!json.contains("timestamp"));
         assert!(!json.contains("generated_at"));
@@ -2528,6 +2694,54 @@ description: JSON stability fixture.
     "suppressed_finding_count": 0,
     "invalid_manifest_count": 0,
     "broken_reference_count": 0
+  },
+  "compatibility": {
+    "profiles": [
+      "agent-skills-spec",
+      "claude-code",
+      "codex",
+      "github-copilot",
+      "vscode-copilot",
+      "generic"
+    ],
+    "matrix": [
+      {
+        "path": "SKILL.md",
+        "name": "Stable Snapshot",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "unknown",
+            "finding_ids": []
+          }
+        ]
+      }
+    ]
   }
 }"##;
         assert_eq!(json, expected);
@@ -2922,6 +3136,29 @@ Read [guidance](references/guidance.md).
                 )
             })
             .collect()
+    }
+
+    fn compatibility_projection(
+        profiles: &[agent_audit_hosts::ProfileCompatibilityResult],
+    ) -> Vec<(&str, CompatibilityStatus, Vec<&str>)> {
+        profiles
+            .iter()
+            .map(|profile| {
+                (
+                    profile.profile.as_str(),
+                    profile.status,
+                    profile
+                        .finding_ids
+                        .iter()
+                        .map(String::as_str)
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect()
+    }
+
+    fn string_vec(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_owned()).collect()
     }
 
     fn report_json_value(report: &ScanReport) -> (String, serde_json::Value) {

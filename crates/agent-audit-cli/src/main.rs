@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use agent_audit_core::{
     parse_audit_config, parse_severity, report_matches_fail_on, scan_path, AuditConfig, AuditError,
-    CompatibilityMatrix, ScanOptions, ScanReport, Severity,
+    ScanOptions, ScanReport, Severity,
 };
 use agent_audit_report::{
     render_report, ReportFormat, UnsupportedReportFormat, SUPPORTED_REPORT_FORMATS_HELP,
@@ -150,7 +150,7 @@ fn parse_fail_on_severity(value: &str) -> Result<Severity, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agent_audit_core::model::ScanSummary;
+    use agent_audit_core::model::{CompatibilityMatrix, ScanSummary};
     use agent_audit_core::{
         FindingCategory, FindingLocation, SkillFinding, SuppressedFinding, SuppressionMatch,
     };
