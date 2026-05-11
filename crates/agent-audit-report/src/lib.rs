@@ -254,6 +254,12 @@ th{background:#f0f4f8}
 .summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:.75rem;margin:1rem 0 2rem}
 .summary div{border:1px solid #d9e2ec;padding:.75rem}
 .count{display:block;font-size:1.5rem;font-weight:700}
+.status{font-weight:700}
+.status-pass{color:#0f5132}
+.status-warn{color:#8a5a00}
+.status-fail{color:#842029}
+.status-unknown{color:#4b5563}
+.finding-ids{font-size:.875rem;color:#4b5563}
 </style>
 </head>
 <body>
@@ -299,6 +305,8 @@ th{background:#f0f4f8}
         html.push_str("</td></tr>");
     }
     html.push_str("</tbody></table></section>\n");
+
+    extend_html_compatibility(&mut html, report);
 
     html.push_str(
         "<section aria-labelledby=\"findings\"><h2 id=\"findings\">Findings</h2><table><thead><tr><th>Rule</th><th>Severity</th><th>Category</th><th>Location</th><th>Title</th><th>Message</th><th>Why it matters</th><th>How to fix</th><th>Suppression</th></tr></thead><tbody>",
@@ -350,6 +358,148 @@ fn with_trailing_newline(mut rendered: String) -> String {
 
 fn summary_count(label: &str, count: usize) -> String {
     format!("<div><span class=\"count\">{count}</span>{label}</div>")
+}
+
+fn extend_html_compatibility(html: &mut String, report: &ScanReport) {
+    if report.compatibility.is_empty() {
+        return;
+    }
+
+    html.push_str(
+        "<section aria-labelledby=\"compatibility\"><h2 id=\"compatibility\">Compatibility</h2>",
+    );
+    html.push_str("<table><thead><tr><th>Package path</th><th>Skill</th>");
+    for profile in &report.compatibility.profiles {
+        html.push_str("<th>");
+        html.push_str(&escape_html(profile));
+        html.push_str("</th>");
+    }
+    html.push_str("</tr></thead><tbody>");
+
+    if report.compatibility.matrix.is_empty() {
+        let colspan = report.compatibility.profiles.len() + 2;
+        html.push_str(&format!(
+            "<tr><td colspan=\"{colspan}\">No compatibility rows.</td></tr>"
+        ));
+    }
+
+    for row in &report.compatibility.matrix {
+        html.push_str("<tr><td>");
+        html.push_str(&escape_html(&row.path));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(row.name.as_deref().unwrap_or("")));
+        html.push_str("</td>");
+
+        for profile_id in &report.compatibility.profiles {
+            html.push_str("<td>");
+            if let Some(profile) = row
+                .profiles
+                .iter()
+                .find(|profile| &profile.profile == profile_id)
+            {
+                html.push_str(&html_compatibility_status(profile.status.as_str()));
+                if !profile.finding_ids.is_empty() {
+                    html.push_str("<br><span class=\"finding-ids\">");
+                    html.push_str(&escape_html(&profile.finding_ids.join(", ")));
+                    html.push_str("</span>");
+                }
+            }
+            html.push_str("</td>");
+        }
+
+        html.push_str("</tr>");
+    }
+    html.push_str("</tbody></table>");
+
+    extend_html_compatibility_details(html, report);
+    html.push_str("</section>\n");
+}
+
+fn html_compatibility_status(status: &str) -> String {
+    let class = match status {
+        "pass" => "status-pass",
+        "warn" => "status-warn",
+        "fail" => "status-fail",
+        _ => "status-unknown",
+    };
+
+    format!(
+        "<span class=\"status {class}\">{}</span>",
+        escape_html(status)
+    )
+}
+
+fn extend_html_compatibility_details(html: &mut String, report: &ScanReport) {
+    let has_details = report
+        .compatibility
+        .matrix
+        .iter()
+        .flat_map(|row| row.profiles.iter())
+        .any(|profile| !profile.finding_ids.is_empty());
+
+    if !has_details {
+        return;
+    }
+
+    html.push_str("<h3>Compatibility Details</h3><table><thead><tr><th>Package path</th><th>Skill</th><th>Profile</th><th>Status</th><th>Finding</th><th>Context</th></tr></thead><tbody>");
+
+    for row in &report.compatibility.matrix {
+        for profile_id in &report.compatibility.profiles {
+            let Some(profile) = row
+                .profiles
+                .iter()
+                .find(|profile| &profile.profile == profile_id)
+            else {
+                continue;
+            };
+
+            for finding_id in &profile.finding_ids {
+                html.push_str("<tr><td>");
+                html.push_str(&escape_html(&row.path));
+                html.push_str("</td><td>");
+                html.push_str(&escape_html(row.name.as_deref().unwrap_or("")));
+                html.push_str("</td><td>");
+                html.push_str(&escape_html(&profile.profile));
+                html.push_str("</td><td>");
+                html.push_str(&escape_html(profile.status.as_str()));
+                html.push_str("</td><td>");
+                html.push_str(&escape_html(finding_id));
+                html.push_str("</td><td>");
+                html.push_str(&html_compatibility_finding_contexts(
+                    &report.findings,
+                    &row.path,
+                    finding_id,
+                ));
+                html.push_str("</td></tr>");
+            }
+        }
+    }
+
+    html.push_str("</tbody></table>");
+}
+
+fn html_compatibility_finding_contexts(
+    findings: &[SkillFinding],
+    path: &str,
+    finding_id: &str,
+) -> String {
+    let contexts = sorted_findings(findings)
+        .into_iter()
+        .filter(|finding| finding.location.path == path && finding.rule_id == finding_id)
+        .map(|finding| {
+            escape_html(&format!(
+                "{}: {}",
+                location_display(&finding.location.path, finding.location.line),
+                finding.message
+            ))
+        })
+        .collect::<Vec<_>>();
+
+    if contexts.is_empty() {
+        "No matching finding detail.".to_owned()
+    } else {
+        contexts.join("<br>")
+    }
 }
 
 fn sorted_packages(packages: &[SkillPackage]) -> Vec<&SkillPackage> {
@@ -1111,6 +1261,142 @@ mod tests {
 
         assert!(html.contains("<tr><td colspan=\"4\">No packages discovered.</td></tr>"));
         assert!(html.contains("<tr><td colspan=\"9\">No findings.</td></tr>"));
+        assert!(!html.contains("<h2 id=\"compatibility\">Compatibility</h2>"));
+    }
+
+    #[test]
+    fn html_output_includes_compatibility_matrix_and_finding_context() {
+        let mut report = report_with_packages_and_findings(
+            vec![package(
+                "skills/deploy",
+                "skills/deploy/SKILL.md",
+                Some("deploy-helper"),
+                Some("Deploys services."),
+            )],
+            vec![
+                finding(
+                    "SKILL050",
+                    Severity::Low,
+                    FindingCategory::Compatibility,
+                    "Invalid host-specific metadata",
+                    "Claude Code may ignore the custom metadata.",
+                    "skills/deploy/SKILL.md",
+                    Some(3),
+                ),
+                finding(
+                    "HOST030",
+                    Severity::Medium,
+                    FindingCategory::Compatibility,
+                    "Unsupported script artifact",
+                    "Codex requires script review before use.",
+                    "skills/deploy/SKILL.md",
+                    Some(9),
+                ),
+            ],
+        );
+        report.compatibility = serde_json::from_value(json!({
+            "profiles": ["agent-skills-spec", "claude-code", "codex"],
+            "matrix": [
+                {
+                    "path": "skills/deploy/SKILL.md",
+                    "name": "deploy-helper",
+                    "profiles": [
+                        {
+                            "profile": "agent-skills-spec",
+                            "status": "pass",
+                            "finding_ids": []
+                        },
+                        {
+                            "profile": "claude-code",
+                            "status": "warn",
+                            "finding_ids": ["SKILL050"]
+                        },
+                        {
+                            "profile": "codex",
+                            "status": "fail",
+                            "finding_ids": ["HOST030"]
+                        }
+                    ]
+                }
+            ]
+        }))
+        .expect("compatibility matrix fixture");
+
+        let html = render_html(&report);
+
+        assert!(html.contains("<h2 id=\"compatibility\">Compatibility</h2>"));
+        assert!(html.contains("<th>Package path</th><th>Skill</th><th>agent-skills-spec</th><th>claude-code</th><th>codex</th>"));
+        assert!(html.contains("<td>skills/deploy/SKILL.md</td><td>deploy-helper</td>"));
+        assert!(html.contains("<span class=\"status status-pass\">pass</span>"));
+        assert!(html.contains("<span class=\"status status-warn\">warn</span><br><span class=\"finding-ids\">SKILL050</span>"));
+        assert!(html.contains("<span class=\"status status-fail\">fail</span><br><span class=\"finding-ids\">HOST030</span>"));
+        assert!(html.contains("<h3>Compatibility Details</h3>"));
+        assert!(
+            html.contains("skills/deploy/SKILL.md:3: Claude Code may ignore the custom metadata.")
+        );
+        assert!(html.contains("skills/deploy/SKILL.md:9: Codex requires script review before use."));
+        assert_in_order(
+            &html,
+            &[
+                "<h2 id=\"packages\">Packages</h2>",
+                "<h2 id=\"compatibility\">Compatibility</h2>",
+                "<h2 id=\"findings\">Findings</h2>",
+            ],
+        );
+    }
+
+    #[test]
+    fn html_output_escapes_compatibility_report_strings_as_plain_text() {
+        let mut report = report_with_packages_and_findings(
+            Vec::new(),
+            vec![finding(
+                "HOST<script>",
+                Severity::Low,
+                FindingCategory::Compatibility,
+                "<title>",
+                "</td><script>alert('context')</script>",
+                "skills/<path>/SKILL.md",
+                Some(4),
+            )],
+        );
+        report.compatibility = serde_json::from_value(json!({
+            "profiles": ["codex<script>"],
+            "matrix": [
+                {
+                    "path": "skills/<path>/SKILL.md",
+                    "name": "<skill>",
+                    "profiles": [
+                        {
+                            "profile": "codex<script>",
+                            "status": "warn",
+                            "finding_ids": ["HOST<script>"]
+                        }
+                    ]
+                }
+            ]
+        }))
+        .expect("compatibility matrix fixture");
+
+        let html = render_html(&report);
+
+        assert!(html.contains("codex&lt;script&gt;"));
+        assert!(html.contains("skills/&lt;path&gt;/SKILL.md"));
+        assert!(html.contains("&lt;skill&gt;"));
+        assert!(html.contains("HOST&lt;script&gt;"));
+        assert!(html.contains("skills/&lt;path&gt;/SKILL.md:4: &lt;/td&gt;&lt;script&gt;alert(&#39;context&#39;)&lt;/script&gt;"));
+
+        for raw in [
+            "codex<script>",
+            "skills/<path>/SKILL.md",
+            "<skill>",
+            "HOST<script>",
+            "</td><script>alert('context')</script>",
+        ] {
+            assert!(
+                !html.contains(raw),
+                "raw dangerous compatibility value was rendered: {raw}"
+            );
+        }
     }
 
     #[test]
