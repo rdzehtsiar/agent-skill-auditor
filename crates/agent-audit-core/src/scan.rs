@@ -2973,6 +2973,250 @@ ignore:
     }
 
     #[test]
+    fn scan_copilot_profiles_keep_skill050_attribution_separate() {
+        let workspace = TestWorkspace::new("scan-copilot-skill050-attribution");
+        workspace.write_file(
+            ".github/skills/editor/SKILL.md",
+            r#"---
+name: editor
+description: Reviews local workspace changes.
+allowed-tools:
+  - Bash(git diff:*)
+---
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - vscode-copilot
+  - github-copilot
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(
+            report.compatibility.profiles,
+            vec!["vscode-copilot", "github-copilot"]
+        );
+        let mut findings = report
+            .findings
+            .iter()
+            .map(|finding| (finding.rule_id.as_str(), finding.message.as_str()))
+            .collect::<Vec<_>>();
+        findings.sort_unstable();
+        assert_eq!(
+            findings,
+            vec![
+                (
+                    "SKILL040",
+                    "The manifest declares unsupported frontmatter field `allowed-tools`.",
+                ),
+                (
+                    "SKILL050",
+                    "GitHub Copilot is likely to ignore the `allowed-tools` frontmatter field; document GitHub Copilot tool expectations with portable `tools` metadata or in the Markdown body.",
+                ),
+                (
+                    "SKILL050",
+                    "VS Code Copilot is likely to ignore the `allowed-tools` frontmatter field; document VS Code Copilot tool expectations with portable `tools` metadata or in the Markdown body.",
+                ),
+            ]
+        );
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![
+                (
+                    "vscode-copilot",
+                    CompatibilityStatus::Warn,
+                    vec!["SKILL050"]
+                ),
+                (
+                    "github-copilot",
+                    CompatibilityStatus::Warn,
+                    vec!["SKILL050"]
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn scan_copilot_profiles_warn_for_unknown_frontmatter_with_skill040() {
+        let workspace = TestWorkspace::new("scan-copilot-unknown-frontmatter");
+        workspace.write_file(
+            ".github/skills/editor/SKILL.md",
+            r#"---
+name: editor
+description: Reviews local workspace changes.
+owner: platform
+---
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - github-copilot
+  - vscode-copilot
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(
+            report
+                .findings
+                .iter()
+                .map(|finding| (finding.rule_id.as_str(), finding.message.as_str()))
+                .collect::<Vec<_>>(),
+            vec![(
+                "SKILL040",
+                "The manifest declares unsupported frontmatter field `owner`."
+            )]
+        );
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![
+                (
+                    "github-copilot",
+                    CompatibilityStatus::Warn,
+                    vec!["SKILL040"]
+                ),
+                (
+                    "vscode-copilot",
+                    CompatibilityStatus::Warn,
+                    vec!["SKILL040"]
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn scan_copilot_profiles_ignore_suppressed_skill050_without_row_warning() {
+        let workspace = TestWorkspace::new("scan-copilot-suppressed-skill050-attribution");
+        workspace.write_file(
+            ".github/skills/editor/SKILL.md",
+            r#"---
+name: editor
+description: Reviews local workspace changes.
+allowed-tools:
+  - Bash(git diff:*)
+---
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - github-copilot
+  - vscode-copilot
+
+ignore:
+  - rule: SKILL050
+    path: .github/skills/editor/SKILL.md
+    reason: Repository wrapper translates Copilot tool metadata.
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(
+            report
+                .findings
+                .iter()
+                .map(|finding| finding.rule_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["SKILL040"]
+        );
+        assert_eq!(report.summary.suppressed_finding_count, 2);
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![
+                (
+                    "github-copilot",
+                    CompatibilityStatus::Pass,
+                    Vec::<&str>::new()
+                ),
+                (
+                    "vscode-copilot",
+                    CompatibilityStatus::Pass,
+                    Vec::<&str>::new()
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn scan_copilot_profiles_warn_for_permissions_without_findings() {
+        let workspace = TestWorkspace::new("scan-copilot-permissions-matrix-only");
+        workspace.write_file(
+            ".github/skills/editor/SKILL.md",
+            r#"---
+name: editor
+description: Reviews local workspace changes.
+permissions:
+  network: false
+---
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - github-copilot
+  - vscode-copilot
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert!(report.findings.is_empty());
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![
+                (
+                    "github-copilot",
+                    CompatibilityStatus::Warn,
+                    Vec::<&str>::new()
+                ),
+                (
+                    "vscode-copilot",
+                    CompatibilityStatus::Warn,
+                    Vec::<&str>::new()
+                ),
+            ]
+        );
+    }
+
+    #[test]
     fn scan_generic_fails_for_required_baseline_findings() {
         let workspace = TestWorkspace::new("scan-generic-fail");
         workspace.write_file(
