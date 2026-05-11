@@ -1074,6 +1074,7 @@ pub enum SecuritySignalKind {
     DestructiveCommand,
     DynamicCodeEvaluation,
     EnvironmentVariableRead,
+    ExecutableDownload,
     FileWrite,
     GitHistoryModification,
     HiddenInstruction,
@@ -1326,6 +1327,1156 @@ pub enum SecurityAnalyzerDiagnosticKind {
     ContentTruncated,
     AnalyzerInternalError,
     Other,
+}
+
+const SHELL_SECURITY_ANALYZER_CAPABILITIES: &[SecurityAnalyzerCapability] =
+    &[SecurityAnalyzerCapability {
+        language: SecurityLanguage::Shell,
+        mode: SecurityAnalyzerMode::RegexFallback,
+        precision: SecurityAnalyzerPrecision::Fallback,
+    }];
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ShellSecurityAnalyzer;
+
+pub fn shell_security_analyzer() -> ShellSecurityAnalyzer {
+    ShellSecurityAnalyzer
+}
+
+impl SecurityAnalyzer for ShellSecurityAnalyzer {
+    fn id(&self) -> &str {
+        "shell-security"
+    }
+
+    fn capabilities(&self) -> &[SecurityAnalyzerCapability] {
+        SHELL_SECURITY_ANALYZER_CAPABILITIES
+    }
+
+    fn analyze(&self, input: &SecurityAnalyzerInput<'_>) -> SecurityAnalyzerOutput {
+        let mut output = SecurityAnalyzerOutput::default();
+
+        if input.artifact.language != SecurityLanguage::Shell {
+            output.diagnostics.push(shell_analyzer_diagnostic(
+                self.id(),
+                SecurityAnalyzerDiagnosticSeverity::Warning,
+                SecurityAnalyzerDiagnosticKind::UnsupportedLanguage,
+                format!(
+                    "shell security analyzer does not support {:?} artifacts",
+                    input.artifact.language
+                ),
+                input.artifact.path,
+            ));
+            return output;
+        }
+
+        if input.artifact.content.is_truncated() {
+            output.diagnostics.push(shell_analyzer_diagnostic(
+                self.id(),
+                SecurityAnalyzerDiagnosticSeverity::Warning,
+                SecurityAnalyzerDiagnosticKind::ContentTruncated,
+                "artifact content was truncated; shell security signals may be incomplete"
+                    .to_owned(),
+                input.artifact.path,
+            ));
+        }
+
+        let Some(text) = input.artifact.content.text else {
+            output.diagnostics.push(shell_analyzer_diagnostic(
+                self.id(),
+                SecurityAnalyzerDiagnosticSeverity::Warning,
+                SecurityAnalyzerDiagnosticKind::TextUnavailable,
+                "artifact text is unavailable for shell security analysis".to_owned(),
+                input.artifact.path,
+            ));
+            output.sort_deterministically();
+            return output;
+        };
+
+        output
+            .signals
+            .extend(analyze_shell_security_text(input.artifact.path, text));
+        output.sort_deterministically();
+        output.signals.dedup();
+        output
+    }
+}
+
+fn shell_analyzer_diagnostic(
+    analyzer_id: &str,
+    severity: SecurityAnalyzerDiagnosticSeverity,
+    kind: SecurityAnalyzerDiagnosticKind,
+    message: String,
+    path: &str,
+) -> SecurityAnalyzerDiagnostic {
+    SecurityAnalyzerDiagnostic {
+        analyzer_id: analyzer_id.to_owned(),
+        severity,
+        kind,
+        message,
+        location: Some(SecurityLocation {
+            path: path.to_owned(),
+            line: None,
+            column: None,
+            byte_offset: None,
+        }),
+        mode: Some(SecurityAnalyzerMode::RegexFallback),
+    }
+}
+
+fn analyze_shell_security_text(path: &str, text: &str) -> Vec<SecuritySignal> {
+    let mut signals = Vec::new();
+
+    for (line_index, line) in text.lines().enumerate() {
+        let line_number = line_index + 1;
+        let uncommented = shell_uncommented_prefix(line);
+        let code = mask_shell_quoted_content(uncommented);
+        if code.trim().is_empty() {
+            continue;
+        }
+
+        let tokens = shell_tokens(&code);
+        let evidence = shell_evidence(line);
+
+        signals.extend(detect_external_urls(
+            path,
+            line_number,
+            uncommented,
+            &code,
+            &evidence,
+        ));
+        if let Some(signal) =
+            detect_remote_shell_execution(path, line_number, line, uncommented, &code)
+        {
+            signals.push(signal);
+        }
+        if let Some(signal) = detect_package_installation(path, line_number, line, &code, &tokens) {
+            signals.push(signal);
+        }
+        if let Some(signal) = detect_privilege_escalation(path, line_number, line, &code, &tokens) {
+            signals.push(signal);
+        }
+        if let Some(signal) = detect_destructive_command(path, line_number, line, &code, &tokens) {
+            signals.push(signal);
+        }
+        if let Some(signal) =
+            detect_git_history_modification(path, line_number, line, &code, &tokens)
+        {
+            signals.push(signal);
+        }
+        if let Some(signal) = detect_obfuscated_command(path, line_number, line, &code, &tokens) {
+            signals.push(signal);
+        }
+        signals.extend(detect_file_writes(path, line_number, line, &code, &tokens));
+        if let Some(signal) =
+            detect_executable_download(path, line_number, line, uncommented, &code, &tokens)
+        {
+            signals.push(signal);
+        }
+    }
+
+    signals.sort();
+    signals.dedup();
+    signals
+}
+
+fn detect_external_urls(
+    path: &str,
+    line_number: usize,
+    uncommented: &str,
+    code: &str,
+    evidence: &str,
+) -> Vec<SecuritySignal> {
+    let tokens = shell_tokens(code);
+    let searchable = if has_network_fetch_command(code, &tokens) {
+        uncommented
+    } else {
+        code
+    };
+
+    find_external_urls(searchable)
+        .into_iter()
+        .map(|(column, url)| {
+            shell_signal(
+                path,
+                line_number,
+                column,
+                SecuritySignalKind::NetworkAccess,
+                None,
+                Some(SecuritySink {
+                    kind: SecuritySinkKind::NetworkRequest,
+                    target: Some(url),
+                }),
+                SecurityRiskScore::new(45),
+                AnalyzerConfidence::Medium,
+                evidence,
+            )
+        })
+        .collect()
+}
+
+fn detect_remote_shell_execution(
+    path: &str,
+    line_number: usize,
+    line: &str,
+    uncommented: &str,
+    code: &str,
+) -> Option<SecuritySignal> {
+    let (column, _) = find_remote_shell_pipeline(code, uncommented)?;
+
+    Some(shell_signal(
+        path,
+        line_number,
+        column,
+        SecuritySignalKind::RemoteCodeExecution,
+        Some(SecuritySource {
+            kind: SecuritySourceKind::NetworkResponse,
+            name: None,
+        }),
+        Some(SecuritySink {
+            kind: SecuritySinkKind::ShellExecution,
+            target: Some("download-pipe-shell".to_owned()),
+        }),
+        SecurityRiskScore::new(90),
+        AnalyzerConfidence::High,
+        &shell_evidence(line),
+    ))
+}
+
+fn detect_package_installation(
+    path: &str,
+    line_number: usize,
+    line: &str,
+    code: &str,
+    tokens: &[ShellToken],
+) -> Option<SecuritySignal> {
+    let (index, target) = find_package_install_command(code, tokens)?;
+    Some(shell_signal(
+        path,
+        line_number,
+        tokens[index].start + 1,
+        SecuritySignalKind::PackageInstallation,
+        None,
+        Some(SecuritySink {
+            kind: SecuritySinkKind::PackageInstall,
+            target: Some(target),
+        }),
+        SecurityRiskScore::new(65),
+        AnalyzerConfidence::High,
+        &shell_evidence(line),
+    ))
+}
+
+fn detect_privilege_escalation(
+    path: &str,
+    line_number: usize,
+    line: &str,
+    code: &str,
+    tokens: &[ShellToken],
+) -> Option<SecuritySignal> {
+    let command_indices = shell_command_token_indices(code, tokens);
+    let token = command_indices
+        .iter()
+        .map(|&index| &tokens[index])
+        .find(|token| shell_command_name(&token.text) == "sudo")?;
+
+    Some(shell_signal(
+        path,
+        line_number,
+        token.start + 1,
+        SecuritySignalKind::PrivilegeEscalation,
+        None,
+        Some(SecuritySink {
+            kind: SecuritySinkKind::PrivilegeEscalation,
+            target: Some("sudo".to_owned()),
+        }),
+        SecurityRiskScore::new(75),
+        AnalyzerConfidence::High,
+        &shell_evidence(line),
+    ))
+}
+
+fn detect_destructive_command(
+    path: &str,
+    line_number: usize,
+    line: &str,
+    code: &str,
+    tokens: &[ShellToken],
+) -> Option<SecuritySignal> {
+    let command_indices = shell_command_token_indices(code, tokens);
+    let rm_index = command_indices
+        .iter()
+        .copied()
+        .find(|&index| shell_command_name(&tokens[index].text) == "rm")?;
+    let command_end = shell_command_argument_end_index(code, tokens, rm_index);
+    let has_force_recursive = tokens
+        .iter()
+        .take(command_end)
+        .skip(rm_index + 1)
+        .take_while(|token| token.text.starts_with('-'))
+        .any(|token| shell_option_has(&token.text, 'r') && shell_option_has(&token.text, 'f'));
+    if !has_force_recursive {
+        return None;
+    }
+
+    Some(shell_signal(
+        path,
+        line_number,
+        tokens[rm_index].start + 1,
+        SecuritySignalKind::DestructiveCommand,
+        None,
+        Some(SecuritySink {
+            kind: SecuritySinkKind::FileDelete,
+            target: Some("rm -rf".to_owned()),
+        }),
+        SecurityRiskScore::new(85),
+        AnalyzerConfidence::High,
+        &shell_evidence(line),
+    ))
+}
+
+fn detect_git_history_modification(
+    path: &str,
+    line_number: usize,
+    line: &str,
+    code: &str,
+    tokens: &[ShellToken],
+) -> Option<SecuritySignal> {
+    let command_indices = shell_command_token_indices(code, tokens);
+    let git_index = command_indices
+        .iter()
+        .copied()
+        .find(|&index| shell_command_name(&tokens[index].text) == "git")?;
+    let command_end = shell_command_argument_end_index(code, tokens, git_index);
+    let rest = &tokens[git_index + 1..command_end];
+    let rewrites_history = rest
+        .windows(2)
+        .any(|window| window[0].text == "reset" && window[1].text == "--hard")
+        || rest.windows(2).any(|window| {
+            window[0].text == "push"
+                && matches!(
+                    window[1].text.as_str(),
+                    "-f" | "--force" | "--force-with-lease"
+                )
+        })
+        || rest
+            .iter()
+            .any(|token| matches!(token.text.as_str(), "filter-branch" | "rebase"));
+
+    if !rewrites_history {
+        return None;
+    }
+
+    Some(shell_signal(
+        path,
+        line_number,
+        tokens[git_index].start + 1,
+        SecuritySignalKind::GitHistoryModification,
+        None,
+        Some(SecuritySink {
+            kind: SecuritySinkKind::GitHistoryRewrite,
+            target: Some("git history rewrite".to_owned()),
+        }),
+        SecurityRiskScore::new(80),
+        AnalyzerConfidence::High,
+        &shell_evidence(line),
+    ))
+}
+
+fn detect_obfuscated_command(
+    path: &str,
+    line_number: usize,
+    line: &str,
+    code: &str,
+    tokens: &[ShellToken],
+) -> Option<SecuritySignal> {
+    let command_indices = shell_command_token_indices(code, tokens);
+
+    if let Some(token) = command_indices
+        .iter()
+        .map(|&index| &tokens[index])
+        .find(|token| shell_command_name(&token.text) == "eval")
+    {
+        return Some(shell_signal(
+            path,
+            line_number,
+            token.start + 1,
+            SecuritySignalKind::ObfuscatedCommand,
+            None,
+            Some(SecuritySink {
+                kind: SecuritySinkKind::DynamicCodeEvaluation,
+                target: Some("eval".to_owned()),
+            }),
+            SecurityRiskScore::new(70),
+            AnalyzerConfidence::Medium,
+            &shell_evidence(line),
+        ));
+    }
+
+    let base64_index = command_indices
+        .iter()
+        .copied()
+        .find(|&index| shell_command_name(&tokens[index].text) == "base64")?;
+    let command_end = shell_command_argument_end_index(code, tokens, base64_index);
+    let decodes = tokens
+        .iter()
+        .take(command_end)
+        .skip(base64_index + 1)
+        .take_while(|token| token.text.starts_with('-'))
+        .any(|token| token.text == "--decode" || shell_option_has(&token.text, 'd'));
+
+    if decodes && code.contains('|') && has_shell_after_pipe(code) {
+        return Some(shell_signal(
+            path,
+            line_number,
+            tokens[base64_index].start + 1,
+            SecuritySignalKind::ObfuscatedCommand,
+            None,
+            Some(SecuritySink {
+                kind: SecuritySinkKind::ShellExecution,
+                target: Some("base64-decode-pipe-shell".to_owned()),
+            }),
+            SecurityRiskScore::new(80),
+            AnalyzerConfidence::Medium,
+            &shell_evidence(line),
+        ));
+    }
+
+    None
+}
+
+fn detect_file_writes(
+    path: &str,
+    line_number: usize,
+    line: &str,
+    code: &str,
+    tokens: &[ShellToken],
+) -> Vec<SecuritySignal> {
+    let evidence = shell_evidence(line);
+    let mut signals = Vec::new();
+
+    for (column, target) in find_redirection_writes(code) {
+        signals.push(shell_signal(
+            path,
+            line_number,
+            column,
+            SecuritySignalKind::FileWrite,
+            None,
+            Some(SecuritySink {
+                kind: SecuritySinkKind::FileWrite,
+                target: Some(target),
+            }),
+            SecurityRiskScore::new(50),
+            AnalyzerConfidence::Medium,
+            &evidence,
+        ));
+    }
+
+    for (column, target) in find_tee_writes(code, tokens) {
+        signals.push(shell_signal(
+            path,
+            line_number,
+            column,
+            SecuritySignalKind::FileWrite,
+            None,
+            Some(SecuritySink {
+                kind: SecuritySinkKind::FileWrite,
+                target: Some(target),
+            }),
+            SecurityRiskScore::new(50),
+            AnalyzerConfidence::Medium,
+            &evidence,
+        ));
+    }
+
+    signals
+}
+
+fn detect_executable_download(
+    path: &str,
+    line_number: usize,
+    line: &str,
+    uncommented: &str,
+    code: &str,
+    tokens: &[ShellToken],
+) -> Option<SecuritySignal> {
+    let fetch_index = find_network_fetch_command_index(code, tokens)?;
+    let command_end = shell_command_argument_end_index(code, tokens, fetch_index);
+
+    let output_target = find_download_output_target(&tokens[fetch_index + 1..command_end]);
+    let command_span = shell_simple_command_span(code, tokens[fetch_index].start);
+    let url_target = find_external_urls(&uncommented[command_span.0..command_span.1])
+        .into_iter()
+        .map(|(_, url)| url)
+        .find(|url| has_executable_suffix(url));
+
+    let target = output_target
+        .filter(|target| has_executable_suffix(target))
+        .or(url_target)?;
+
+    Some(shell_signal(
+        path,
+        line_number,
+        tokens[fetch_index].start + 1,
+        SecuritySignalKind::ExecutableDownload,
+        Some(SecuritySource {
+            kind: SecuritySourceKind::NetworkResponse,
+            name: None,
+        }),
+        Some(SecuritySink {
+            kind: SecuritySinkKind::FileWrite,
+            target: Some(target),
+        }),
+        SecurityRiskScore::new(80),
+        AnalyzerConfidence::High,
+        &shell_evidence(line),
+    ))
+}
+
+fn shell_signal(
+    path: &str,
+    line: usize,
+    column: usize,
+    kind: SecuritySignalKind,
+    source: Option<SecuritySource>,
+    sink: Option<SecuritySink>,
+    risk: SecurityRiskScore,
+    confidence: AnalyzerConfidence,
+    evidence: &str,
+) -> SecuritySignal {
+    SecuritySignal {
+        location: SecurityLocation {
+            path: path.to_owned(),
+            line: Some(line),
+            column: Some(column),
+            byte_offset: None,
+        },
+        kind,
+        source,
+        sink,
+        risk,
+        confidence,
+        classification: ClassificationMethod::RegexFallback,
+        evidence: evidence.to_owned(),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ShellToken {
+    text: String,
+    start: usize,
+}
+
+fn shell_tokens(code: &str) -> Vec<ShellToken> {
+    let mut tokens = Vec::new();
+    let mut current_start = None;
+
+    for (index, character) in code.char_indices() {
+        if is_shell_token_character(character) {
+            current_start.get_or_insert(index);
+            continue;
+        }
+
+        if let Some(start) = current_start.take() {
+            tokens.push(ShellToken {
+                text: code[start..index].to_ascii_lowercase(),
+                start,
+            });
+        }
+    }
+
+    if let Some(start) = current_start {
+        tokens.push(ShellToken {
+            text: code[start..].to_ascii_lowercase(),
+            start,
+        });
+    }
+
+    tokens
+}
+
+fn shell_command_token_indices(code: &str, tokens: &[ShellToken]) -> Vec<usize> {
+    let mut indices = Vec::new();
+    let mut command_expected = true;
+    let mut command_search_start = 0;
+    let mut previous_end = 0;
+
+    for (index, token) in tokens.iter().enumerate() {
+        if has_shell_command_boundary(&code[previous_end..token.start]) {
+            command_expected = true;
+            command_search_start = token.start;
+        }
+
+        let token_end = shell_token_end(token);
+        previous_end = token_end;
+
+        if !command_expected || token.start < command_search_start {
+            continue;
+        }
+
+        if let Some(assignment_end) = shell_assignment_value_end(code, token) {
+            command_search_start = assignment_end;
+            continue;
+        }
+
+        let name = shell_command_name(&token.text);
+        if is_shell_control_keyword(name) {
+            command_expected = true;
+            command_search_start = token_end;
+            continue;
+        }
+
+        indices.push(index);
+        command_expected = false;
+    }
+
+    expand_shell_command_wrappers(code, tokens, &mut indices);
+    indices.sort_unstable();
+    indices.dedup();
+    indices
+}
+
+fn expand_shell_command_wrappers(code: &str, tokens: &[ShellToken], indices: &mut Vec<usize>) {
+    let mut cursor = 0;
+    while cursor < indices.len() {
+        let index = indices[cursor];
+        let name = shell_command_name(&tokens[index].text);
+        let wrapped_index = match name {
+            "sudo" => find_wrapped_shell_command_index(code, tokens, index + 1, true),
+            "env" => find_wrapped_shell_command_index(code, tokens, index + 1, true),
+            "command" | "builtin" | "exec" => {
+                find_wrapped_shell_command_index(code, tokens, index + 1, false)
+            }
+            _ => None,
+        };
+
+        if let Some(wrapped_index) = wrapped_index {
+            indices.push(wrapped_index);
+        }
+        cursor += 1;
+    }
+}
+
+fn find_wrapped_shell_command_index(
+    code: &str,
+    tokens: &[ShellToken],
+    start_index: usize,
+    skip_options: bool,
+) -> Option<usize> {
+    let previous = start_index.checked_sub(1)?;
+    let command_end = shell_command_argument_end_index(code, tokens, previous);
+
+    for index in start_index..command_end {
+        let token = &tokens[index];
+        if skip_options && token.text.starts_with('-') {
+            continue;
+        }
+        if shell_assignment_value_end(code, token).is_some() {
+            continue;
+        }
+        return Some(index);
+    }
+
+    None
+}
+
+fn shell_command_argument_end_index(
+    code: &str,
+    tokens: &[ShellToken],
+    command_index: usize,
+) -> usize {
+    let mut index = command_index + 1;
+    let mut previous_end = shell_token_end(&tokens[command_index]);
+
+    while index < tokens.len() {
+        if has_shell_command_boundary(&code[previous_end..tokens[index].start]) {
+            break;
+        }
+
+        previous_end = shell_token_end(&tokens[index]);
+        index += 1;
+    }
+
+    index
+}
+
+fn shell_simple_command_span(code: &str, command_start: usize) -> (usize, usize) {
+    let start = code[..command_start]
+        .char_indices()
+        .rev()
+        .find(|(_, character)| is_shell_command_boundary(*character))
+        .map(|(index, character)| index + character.len_utf8())
+        .unwrap_or(0);
+    let end = code[command_start..]
+        .char_indices()
+        .find(|(_, character)| is_shell_command_boundary(*character))
+        .map(|(index, _)| command_start + index)
+        .unwrap_or(code.len());
+
+    (start, end)
+}
+
+fn shell_token_end(token: &ShellToken) -> usize {
+    token.start + token.text.len()
+}
+
+fn shell_assignment_value_end(code: &str, token: &ShellToken) -> Option<usize> {
+    if !is_shell_assignment_name(&token.text) {
+        return None;
+    }
+
+    let equals_index = shell_token_end(token);
+    if code.as_bytes().get(equals_index) != Some(&b'=') {
+        return None;
+    }
+
+    let mut end = equals_index + 1;
+    let bytes = code.as_bytes();
+    while end < bytes.len()
+        && !bytes[end].is_ascii_whitespace()
+        && !matches!(bytes[end], b';' | b'|' | b'&' | b'(' | b')' | b'{' | b'}')
+    {
+        end += 1;
+    }
+
+    Some(end)
+}
+
+fn is_shell_assignment_name(token: &str) -> bool {
+    let mut characters = token.chars();
+    matches!(characters.next(), Some(character) if character.is_ascii_alphabetic() || character == '_')
+        && characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
+}
+
+fn is_shell_control_keyword(name: &str) -> bool {
+    matches!(
+        name,
+        "if" | "then" | "else" | "elif" | "while" | "until" | "do"
+    )
+}
+
+fn has_shell_command_boundary(text: &str) -> bool {
+    text.chars().any(is_shell_command_boundary)
+}
+
+fn is_shell_command_boundary(character: char) -> bool {
+    matches!(character, ';' | '|' | '&' | '(' | ')' | '{' | '}')
+}
+
+fn is_shell_token_character(character: char) -> bool {
+    character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.' | '/')
+}
+
+fn shell_command_name(token: &str) -> &str {
+    token
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(token)
+        .strip_suffix(".exe")
+        .unwrap_or(token.rsplit(['/', '\\']).next().unwrap_or(token))
+}
+
+fn shell_uncommented_prefix(line: &str) -> &str {
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut escaped = false;
+    let mut previous_allows_comment = true;
+
+    for (index, character) in line.char_indices() {
+        if escaped {
+            escaped = false;
+            previous_allows_comment = character.is_whitespace();
+            continue;
+        }
+
+        match character {
+            '\\' if !in_single_quote => {
+                escaped = true;
+                previous_allows_comment = false;
+            }
+            '\'' if !in_double_quote => {
+                in_single_quote = !in_single_quote;
+                previous_allows_comment = false;
+            }
+            '"' if !in_single_quote => {
+                in_double_quote = !in_double_quote;
+                previous_allows_comment = false;
+            }
+            '#' if !in_single_quote && !in_double_quote && previous_allows_comment => {
+                return &line[..index];
+            }
+            _ => {
+                previous_allows_comment =
+                    character.is_whitespace() || is_shell_command_boundary(character);
+            }
+        }
+    }
+
+    line
+}
+
+fn mask_shell_quoted_content(line: &str) -> String {
+    let mut masked = String::with_capacity(line.len());
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut escaped = false;
+
+    for character in line.chars() {
+        if escaped {
+            if in_single_quote || in_double_quote {
+                push_shell_mask_padding(&mut masked, character);
+            } else {
+                masked.push(character);
+            }
+            escaped = false;
+            continue;
+        }
+
+        match character {
+            '\\' if !in_single_quote => {
+                escaped = true;
+                masked.push(if in_double_quote { ' ' } else { character });
+            }
+            '\'' if !in_double_quote => {
+                in_single_quote = !in_single_quote;
+                masked.push(' ');
+            }
+            '"' if !in_single_quote => {
+                in_double_quote = !in_double_quote;
+                masked.push(' ');
+            }
+            _ if in_single_quote || in_double_quote => {
+                push_shell_mask_padding(&mut masked, character);
+            }
+            _ => masked.push(character),
+        }
+    }
+
+    masked
+}
+
+fn push_shell_mask_padding(masked: &mut String, character: char) {
+    for _ in 0..character.len_utf8() {
+        masked.push(' ');
+    }
+}
+
+fn find_external_urls(text: &str) -> Vec<(usize, String)> {
+    let mut urls = Vec::new();
+    let mut search_start = 0;
+
+    while search_start < text.len() {
+        let remaining = &text[search_start..];
+        let Some(relative_index) = remaining
+            .find("http://")
+            .into_iter()
+            .chain(remaining.find("https://"))
+            .min()
+        else {
+            break;
+        };
+        let start = search_start + relative_index;
+        let tail = &text[start..];
+        let end = tail
+            .find(|character: char| {
+                character.is_whitespace()
+                    || matches!(character, '"' | '\'' | ')' | '(' | '<' | '>' | '|' | ';')
+            })
+            .map(|index| start + index)
+            .unwrap_or(text.len());
+        let url = text[start..end]
+            .trim_end_matches([',', '.', ']'])
+            .to_owned();
+        if !url.is_empty() {
+            urls.push((start + 1, url));
+        }
+        search_start = end.saturating_add(1);
+    }
+
+    urls.sort();
+    urls.dedup();
+    urls
+}
+
+fn has_network_fetch_command(code: &str, tokens: &[ShellToken]) -> bool {
+    find_network_fetch_command_index(code, tokens).is_some()
+}
+
+fn find_network_fetch_command_index(code: &str, tokens: &[ShellToken]) -> Option<usize> {
+    shell_command_token_indices(code, tokens)
+        .into_iter()
+        .find(|&index| {
+            matches!(
+                shell_command_name(&tokens[index].text),
+                "curl" | "wget" | "fetch" | "aria2c"
+            )
+        })
+}
+
+fn has_shell_after_pipe(code: &str) -> bool {
+    code.split('|').skip(1).any(|segment| {
+        let tokens = shell_tokens(segment);
+        shell_command_token_indices(segment, &tokens)
+            .iter()
+            .any(|&index| {
+                matches!(
+                    shell_command_name(&tokens[index].text),
+                    "sh" | "bash" | "dash" | "zsh" | "ksh" | "fish"
+                )
+            })
+    })
+}
+
+fn find_remote_shell_pipeline(code: &str, uncommented: &str) -> Option<(usize, String)> {
+    for command_group in shell_command_group_spans(code) {
+        let pipeline_segments = shell_pipeline_spans(code, command_group);
+        if pipeline_segments.len() < 2 {
+            continue;
+        }
+
+        for fetch_position in 0..pipeline_segments.len() - 1 {
+            let fetch_segment =
+                &code[pipeline_segments[fetch_position].0..pipeline_segments[fetch_position].1];
+            let fetch_tokens = shell_tokens(fetch_segment);
+            let Some(fetch_index) = find_network_fetch_command_index(fetch_segment, &fetch_tokens)
+            else {
+                continue;
+            };
+            let fetch_urls = find_external_urls(
+                &uncommented
+                    [pipeline_segments[fetch_position].0..pipeline_segments[fetch_position].1],
+            );
+            if fetch_urls.is_empty() {
+                continue;
+            }
+
+            if pipeline_segments[fetch_position + 1..]
+                .iter()
+                .any(|span| shell_segment_has_shell_command(&code[span.0..span.1]))
+            {
+                let column =
+                    pipeline_segments[fetch_position].0 + fetch_tokens[fetch_index].start + 1;
+                return Some((column, fetch_urls[0].1.clone()));
+            }
+        }
+    }
+
+    None
+}
+
+fn shell_command_group_spans(code: &str) -> Vec<(usize, usize)> {
+    split_shell_spans(code, |character| matches!(character, ';' | '&'))
+}
+
+fn shell_pipeline_spans(code: &str, group: (usize, usize)) -> Vec<(usize, usize)> {
+    let mut spans = Vec::new();
+    let mut start = group.0;
+    let bytes = code.as_bytes();
+    let mut index = group.0;
+
+    while index < group.1 {
+        if bytes[index] == b'|'
+            && index
+                .checked_sub(1)
+                .map_or(true, |previous| bytes[previous] != b'|')
+            && bytes.get(index + 1) != Some(&b'|')
+        {
+            spans.push((start, index));
+            start = index + 1;
+        }
+        index += 1;
+    }
+
+    spans.push((start, group.1));
+    spans
+}
+
+fn split_shell_spans(code: &str, is_separator: impl Fn(char) -> bool) -> Vec<(usize, usize)> {
+    let mut spans = Vec::new();
+    let mut start = 0;
+
+    for (index, character) in code.char_indices() {
+        if is_separator(character) {
+            if code[start..index].trim().is_empty() {
+                start = index + character.len_utf8();
+                continue;
+            }
+            spans.push((start, index));
+            start = index + character.len_utf8();
+        }
+    }
+
+    if !code[start..].trim().is_empty() {
+        spans.push((start, code.len()));
+    }
+
+    spans
+}
+
+fn shell_segment_has_shell_command(segment: &str) -> bool {
+    let tokens = shell_tokens(segment);
+    shell_command_token_indices(segment, &tokens)
+        .iter()
+        .any(|&index| {
+            matches!(
+                shell_command_name(&tokens[index].text),
+                "sh" | "bash" | "dash" | "zsh" | "ksh" | "fish"
+            )
+        })
+}
+
+fn find_package_install_command(code: &str, tokens: &[ShellToken]) -> Option<(usize, String)> {
+    for index in shell_command_token_indices(code, tokens) {
+        let token = &tokens[index];
+        let name = shell_command_name(&token.text);
+        let command_end = shell_command_argument_end_index(code, tokens, index);
+        let rest = &tokens[index + 1..command_end];
+
+        if matches!(name, "npm" | "pnpm" | "yarn")
+            && rest
+                .first()
+                .is_some_and(|next| matches!(next.text.as_str(), "install" | "i" | "add" | "ci"))
+        {
+            return Some((index, format!("{name} {}", rest[0].text)));
+        }
+
+        if matches!(name, "pip" | "pip3") && rest.first().is_some_and(|next| next.text == "install")
+        {
+            return Some((index, format!("{name} install")));
+        }
+
+        if matches!(name, "python" | "python3")
+            && rest.len() >= 3
+            && rest[0].text == "-m"
+            && shell_command_name(&rest[1].text) == "pip"
+            && rest[2].text == "install"
+        {
+            return Some((index, "python -m pip install".to_owned()));
+        }
+
+        if matches!(name, "apt" | "apt-get" | "brew" | "gem" | "cargo")
+            && rest.first().is_some_and(|next| next.text == "install")
+        {
+            return Some((index, format!("{name} install")));
+        }
+    }
+
+    None
+}
+
+fn shell_option_has(option: &str, needle: char) -> bool {
+    option.starts_with('-')
+        && !option.starts_with("--")
+        && option.chars().skip(1).any(|c| c == needle)
+}
+
+fn find_redirection_writes(code: &str) -> Vec<(usize, String)> {
+    let bytes = code.as_bytes();
+    let mut writes = Vec::new();
+    let mut index = 0;
+
+    while index < bytes.len() {
+        if bytes[index] != b'>' {
+            index += 1;
+            continue;
+        }
+
+        if index > 0 && bytes[index - 1] == b'&' {
+            index += 1;
+            continue;
+        }
+
+        let mut target_start = index + 1;
+        if target_start < bytes.len() && bytes[target_start] == b'>' {
+            target_start += 1;
+        }
+        while target_start < bytes.len() && bytes[target_start].is_ascii_whitespace() {
+            target_start += 1;
+        }
+        if target_start >= bytes.len() || matches!(bytes[target_start], b'&' | b'|' | b';') {
+            index += 1;
+            continue;
+        }
+
+        let mut target_end = target_start;
+        while target_end < bytes.len()
+            && !bytes[target_end].is_ascii_whitespace()
+            && !matches!(bytes[target_end], b'|' | b';' | b'&')
+        {
+            target_end += 1;
+        }
+
+        let target = code[target_start..target_end].trim();
+        if !target.is_empty() && target != "/dev/null" {
+            writes.push((index + 1, target.to_owned()));
+        }
+
+        index = target_end.max(index + 1);
+    }
+
+    writes
+}
+
+fn find_tee_writes(code: &str, tokens: &[ShellToken]) -> Vec<(usize, String)> {
+    let mut writes = Vec::new();
+
+    for index in shell_command_token_indices(code, tokens) {
+        let token = &tokens[index];
+        if shell_command_name(&token.text) != "tee" {
+            continue;
+        }
+
+        let command_end = shell_command_argument_end_index(code, tokens, index);
+        if let Some(target) = tokens[index + 1..command_end]
+            .iter()
+            .find(|candidate| !candidate.text.starts_with('-') && candidate.text != "/dev/null")
+        {
+            writes.push((token.start + 1, target.text.clone()));
+        }
+    }
+
+    writes
+}
+
+fn find_download_output_target(tokens: &[ShellToken]) -> Option<String> {
+    for (index, token) in tokens.iter().enumerate() {
+        if matches!(
+            token.text.as_str(),
+            "-o" | "--output" | "-output-document" | "--output-document"
+        ) {
+            return tokens.get(index + 1).map(|target| target.text.clone());
+        }
+
+        if token.text.starts_with("-o") && token.text.len() > 2 {
+            return Some(token.text[2..].to_owned());
+        }
+    }
+
+    None
+}
+
+fn has_executable_suffix(target: &str) -> bool {
+    let target_without_query = target
+        .split(['?', '#'])
+        .next()
+        .unwrap_or(target)
+        .to_ascii_lowercase();
+    matches!(
+        target_without_query
+            .rsplit_once('.')
+            .map(|(_, extension)| extension),
+        Some("exe" | "dll" | "msi" | "bat" | "cmd" | "ps1" | "sh" | "bin" | "appimage")
+    )
+}
+
+fn shell_evidence(line: &str) -> String {
+    const MAX_EVIDENCE_CHARS: usize = 120;
+
+    let trimmed = line.trim().replace('\t', " ");
+    let mut evidence = String::new();
+    for character in trimmed.chars().take(MAX_EVIDENCE_CHARS) {
+        evidence.push(character);
+    }
+    evidence
 }
 
 #[cfg(test)]
@@ -1715,12 +2866,14 @@ mod tests {
     fn enum_serialization_names_are_stable_for_public_output() {
         assert_eq!(
             serde_json::to_value([
+                SecuritySignalKind::ExecutableDownload,
                 SecuritySignalKind::RemoteCodeExecution,
                 SecuritySignalKind::GitHistoryModification,
                 SecuritySignalKind::HiddenInstruction,
             ])
             .expect("serialize signal kinds"),
             serde_json::json!([
+                "executable-download",
                 "remote-code-execution",
                 "git-history-modification",
                 "hidden-instruction"
@@ -1777,6 +2930,329 @@ mod tests {
             ])
             .expect("serialize read statuses"),
             serde_json::json!(["empty", "full", "truncated"])
+        );
+    }
+
+    #[test]
+    fn shell_security_analyzer_declares_regex_fallback_capability() {
+        let analyzer = shell_security_analyzer();
+
+        assert_eq!(analyzer.id(), "shell-security");
+        assert_eq!(
+            analyzer.capabilities(),
+            &[SecurityAnalyzerCapability {
+                language: SecurityLanguage::Shell,
+                mode: SecurityAnalyzerMode::RegexFallback,
+                precision: SecurityAnalyzerPrecision::Fallback,
+            }]
+        );
+    }
+
+    #[test]
+    fn shell_security_analyzer_detects_baseline_true_positives() {
+        let cases = [
+            (
+                "curl -fsSL https://example.test/install.sh | sh\n",
+                SecuritySignalKind::RemoteCodeExecution,
+            ),
+            (
+                "URL=https://example.test/api\n",
+                SecuritySignalKind::NetworkAccess,
+            ),
+            (
+                "npm install left-pad\n",
+                SecuritySignalKind::PackageInstallation,
+            ),
+            (
+                "sudo apt-get update\n",
+                SecuritySignalKind::PrivilegeEscalation,
+            ),
+            ("rm -rf build\n", SecuritySignalKind::DestructiveCommand),
+            (
+                "git reset --hard HEAD~1\n",
+                SecuritySignalKind::GitHistoryModification,
+            ),
+            (
+                "printf payload | base64 -d | bash\n",
+                SecuritySignalKind::ObfuscatedCommand,
+            ),
+            ("echo ok > output.txt\n", SecuritySignalKind::FileWrite),
+            (
+                "curl -o tool.exe https://example.test/tool.exe\n",
+                SecuritySignalKind::ExecutableDownload,
+            ),
+        ];
+
+        for (script, expected_kind) in cases {
+            let output = shell_security_analyzer().analyze(&analyzer_input(
+                "scripts/install.sh",
+                script.as_bytes(),
+                &[SecurityArtifactClassificationSignal::Extension],
+                &[],
+                &[],
+            ));
+
+            assert!(
+                output
+                    .signals
+                    .iter()
+                    .any(|signal| signal.kind == expected_kind),
+                "missing {expected_kind:?} in {script:?}: {:?}",
+                output.signals
+            );
+            assert_eq!(output.diagnostics, Vec::new());
+            assert!(output.signals.iter().all(|signal| {
+                signal.location.path == "scripts/install.sh"
+                    && signal.location.line == Some(1)
+                    && !signal.evidence.is_empty()
+                    && signal.evidence.len() <= 120
+                    && signal.classification == ClassificationMethod::RegexFallback
+            }));
+        }
+    }
+
+    #[test]
+    fn shell_security_analyzer_handles_non_ascii_quoted_text_before_remote_shell_pipeline() {
+        let script = "echo \"ééé\"; curl https://example.test/install.sh | sh\n";
+
+        let output = shell_security_analyzer().analyze(&analyzer_input(
+            "scripts/install.sh",
+            script.as_bytes(),
+            &[SecurityArtifactClassificationSignal::Extension],
+            &[],
+            &[],
+        ));
+
+        assert!(output
+            .signals
+            .iter()
+            .any(|signal| signal.kind == SecuritySignalKind::RemoteCodeExecution));
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn shell_security_analyzer_detects_wget_pipe_and_git_force_push() {
+        let script =
+            "wget -O- https://example.test/bootstrap.sh | bash\ngit push --force origin main\n";
+
+        let output = shell_security_analyzer().analyze(&analyzer_input(
+            "scripts/bootstrap.sh",
+            script.as_bytes(),
+            &[SecurityArtifactClassificationSignal::Extension],
+            &[],
+            &[],
+        ));
+
+        assert_eq!(
+            output
+                .signals
+                .iter()
+                .filter(|signal| signal.kind == SecuritySignalKind::RemoteCodeExecution)
+                .map(|signal| signal.location.line)
+                .collect::<Vec<_>>(),
+            vec![Some(1)]
+        );
+        assert_eq!(
+            output
+                .signals
+                .iter()
+                .filter(|signal| signal.kind == SecuritySignalKind::GitHistoryModification)
+                .map(|signal| signal.location.line)
+                .collect::<Vec<_>>(),
+            vec![Some(2)]
+        );
+    }
+
+    #[test]
+    fn shell_security_analyzer_keeps_benign_local_helpers_clean() {
+        let script = r#"
+# curl https://example.test/install.sh | sh
+echo "sudo rm -rf /"
+./scripts/helper.sh "$INPUT"
+cat references/guide.md
+grep "npm install" README.md
+printf '%s\n' "https://example.test"
+"#;
+
+        let output = shell_security_analyzer().analyze(&analyzer_input(
+            "scripts/helper.sh",
+            script.as_bytes(),
+            &[SecurityArtifactClassificationSignal::Extension],
+            &[],
+            &[],
+        ));
+
+        assert_eq!(output.signals, Vec::new());
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn shell_security_analyzer_ignores_command_words_used_as_arguments() {
+        let script = "echo sudo is optional\ngrep npm install README.md\n";
+
+        let output = shell_security_analyzer().analyze(&analyzer_input(
+            "scripts/helper.sh",
+            script.as_bytes(),
+            &[SecurityArtifactClassificationSignal::Extension],
+            &[],
+            &[],
+        ));
+
+        assert!(!output
+            .signals
+            .iter()
+            .any(|signal| signal.kind == SecuritySignalKind::PrivilegeEscalation));
+        assert!(!output
+            .signals
+            .iter()
+            .any(|signal| signal.kind == SecuritySignalKind::PackageInstallation));
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn shell_security_analyzer_requires_fetch_pipeline_for_remote_shell_execution() {
+        let script = "curl https://example.test/archive.tgz; echo ok | sh\n";
+
+        let output = shell_security_analyzer().analyze(&analyzer_input(
+            "scripts/install.sh",
+            script.as_bytes(),
+            &[SecurityArtifactClassificationSignal::Extension],
+            &[],
+            &[],
+        ));
+
+        assert!(!output
+            .signals
+            .iter()
+            .any(|signal| signal.kind == SecuritySignalKind::RemoteCodeExecution));
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn shell_security_analyzer_ignores_comments_after_command_separators() {
+        let script = "true;# curl https://example.test/install.sh | sh\n";
+
+        let output = shell_security_analyzer().analyze(&analyzer_input(
+            "scripts/install.sh",
+            script.as_bytes(),
+            &[SecurityArtifactClassificationSignal::Extension],
+            &[],
+            &[],
+        ));
+
+        assert_eq!(output.signals, Vec::new());
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn shell_security_analyzer_reports_recoverable_input_diagnostics() {
+        let classification_signals = [SecurityArtifactClassificationSignal::Extension];
+        let unsupported_input = SecurityAnalyzerInput {
+            artifact: SecurityAnalyzerArtifactInput {
+                path: "scripts/helper.py",
+                kind: SecurityArtifactKind::Script,
+                language: SecurityLanguage::Python,
+                classification_method: SecurityArtifactClassificationMethod::Extension,
+                classification_signals: &classification_signals,
+                executable: true,
+                size_bytes: 11,
+                content: SecurityAnalyzerContent::from_bytes(
+                    b"print('ok')\n",
+                    SecurityArtifactReadStatus::Full,
+                    11,
+                ),
+            },
+            package: SecurityAnalyzerPackageContext {
+                package_root: ".",
+                manifest_path: "SKILL.md",
+                declared_tools: &[],
+                declared_permissions: &[],
+            },
+        };
+        let unavailable_input = analyzer_input(
+            "scripts/install.sh",
+            &[0xff, 0xfe],
+            &classification_signals,
+            &[],
+            &[],
+        );
+        let truncated_input = SecurityAnalyzerInput {
+            artifact: SecurityAnalyzerArtifactInput {
+                path: "scripts/install.sh",
+                kind: SecurityArtifactKind::Script,
+                language: SecurityLanguage::Shell,
+                classification_method: SecurityArtifactClassificationMethod::Extension,
+                classification_signals: &classification_signals,
+                executable: true,
+                size_bytes: 9,
+                content: SecurityAnalyzerContent::from_bytes(
+                    b"sudo true",
+                    SecurityArtifactReadStatus::Truncated,
+                    9,
+                ),
+            },
+            package: SecurityAnalyzerPackageContext {
+                package_root: ".",
+                manifest_path: "SKILL.md",
+                declared_tools: &[],
+                declared_permissions: &[],
+            },
+        };
+
+        let unsupported = shell_security_analyzer().analyze(&unsupported_input);
+        let unavailable = shell_security_analyzer().analyze(&unavailable_input);
+        let truncated = shell_security_analyzer().analyze(&truncated_input);
+
+        assert_eq!(unsupported.signals, Vec::new());
+        assert_eq!(
+            unsupported.diagnostics[0].kind,
+            SecurityAnalyzerDiagnosticKind::UnsupportedLanguage
+        );
+        assert_eq!(unavailable.signals, Vec::new());
+        assert_eq!(
+            unavailable.diagnostics[0].kind,
+            SecurityAnalyzerDiagnosticKind::TextUnavailable
+        );
+        assert_eq!(
+            truncated.diagnostics[0].kind,
+            SecurityAnalyzerDiagnosticKind::ContentTruncated
+        );
+        assert!(truncated
+            .signals
+            .iter()
+            .any(|signal| signal.kind == SecuritySignalKind::PrivilegeEscalation));
+    }
+
+    #[test]
+    fn shell_security_analyzer_orders_output_deterministically() {
+        let script = "echo ok > output.txt\nsudo apt-get install curl\n";
+        let first = shell_security_analyzer().analyze(&analyzer_input(
+            "scripts/install.sh",
+            script.as_bytes(),
+            &[SecurityArtifactClassificationSignal::Extension],
+            &[],
+            &[],
+        ));
+        let second = shell_security_analyzer().analyze(&analyzer_input(
+            "scripts/install.sh",
+            script.as_bytes(),
+            &[SecurityArtifactClassificationSignal::Extension],
+            &[],
+            &[],
+        ));
+
+        assert_eq!(first, second);
+        assert_eq!(
+            first
+                .signals
+                .iter()
+                .map(|signal| (signal.kind, signal.location.line, signal.location.column))
+                .collect::<Vec<_>>(),
+            vec![
+                (SecuritySignalKind::FileWrite, Some(1), Some(9)),
+                (SecuritySignalKind::PrivilegeEscalation, Some(2), Some(1)),
+                (SecuritySignalKind::PackageInstallation, Some(2), Some(6)),
+            ]
         );
     }
 
