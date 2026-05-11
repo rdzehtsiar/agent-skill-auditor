@@ -213,18 +213,19 @@ fn compatibility_for_profile(
     package: &SkillPackage,
     findings: &[SkillFinding],
 ) -> ProfileCompatibilityResult {
-    if profile == "agent-skills-spec" {
-        return evaluate_agent_skills_spec(package, findings);
-    }
-
-    ProfileCompatibilityResult {
-        profile: profile.to_owned(),
-        status: CompatibilityStatus::Unknown,
-        finding_ids: Vec::new(),
+    match profile {
+        "agent-skills-spec" => evaluate_baseline_structural_profile(profile, package, findings),
+        "generic" => evaluate_baseline_structural_profile(profile, package, findings),
+        _ => ProfileCompatibilityResult {
+            profile: profile.to_owned(),
+            status: CompatibilityStatus::Unknown,
+            finding_ids: Vec::new(),
+        },
     }
 }
 
-fn evaluate_agent_skills_spec(
+fn evaluate_baseline_structural_profile(
+    profile: &str,
     package: &SkillPackage,
     findings: &[SkillFinding],
 ) -> ProfileCompatibilityResult {
@@ -248,7 +249,7 @@ fn evaluate_agent_skills_spec(
     };
 
     ProfileCompatibilityResult {
-        profile: "agent-skills-spec".to_owned(),
+        profile: profile.to_owned(),
         status,
         finding_ids,
     }
@@ -792,7 +793,7 @@ description: Default compatibility fixture.
                     CompatibilityStatus::Unknown,
                     Vec::<&str>::new()
                 ),
-                ("generic", CompatibilityStatus::Unknown, Vec::<&str>::new()),
+                ("generic", CompatibilityStatus::Pass, Vec::<&str>::new()),
             ]
         );
         assert_eq!(report.summary.finding_count, 0);
@@ -850,7 +851,11 @@ Read [missing](references/missing.md).
                     CompatibilityStatus::Unknown,
                     Vec::<&str>::new()
                 ),
-                ("generic", CompatibilityStatus::Unknown, Vec::<&str>::new()),
+                (
+                    "generic",
+                    CompatibilityStatus::Warn,
+                    vec!["SKILL010", "SKILL040"]
+                ),
             ]
         );
     }
@@ -886,6 +891,88 @@ This manifest intentionally has no heading fallback.
                 CompatibilityStatus::Fail,
                 vec!["SKILL001", "SKILL040"]
             )
+        );
+    }
+
+    #[test]
+    fn scan_generic_fails_for_required_baseline_findings() {
+        let workspace = TestWorkspace::new("scan-generic-fail");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+description: Missing name fixture.
+owner: platform
+---
+
+This manifest intentionally has no heading fallback.
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - generic
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![(
+                "generic",
+                CompatibilityStatus::Fail,
+                vec!["SKILL001", "SKILL040"]
+            )]
+        );
+    }
+
+    #[test]
+    fn scan_generic_ignores_suppressed_findings() {
+        let workspace = TestWorkspace::new("scan-generic-suppressed");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+description: Suppressed missing name fixture.
+---
+
+This manifest intentionally has no heading fallback.
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - generic
+
+ignore:
+  - rule: SKILL001
+    path: SKILL.md
+    reason: Accepted missing name fixture.
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert!(report.findings.is_empty());
+        assert_eq!(report.summary.suppressed_finding_count, 1);
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![("generic", CompatibilityStatus::Pass, Vec::<&str>::new())]
         );
     }
 
@@ -990,7 +1077,7 @@ profiles:
             assert_eq!(
                 compatibility_projection(&row.profiles),
                 vec![
-                    ("generic", CompatibilityStatus::Unknown, Vec::<&str>::new()),
+                    ("generic", CompatibilityStatus::Pass, Vec::<&str>::new()),
                     ("codex", CompatibilityStatus::Unknown, Vec::<&str>::new()),
                 ]
             );
@@ -1038,6 +1125,47 @@ profiles:
                     CompatibilityStatus::Fail,
                     vec!["SKILL002"]
                 ),
+            ]
+        );
+    }
+
+    #[test]
+    fn scan_explicit_config_profiles_evaluates_generic_when_selected() {
+        let workspace = TestWorkspace::new("scan-generic-selected-profile");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: selected-generic
+description: Selected generic fixture.
+owner: platform
+---
+
+# Selected Generic
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - codex
+  - generic
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(
+            compatibility_projection(&report.compatibility.matrix[0].profiles),
+            vec![
+                ("codex", CompatibilityStatus::Unknown, Vec::<&str>::new()),
+                ("generic", CompatibilityStatus::Warn, vec!["SKILL040"]),
             ]
         );
     }
@@ -2903,7 +3031,7 @@ description: JSON stability fixture.
                 ("codex", "unknown", 0),
                 ("github-copilot", "unknown", 0),
                 ("vscode-copilot", "unknown", 0),
-                ("generic", "unknown", 0),
+                ("generic", "pass", 0),
             ]
         );
         assert!(!json_contains_workspace_root(&json, workspace.root()));
@@ -2995,7 +3123,7 @@ description: JSON stability fixture.
           },
           {
             "profile": "generic",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           }
         ]

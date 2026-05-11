@@ -1266,7 +1266,7 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           }
         ]
@@ -1304,8 +1304,10 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
           }
         ]
       },
@@ -1342,8 +1344,10 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "fail",
+            "finding_ids": [
+              "SKILL002"
+            ]
           }
         ]
       },
@@ -1378,7 +1382,7 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           }
         ]
@@ -1416,8 +1420,10 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
           }
         ]
       },
@@ -1454,8 +1460,10 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
           }
         ]
       },
@@ -1490,7 +1498,7 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           }
         ]
@@ -1528,8 +1536,10 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL040"
+            ]
           }
         ]
       },
@@ -1564,7 +1574,7 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           }
         ]
@@ -1602,8 +1612,10 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
           }
         ]
       },
@@ -1640,8 +1652,10 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
           }
         ]
       },
@@ -1676,7 +1690,7 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           }
         ]
@@ -1712,7 +1726,7 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           }
         ]
@@ -1748,7 +1762,7 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           }
         ]
@@ -1784,7 +1798,7 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           }
         ]
@@ -1820,7 +1834,7 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           }
         ]
@@ -1858,8 +1872,10 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
           }
         ]
       },
@@ -1896,8 +1912,10 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
           }
         ]
       },
@@ -1934,8 +1952,10 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
           }
         ]
       },
@@ -1972,8 +1992,10 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "fail",
+            "finding_ids": [
+              "SKILL002"
+            ]
           }
         ]
       },
@@ -2010,8 +2032,10 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
           }
         ]
       },
@@ -2046,7 +2070,7 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           }
         ]
@@ -2082,7 +2106,7 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           }
         ]
@@ -2120,8 +2144,10 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL040"
+            ]
           }
         ]
       },
@@ -2156,7 +2182,7 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           }
         ]
@@ -2192,7 +2218,7 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           }
         ]
@@ -2228,7 +2254,7 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           }
         ]
@@ -2266,8 +2292,10 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
           }
         ]
       },
@@ -2302,7 +2330,7 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
+            "status": "pass",
             "finding_ids": []
           }
         ]
@@ -2341,8 +2369,11 @@
           },
           {
             "profile": "generic",
-            "status": "unknown",
-            "finding_ids": []
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010",
+              "SKILL040"
+            ]
           }
         ]
       }
