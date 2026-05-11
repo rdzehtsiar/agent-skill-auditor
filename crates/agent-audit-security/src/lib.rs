@@ -6549,6 +6549,46 @@ mod tests {
     }
 
     #[test]
+    fn python_security_analyzer_regex_scans_malformed_input_without_syntax_diagnostic() {
+        let script = concat!(
+            "def broken(:\n",
+            "subprocess.run(['python', '-m', 'pip', 'install', 'demo'])\n",
+        );
+
+        let output = python_security_analyzer().analyze(&python_analyzer_input(
+            "scripts/check.py",
+            script.as_bytes(),
+        ));
+
+        assert_eq!(
+            output
+                .signals
+                .iter()
+                .map(|signal| (signal.kind, signal.classification, signal.location.line))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    SecuritySignalKind::PackageInstallation,
+                    ClassificationMethod::RegexFallback,
+                    Some(2),
+                ),
+                (
+                    SecuritySignalKind::SubprocessExecution,
+                    ClassificationMethod::RegexFallback,
+                    Some(2),
+                ),
+            ]
+        );
+        assert!(
+            !output
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.kind
+                    == SecurityAnalyzerDiagnosticKind::SyntaxParseFailed)
+        );
+    }
+
+    #[test]
     fn python_security_analyzer_reports_recoverable_input_diagnostics() {
         let classification_signals = [SecurityArtifactClassificationSignal::Extension];
         let unavailable_input = SecurityAnalyzerInput {
@@ -7155,6 +7195,59 @@ mod tests {
     }
 
     #[test]
+    fn typescript_security_analyzer_keeps_type_only_and_string_mentions_clean() {
+        let script = concat!(
+            "type EnvName = 'OPENAI_API_KEY' | 'SERVICE_TOKEN';\n",
+            "interface RequestOptions { url: string }\n",
+            "const note: string = \"fetch('https://example.test')\";\n",
+            "const command: string = \"child_process.exec('npm install demo')\";\n",
+        );
+
+        let output = javascript_security_analyzer().analyze(&javascript_analyzer_input(
+            "scripts/types.ts",
+            SecurityLanguage::TypeScript,
+            script.as_bytes(),
+        ));
+
+        assert_eq!(output.signals, Vec::new());
+        assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn typescript_security_analyzer_regex_scans_malformed_input_without_syntax_diagnostic() {
+        let script = concat!(
+            "type Broken = { value: ;\n",
+            "const token: string | undefined = process.env['SERVICE_TOKEN'];\n",
+        );
+
+        let output = javascript_security_analyzer().analyze(&javascript_analyzer_input(
+            "scripts/types.ts",
+            SecurityLanguage::TypeScript,
+            script.as_bytes(),
+        ));
+
+        assert_eq!(
+            output
+                .signals
+                .iter()
+                .map(|signal| (signal.kind, signal.classification, signal.location.line))
+                .collect::<Vec<_>>(),
+            vec![(
+                SecuritySignalKind::SecretRead,
+                ClassificationMethod::RegexFallback,
+                Some(2),
+            )]
+        );
+        assert!(
+            !output
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.kind
+                    == SecurityAnalyzerDiagnosticKind::SyntaxParseFailed)
+        );
+    }
+
+    #[test]
     fn javascript_security_analyzer_reports_static_file_write_targets() {
         let script = concat!(
             "fs.writeFileSync('scripts/../../.claude/settings.json', data);\n",
@@ -7205,6 +7298,37 @@ mod tests {
 
         assert_eq!(output.signals, Vec::new());
         assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn javascript_security_analyzer_regex_scans_malformed_input_without_syntax_diagnostic() {
+        let script = "const = ;\nfetch('https://example.test/data');\n";
+
+        let output = javascript_security_analyzer().analyze(&javascript_analyzer_input(
+            "scripts/check.js",
+            SecurityLanguage::JavaScript,
+            script.as_bytes(),
+        ));
+
+        assert_eq!(
+            output
+                .signals
+                .iter()
+                .map(|signal| (signal.kind, signal.classification, signal.location.line))
+                .collect::<Vec<_>>(),
+            vec![(
+                SecuritySignalKind::NetworkAccess,
+                ClassificationMethod::RegexFallback,
+                Some(2),
+            )]
+        );
+        assert!(
+            !output
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.kind
+                    == SecurityAnalyzerDiagnosticKind::SyntaxParseFailed)
+        );
     }
 
     #[test]
@@ -7525,6 +7649,39 @@ printf '%s\n' "https://example.test"
 
         assert_eq!(output.signals, Vec::new());
         assert_eq!(output.diagnostics, Vec::new());
+    }
+
+    #[test]
+    fn shell_security_analyzer_regex_scans_malformed_input_without_syntax_diagnostic() {
+        let script = "if then\nsudo true\n";
+
+        let output = shell_security_analyzer().analyze(&analyzer_input(
+            "scripts/install.sh",
+            script.as_bytes(),
+            &[SecurityArtifactClassificationSignal::Extension],
+            &[],
+            &[],
+        ));
+
+        assert_eq!(
+            output
+                .signals
+                .iter()
+                .map(|signal| (signal.kind, signal.classification, signal.location.line))
+                .collect::<Vec<_>>(),
+            vec![(
+                SecuritySignalKind::PrivilegeEscalation,
+                ClassificationMethod::RegexFallback,
+                Some(2),
+            )]
+        );
+        assert!(
+            !output
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.kind
+                    == SecurityAnalyzerDiagnosticKind::SyntaxParseFailed)
+        );
     }
 
     #[test]
