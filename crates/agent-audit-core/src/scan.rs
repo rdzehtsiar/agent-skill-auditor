@@ -1608,7 +1608,7 @@ experimental_host_hint: codex-only
     }
 
     #[test]
-    fn host_specific_frontmatter_still_reports_skill040_not_reserved_skill050() {
+    fn host_specific_frontmatter_still_reports_skill040_not_skill050() {
         let workspace = TestWorkspace::new("scan-host-specific-metadata-skill040");
         workspace.write_file(
             "SKILL.md",

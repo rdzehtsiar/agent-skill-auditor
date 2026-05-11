@@ -94,7 +94,7 @@ ignore:
     reason: False positive: the docs link is resolved by the packaging step that vendors references/api.md before distribution.
 ```
 
-The rule ID must be active. Reserved rule IDs, such as `SKILL050` in Phase 2, and unknown rule IDs are rejected.
+The rule ID must be active. Reserved rule IDs and unknown rule IDs are rejected.
 
 Suppression paths are relative to the scanned project and are normalized to forward slashes. They must stay inside the scanned project. Absolute paths and `..` parent traversal are rejected.
 
@@ -126,7 +126,7 @@ ignore:
     reason: Accepted risk: legacy runbook manifest exceeds the current size guidance, security reviewed 2026-05-01, tracked for split under SEC-184.
 ```
 
-Host-specific metadata that is intentionally retained should use the current unknown-frontmatter rule, `SKILL040`, until host-specific metadata validation is implemented:
+Host-specific metadata that is intentionally retained but only reported by the current structural scanner should use the current unknown-frontmatter rule, `SKILL040`, until profile-specific validation emits `SKILL050`:
 
 ```yaml
 ignore:
@@ -135,4 +135,4 @@ ignore:
     reason: Accepted risk: codex-specific frontmatter is required by the target host and is retained until compatibility metadata rules replace SKILL040.
 ```
 
-`SKILL050` is reserved for future host-specific metadata validation. It is documented in the rule registry, but Phase 2 does not emit `SKILL050` findings and config entries such as `ignore.rule: SKILL050` are rejected until that rule becomes active.
+`SKILL050` is active rule metadata for invalid host-specific metadata. It may be used in suppressions once a profile evaluator emits that finding; the current structural scanner does not emit `SKILL050` yet.

@@ -233,9 +233,11 @@ pub const STRUCTURAL_RULE_IDS: &[&str] = &[
     "SKILL001", "SKILL002", "SKILL010", "SKILL020", "SKILL030", "SKILL040", "SKILL041",
 ];
 
-pub const ACTIVE_RULE_IDS: &[&str] = STRUCTURAL_RULE_IDS;
+pub const ACTIVE_RULE_IDS: &[&str] = &[
+    "SKILL001", "SKILL002", "SKILL010", "SKILL020", "SKILL030", "SKILL040", "SKILL041", "SKILL050",
+];
 
-pub const RESERVED_RULE_IDS: &[&str] = &["SKILL050"];
+pub const RESERVED_RULE_IDS: &[&str] = &[];
 
 pub const ALL_HOST_PROFILES: &[HostProfile] = &[
     HostProfile::AgentSkillsSpec,
@@ -295,10 +297,11 @@ const SKILL041_EXAMPLES: &[RuleExample] = &[RuleExample {
 }];
 
 const SKILL050_EXAMPLES: &[RuleExample] = &[RuleExample {
-    summary: "Reserve host-specific metadata validation for Phase 3 host profiles.",
+    summary: "Match host-specific metadata to the target profile schema.",
     non_compliant:
         "---\nname: reviewer\ndescription: Reviews changes.\ncodex:\n  tools:\n    - shell\n---\n",
-    compliant: "---\nname: reviewer\ndescription: Reviews changes.\n---\n",
+    compliant:
+        "---\nname: reviewer\ndescription: Reviews changes.\ncodex:\n  tools:\n    - shell_command\n---\n",
 }];
 
 pub const RULE_METADATA: &[RuleMetadata] = &[
@@ -404,17 +407,17 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
     },
     RuleMetadata {
         id: RuleId::Skill050,
-        status: RuleStatus::Reserved,
+        status: RuleStatus::Active,
         title: "Invalid host-specific metadata",
         severity: RuleSeverity::Low,
         category: RuleCategory::Compatibility,
         applicable_profiles: ALL_HOST_PROFILES,
         input_node_types: FRONTMATTER_INPUT,
-        rationale: "Host-specific metadata needs profile-specific schemas so compatibility findings stay accurate and explainable.",
+        rationale: "Host-specific metadata that does not match the selected profile schema may be ignored, rejected, or interpreted differently by the target host.",
         remediation:
-            "In Phase 2, keep host-specific metadata review under `SKILL040`; wait for Phase 3 host profiles before relying on `SKILL050`.",
+            "Update the host-specific metadata to match the documented profile schema, move unsupported settings into the Markdown body, or remove metadata that the target host does not accept.",
         suppression_guidance:
-            "`SKILL050` is reserved for Phase 3 host profiles and is not emitted in Phase 2; do not suppress it until it becomes active.",
+            "Suppress `SKILL050` only when the target host accepts the metadata despite the local profile schema, and include the host/version or policy exception in the reason.",
         examples: SKILL050_EXAMPLES,
     },
 ];
@@ -730,7 +733,7 @@ pub fn render_rule_documentation_for(registry: &RuleRegistry) -> String {
         markdown.push_str(metadata.status.as_str());
         markdown.push_str("`");
         if !metadata.status.emits_findings() {
-            markdown.push_str(" (reserved; not emitted in Phase 2)");
+            markdown.push_str(" (reserved; not emitted)");
         }
         markdown.push('\n');
         markdown.push_str("- Severity: `");
@@ -832,7 +835,28 @@ mod tests {
     }
 
     #[test]
-    fn metadata_covers_current_structural_rule_ids_in_deterministic_order() {
+    fn structural_rule_ids_are_active_metadata_in_deterministic_order() {
+        let structural_metadata_ids = STRUCTURAL_RULE_IDS
+            .iter()
+            .map(|rule_id| {
+                active_rule_metadata(rule_id)
+                    .expect("structural rule must be active")
+                    .id
+                    .as_str()
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(structural_metadata_ids, STRUCTURAL_RULE_IDS);
+        assert!(
+            structural_metadata_ids
+                .windows(2)
+                .all(|ids| ids[0] < ids[1]),
+            "structural rule ids must remain sorted"
+        );
+    }
+
+    #[test]
+    fn metadata_covers_active_rule_ids_in_deterministic_order() {
         let active_metadata_ids = RULE_REGISTRY
             .rules()
             .iter()
@@ -840,7 +864,6 @@ mod tests {
             .map(|metadata| metadata.id.as_str())
             .collect::<Vec<_>>();
 
-        assert_eq!(active_metadata_ids, STRUCTURAL_RULE_IDS);
         assert_eq!(active_metadata_ids, ACTIVE_RULE_IDS);
         assert!(active_metadata_ids.windows(2).all(|ids| ids[0] < ids[1]));
     }
@@ -893,7 +916,6 @@ mod tests {
 
         assert_eq!(active_ids, ACTIVE_RULE_IDS);
         assert_eq!(reserved_ids, RESERVED_RULE_IDS);
-        assert_eq!(reserved_ids, vec!["SKILL050"]);
         assert!(active_ids.windows(2).all(|ids| ids[0] < ids[1]));
         assert!(reserved_ids.windows(2).all(|ids| ids[0] < ids[1]));
     }
@@ -1013,16 +1035,19 @@ mod tests {
     }
 
     #[test]
-    fn active_metadata_lookup_rejects_reserved_and_unknown_ids() {
+    fn active_metadata_lookup_accepts_active_and_rejects_unknown_ids() {
         assert_eq!(
             active_rule_metadata("SKILL040").map(|metadata| metadata.title),
             Some("Unknown frontmatter field")
         );
         assert_eq!(
             rule_metadata("SKILL050").map(|metadata| metadata.status),
-            Some(RuleStatus::Reserved)
+            Some(RuleStatus::Active)
         );
-        assert!(active_rule_metadata("SKILL050").is_none());
+        assert_eq!(
+            active_rule_metadata("SKILL050").map(|metadata| metadata.title),
+            Some("Invalid host-specific metadata")
+        );
         assert!(active_rule_metadata("SEC001").is_none());
     }
 
@@ -1411,8 +1436,8 @@ mod tests {
         assert!(first_render.ends_with('\n'));
         assert!(first_render.contains("## Rule Index"));
         assert!(first_render.contains("| Rule | Status | Severity | Category | Title |"));
-        assert!(first_render.contains("| [SKILL050](#skill050-invalid-host-specific-metadata) | `reserved` | `low` | `compatibility` | Invalid host-specific metadata |"));
-        assert!(first_render.contains("- Status: `reserved` (reserved; not emitted in Phase 2)"));
+        assert!(first_render.contains("| [SKILL050](#skill050-invalid-host-specific-metadata) | `active` | `low` | `compatibility` | Invalid host-specific metadata |"));
+        assert!(first_render.contains("- Status: `active`"));
 
         for metadata in RULE_REGISTRY.rules() {
             assert!(first_render.contains(metadata.id.as_str()));

@@ -128,10 +128,11 @@ The current scanner supports:
   - `SKILL030`: duplicate skill name.
   - `SKILL040`: unknown frontmatter field.
   - `SKILL041`: malformed frontmatter.
+  - `SKILL050`: invalid host-specific metadata.
 
 Rule metadata defines each rule's ID, status, severity, category, explanation, remediation, and safe suppression guidance. Rule status is explicit: `active` rules may emit findings and may be suppressed, while `reserved` rules document planned rule IDs and are not emitted or accepted in suppression config. See [Rule Documentation](./docs/rules/README.md) for the generated rule registry.
 
-`SKILL050` is reserved for future host-specific metadata validation in Phase 3 host profiles. In the current scanner, host-specific or otherwise unknown frontmatter is still reported as `SKILL040`, and `SKILL050` is not emitted or accepted in suppression config.
+`SKILL050` is active metadata for host-specific metadata schema violations. The current scanner does not emit it yet; host-specific or otherwise unknown frontmatter is still reported as `SKILL040` until profile evaluators produce profile-specific `SKILL050` messages.
 
 Configuration is documented in [Config](./docs/config.md). Important current behavior:
 

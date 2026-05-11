@@ -244,12 +244,6 @@ mod tests {
                 ),
                 "path must be relative and stay inside the scanned project",
             ),
-            (
-                include_str!(
-                    "../../../fixtures/spec/phase2/config/invalid/reserved-ignore-rule.agent-audit.yaml"
-                ),
-                "reserved rule ID `SKILL050`",
-            ),
         ];
 
         for (content, expected) in cases {
@@ -359,23 +353,26 @@ ignore:
     }
 
     #[test]
-    fn rejects_reserved_ignore_rule() {
-        let error = parse_error(
+    fn accepts_active_skill050_ignore_rule() {
+        let config = parse(
             r#"
 ignore:
   - rule: SKILL050
     path: SKILL.md
-    reason: Host-specific metadata will be reviewed later.
+    reason: "Accepted risk: target host accepts this metadata under a reviewed profile exception."
 "#,
         );
 
-        assert!(
-            matches!(error, AuditError::ConfigValidation { .. }),
-            "expected validation error, got {error:?}"
+        assert_eq!(
+            config.ignore,
+            vec![ConfigIgnoreEntry {
+                rule: "SKILL050".to_owned(),
+                path: "SKILL.md".to_owned(),
+                reason:
+                    "Accepted risk: target host accepts this metadata under a reviewed profile exception."
+                        .to_owned(),
+            }]
         );
-        let message = error.to_string();
-        assert!(message.contains("reserved rule ID `SKILL050`"));
-        assert!(message.contains("cannot be suppressed yet"));
     }
 
     #[test]

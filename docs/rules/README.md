@@ -17,7 +17,7 @@ Rule status is explicit: `active` rules may emit findings and be suppressed, whi
 | [SKILL030](#skill030-duplicate-skill-name) | `active` | `low` | `compatibility` | Duplicate skill name |
 | [SKILL040](#skill040-unknown-frontmatter-field) | `active` | `low` | `compatibility` | Unknown frontmatter field |
 | [SKILL041](#skill041-malformed-frontmatter) | `active` | `low` | `spec` | Malformed frontmatter |
-| [SKILL050](#skill050-invalid-host-specific-metadata) | `reserved` | `low` | `compatibility` | Invalid host-specific metadata |
+| [SKILL050](#skill050-invalid-host-specific-metadata) | `active` | `low` | `compatibility` | Invalid host-specific metadata |
 
 ## SKILL001: Missing skill name
 
@@ -295,7 +295,7 @@ description: Reviews changes.
 
 ## SKILL050: Invalid host-specific metadata
 
-- Status: `reserved` (reserved; not emitted in Phase 2)
+- Status: `active`
 - Severity: `low`
 - Category: `compatibility`
 - Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
@@ -303,19 +303,19 @@ description: Reviews changes.
 
 ### Why It Matters
 
-Host-specific metadata needs profile-specific schemas so compatibility findings stay accurate and explainable.
+Host-specific metadata that does not match the selected profile schema may be ignored, rejected, or interpreted differently by the target host.
 
 ### How To Fix
 
-In Phase 2, keep host-specific metadata review under `SKILL040`; wait for Phase 3 host profiles before relying on `SKILL050`.
+Update the host-specific metadata to match the documented profile schema, move unsupported settings into the Markdown body, or remove metadata that the target host does not accept.
 
 ### Safe Suppression
 
-`SKILL050` is reserved for Phase 3 host profiles and is not emitted in Phase 2; do not suppress it until it becomes active.
+Suppress `SKILL050` only when the target host accepts the metadata despite the local profile schema, and include the host/version or policy exception in the reason.
 
 ### Examples
 
-Reserve host-specific metadata validation for Phase 3 host profiles.
+Match host-specific metadata to the target profile schema.
 
 Non-compliant:
 
@@ -335,5 +335,8 @@ Compliant:
 ---
 name: reviewer
 description: Reviews changes.
+codex:
+  tools:
+    - shell_command
 ---
 ```

@@ -1293,14 +1293,14 @@ mod tests {
     }
 
     #[test]
-    fn sarif_output_falls_back_to_finding_metadata_for_reserved_rule_descriptor() {
+    fn sarif_rule_descriptor_for_skill050_comes_from_active_registry_metadata() {
         let report = report_with_findings(vec![finding_with_details(
             "SKILL050",
             Severity::Medium,
             FindingCategory::Portability,
             "Synthetic host metadata issue",
-            "The synthetic reserved rule produced a finding.",
-            "reserved/SKILL.md",
+            "The synthetic host metadata issue produced a finding.",
+            "host/SKILL.md",
             Some(5),
             "Synthetic rationale.",
             "Synthetic remediation.",
@@ -1311,19 +1311,22 @@ mod tests {
         let rule = &value["runs"][0]["tool"]["driver"]["rules"][0];
 
         assert_eq!(rule["id"], "SKILL050");
-        assert_eq!(rule["name"], "Synthetic host metadata issue");
+        assert_eq!(rule["name"], "Invalid host-specific metadata");
         assert_eq!(
             rule["shortDescription"]["text"],
-            "Synthetic host metadata issue"
+            "Invalid host-specific metadata"
         );
-        assert_eq!(rule["fullDescription"]["text"], "Synthetic rationale.");
+        assert_eq!(
+            rule["fullDescription"]["text"],
+            "Host-specific metadata that does not match the selected profile schema may be ignored, rejected, or interpreted differently by the target host."
+        );
         assert_eq!(
             rule["help"]["text"],
-            "Synthetic remediation.\n\nSynthetic suppression."
+            "Update the host-specific metadata to match the documented profile schema, move unsupported settings into the Markdown body, or remove metadata that the target host does not accept.\n\nSuppress `SKILL050` only when the target host accepts the metadata despite the local profile schema, and include the host/version or policy exception in the reason."
         );
         assert_eq!(rule["defaultConfiguration"]["level"], "warning");
-        assert_eq!(rule["properties"]["agentAuditSeverity"], "medium");
-        assert_eq!(rule["properties"]["category"], "portability");
+        assert_eq!(rule["properties"]["agentAuditSeverity"], "low");
+        assert_eq!(rule["properties"]["category"], "compatibility");
     }
 
     #[test]
