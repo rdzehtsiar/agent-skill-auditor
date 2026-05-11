@@ -17,70 +17,119 @@ pub fn inventory_package_files(
     skill_root: &Path,
 ) -> AuditResult<SupplyChainInventory> {
     let mut inventory = SupplyChainInventory::default();
+    for path in package_inventory_files(skill_root)? {
+        inventory_package_file(scan_root, &path, &mut inventory)?;
+    }
+
+    inventory.sort_deterministically();
+    Ok(inventory)
+}
+
+fn package_inventory_files(skill_root: &Path) -> AuditResult<Vec<std::path::PathBuf>> {
     let mut files = Vec::new();
     collect_skill_package_files(skill_root, skill_root, &mut files, &|path| {
         is_package_inventory_file(&filename(path))
     })?;
     files.sort();
+    Ok(files)
+}
 
-    for path in files {
-        let filename = filename(&path);
-        let display = display_path(scan_root, &path);
-        if let Some(manager) = lockfile_manager(&filename) {
-            inventory.lockfiles.push(LockfileEvidence {
-                path: display.clone(),
-                line: Some(1),
-                source: SupplyChainSourceKind::Lockfile,
-                manager,
-                normalized: filename.clone(),
-                raw: Some(filename.clone()),
-                confidence: EvidenceConfidence::High,
-            });
-        }
-        if let Some(manager) = manifest_manager(&filename) {
-            inventory.package_managers.push(package_manager_evidence(
-                &display,
-                Some(1),
-                SupplyChainSourceKind::PackageManifest,
-                manager,
-                Some(display.clone()),
-                manager_label(manager),
-                Some(filename.clone()),
-            ));
-            inventory
-                .remote_dependencies
-                .extend(package_manifest_dependencies(
-                    &path, &display, &filename, manager,
-                )?);
-        }
-        if is_lockfile_with_urls(&filename) {
-            let content = std::fs::read_to_string(&path).map_err(|source| AuditError::Read {
-                path: path.clone(),
-                source,
-            })?;
-            let mut lockfile_url_inventory =
-                crate::url_inventory::inventory_script_urls(&display, &content);
-            for url in &mut lockfile_url_inventory.external_urls {
-                if url.path == display {
-                    url.source = SupplyChainSourceKind::Lockfile;
-                }
-            }
-            for dependency in &mut lockfile_url_inventory.remote_dependencies {
-                if dependency.path == display {
-                    dependency.source = SupplyChainSourceKind::Lockfile;
-                }
-            }
-            inventory
-                .external_urls
-                .append(&mut lockfile_url_inventory.external_urls);
-            inventory
-                .remote_dependencies
-                .append(&mut lockfile_url_inventory.remote_dependencies);
-        }
+fn inventory_package_file(
+    scan_root: &Path,
+    path: &Path,
+    inventory: &mut SupplyChainInventory,
+) -> AuditResult<()> {
+    let filename = filename(path);
+    let display = display_path(scan_root, path);
+
+    inventory_lockfile(&filename, &display, inventory);
+    inventory_manifest(path, &filename, &display, inventory)?;
+    inventory_lockfile_urls(path, &filename, &display, inventory)?;
+
+    Ok(())
+}
+
+fn inventory_lockfile(filename: &str, display: &str, inventory: &mut SupplyChainInventory) {
+    let Some(manager) = lockfile_manager(filename) else {
+        return;
+    };
+
+    inventory.lockfiles.push(LockfileEvidence {
+        path: display.to_owned(),
+        line: Some(1),
+        source: SupplyChainSourceKind::Lockfile,
+        manager,
+        normalized: filename.to_owned(),
+        raw: Some(filename.to_owned()),
+        confidence: EvidenceConfidence::High,
+    });
+}
+
+fn inventory_manifest(
+    path: &Path,
+    filename: &str,
+    display: &str,
+    inventory: &mut SupplyChainInventory,
+) -> AuditResult<()> {
+    let Some(manager) = manifest_manager(filename) else {
+        return Ok(());
+    };
+
+    inventory.package_managers.push(package_manager_evidence(
+        display,
+        Some(1),
+        SupplyChainSourceKind::PackageManifest,
+        manager,
+        Some(display.to_owned()),
+        manager_label(manager),
+        Some(filename.to_owned()),
+    ));
+    inventory
+        .remote_dependencies
+        .extend(package_manifest_dependencies(
+            path, display, filename, manager,
+        )?);
+
+    Ok(())
+}
+
+fn inventory_lockfile_urls(
+    path: &Path,
+    filename: &str,
+    display: &str,
+    inventory: &mut SupplyChainInventory,
+) -> AuditResult<()> {
+    if !is_lockfile_with_urls(filename) {
+        return Ok(());
     }
 
-    inventory.sort_deterministically();
-    Ok(inventory)
+    let content = std::fs::read_to_string(path).map_err(|source| AuditError::Read {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let mut lockfile_url_inventory = crate::url_inventory::inventory_script_urls(display, &content);
+    mark_lockfile_url_sources(display, &mut lockfile_url_inventory);
+    inventory
+        .external_urls
+        .append(&mut lockfile_url_inventory.external_urls);
+    inventory
+        .remote_dependencies
+        .append(&mut lockfile_url_inventory.remote_dependencies);
+
+    Ok(())
+}
+
+fn mark_lockfile_url_sources(display: &str, inventory: &mut SupplyChainInventory) {
+    for url in &mut inventory.external_urls {
+        if url.path == display {
+            url.source = SupplyChainSourceKind::Lockfile;
+        }
+    }
+    for dependency in &mut inventory.remote_dependencies {
+        if dependency.path == display {
+            dependency.source = SupplyChainSourceKind::Lockfile;
+        }
+    }
 }
 
 pub fn inventory_package_installs_from_signals(signals: &[SecuritySignal]) -> SupplyChainInventory {
