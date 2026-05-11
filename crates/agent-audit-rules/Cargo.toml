@@ -6,3 +6,4 @@ license.workspace = true
 
 [dependencies]
 agent-audit-hosts = { path = "../agent-audit-hosts" }
+agent-audit-security = { path = "../agent-audit-security" }

@@ -4,6 +4,9 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use agent_audit_hosts::HOST_PROFILES;
+use agent_audit_security::{
+    AnalyzerConfidence, SecuritySignal, SecuritySignalKind, SecuritySinkKind, SecuritySourceKind,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RuleId {
@@ -245,12 +248,13 @@ pub const STRUCTURAL_RULE_IDS: &[&str] = &[
 ];
 
 pub const ACTIVE_RULE_IDS: &[&str] = &[
-    "SKILL001", "SKILL002", "SKILL010", "SKILL020", "SKILL030", "SKILL040", "SKILL041", "SKILL050",
+    "SEC001", "SKILL001", "SKILL002", "SKILL010", "SKILL020", "SKILL030", "SKILL040", "SKILL041",
+    "SKILL050",
 ];
 
 pub const RESERVED_RULE_IDS: &[&str] = &[
-    "SEC001", "SEC002", "SEC003", "SEC004", "SEC005", "SEC006", "SEC007", "SEC008", "SEC009",
-    "SEC010", "SEC011", "SEC012",
+    "SEC002", "SEC003", "SEC004", "SEC005", "SEC006", "SEC007", "SEC008", "SEC009", "SEC010",
+    "SEC011", "SEC012",
 ];
 
 pub const ALL_HOST_PROFILES: &[&str] = HOST_PROFILES;
@@ -390,7 +394,7 @@ const SKILL050_EXAMPLES: &[RuleExample] = &[RuleExample {
 pub const RULE_METADATA: &[RuleMetadata] = &[
     RuleMetadata {
         id: RuleId::Sec001,
-        status: RuleStatus::Reserved,
+        status: RuleStatus::Active,
         title: "Remote content piped into shell",
         severity: RuleSeverity::High,
         category: RuleCategory::Security,
@@ -399,7 +403,7 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
         rationale: "Piping network content directly into a shell prevents review, pinning, and integrity checks before code runs on the user's machine.",
         remediation: "Download remote content to a local file, pin the source version, verify integrity, and require explicit review before execution.",
         suppression_guidance:
-            "`SEC001` is reserved and cannot be suppressed until an evaluator emits it. When active, suppress only for a reviewed, pinned, and integrity-checked bootstrap path.",
+            "Suppress `SEC001` only for a reviewed bootstrap path that pins the source, verifies integrity, and documents why direct execution is still required.",
         examples: SEC001_EXAMPLES,
     },
     RuleMetadata {
@@ -779,6 +783,41 @@ pub fn evaluate_structural_rules(packages: &[RulePackageFacts]) -> Vec<Evaluated
     findings
 }
 
+pub fn evaluate_security_signal_rules(signals: &[SecuritySignal]) -> Vec<EvaluatedRuleFinding> {
+    let mut findings = signals
+        .iter()
+        .filter(|signal| is_remote_content_piped_to_shell_signal(signal))
+        .map(remote_content_piped_to_shell_finding)
+        .collect::<Vec<_>>();
+
+    sort_evaluated_findings(&mut findings);
+    findings
+}
+
+fn is_remote_content_piped_to_shell_signal(signal: &SecuritySignal) -> bool {
+    signal.kind == SecuritySignalKind::RemoteCodeExecution
+        && signal.confidence == AnalyzerConfidence::High
+        && signal
+            .source
+            .as_ref()
+            .is_some_and(|source| source.kind == SecuritySourceKind::NetworkResponse)
+        && signal
+            .sink
+            .as_ref()
+            .is_some_and(|sink| sink.kind == SecuritySinkKind::ShellExecution)
+}
+
+fn remote_content_piped_to_shell_finding(signal: &SecuritySignal) -> EvaluatedRuleFinding {
+    EvaluatedRuleFinding {
+        rule_id: RuleId::Sec001,
+        message: "Remote content is piped directly into a shell, so unreviewed network content can execute on the user's machine.".to_owned(),
+        location: RuleFindingLocation {
+            path: signal.location.path.clone(),
+            line: signal.location.line,
+        },
+    }
+}
+
 fn evaluate_parsed_manifest(
     package: &RulePackageFacts,
     manifest: &RuleParsedManifestFacts,
@@ -1066,6 +1105,17 @@ fn push_fenced_block(markdown: &mut String, content: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::path::Path;
+
+    use agent_audit_security::{
+        shell_security_analyzer, ClassificationMethod, SecurityAnalyzer,
+        SecurityAnalyzerArtifactInput, SecurityAnalyzerContent, SecurityAnalyzerInput,
+        SecurityAnalyzerPackageContext, SecurityArtifactClassificationMethod,
+        SecurityArtifactClassificationSignal, SecurityArtifactKind, SecurityArtifactReadStatus,
+        SecurityLanguage, SecurityRiskScore, SecuritySink, SecuritySinkKind, SecuritySource,
+        SecuritySourceKind,
+    };
 
     fn normalize_line_endings(value: &str) -> String {
         value.replace("\r\n", "\n")
@@ -1320,7 +1370,7 @@ mod tests {
             RULE_REGISTRY
                 .metadata("SEC001")
                 .map(|metadata| metadata.status),
-            Some(RuleStatus::Reserved)
+            Some(RuleStatus::Active)
         );
         assert!(rule_metadata("UNKNOWN999").is_none());
         assert!(RULE_REGISTRY.metadata("UNKNOWN999").is_none());
@@ -1342,14 +1392,25 @@ mod tests {
         );
         assert_eq!(
             rule_metadata("SEC001").map(|metadata| metadata.status),
-            Some(RuleStatus::Reserved)
+            Some(RuleStatus::Active)
         );
-        assert!(active_rule_metadata("SEC001").is_none());
+        assert_eq!(
+            active_rule_metadata("SEC001").map(|metadata| metadata.severity),
+            Some(RuleSeverity::High)
+        );
+        assert_eq!(
+            active_rule_metadata("SEC001").map(|metadata| metadata.category),
+            Some(RuleCategory::Security)
+        );
+        assert!(active_rule_metadata("SEC001")
+            .expect("SEC001 is active")
+            .suppression_guidance
+            .contains("Suppress `SEC001` only"));
         assert!(active_rule_metadata("UNKNOWN999").is_none());
     }
 
     #[test]
-    fn reserved_security_rules_are_metadata_only_and_not_suppressible() {
+    fn reserved_security_rules_sec002_through_sec012_are_metadata_only_and_not_suppressible() {
         for rule_id in RESERVED_RULE_IDS {
             let metadata = rule_metadata(rule_id).expect("reserved metadata exists");
 
@@ -1370,6 +1431,172 @@ mod tests {
                 "{rule_id} must not be active until an evaluator emits it"
             );
         }
+    }
+
+    #[test]
+    fn sec001_is_active_and_removed_from_reserved_rules() {
+        assert!(ACTIVE_RULE_IDS.contains(&"SEC001"));
+        assert!(!RESERVED_RULE_IDS.contains(&"SEC001"));
+
+        let metadata = active_rule_metadata("SEC001").expect("SEC001 must be active");
+
+        assert_eq!(metadata.status, RuleStatus::Active);
+        assert_eq!(metadata.severity, RuleSeverity::High);
+        assert_eq!(metadata.category, RuleCategory::Security);
+        assert!(!metadata
+            .suppression_guidance
+            .contains("cannot be suppressed"));
+    }
+
+    #[test]
+    fn sec001_reports_remote_shell_pipelines_from_shell_analyzer() {
+        let cases = [
+            "curl -fsSL https://example.test/install.sh | sh\n",
+            "curl -fsSL https://example.test/install.sh | bash\n",
+            "wget -qO- https://example.test/install.sh | sh\n",
+            "wget -qO- https://example.test/install.sh | bash\n",
+        ];
+
+        for script in cases {
+            let output = shell_security_analyzer().analyze(&shell_analyzer_input(
+                "scripts/install.sh",
+                script.as_bytes(),
+            ));
+            let findings = evaluate_security_signal_rules(&output.signals);
+
+            assert_eq!(
+                findings,
+                vec![finding(
+                    RuleId::Sec001,
+                    "Remote content is piped directly into a shell, so unreviewed network content can execute on the user's machine.",
+                    "scripts/install.sh",
+                    Some(1),
+                )],
+                "script: {script}"
+            );
+            assert_eq!(
+                active_rule_metadata(findings[0].rule_id.as_str())
+                    .expect("SEC001 active metadata")
+                    .severity,
+                RuleSeverity::High
+            );
+        }
+    }
+
+    #[test]
+    fn sec001_does_not_report_download_only_network_fetches() {
+        let cases = [
+            "curl -o scripts/install.sh https://example.test/install.sh\n",
+            "wget -O scripts/install.sh https://example.test/install.sh\n",
+        ];
+
+        for script in cases {
+            let output = shell_security_analyzer().analyze(&shell_analyzer_input(
+                "scripts/install.sh",
+                script.as_bytes(),
+            ));
+            let findings = evaluate_security_signal_rules(&output.signals);
+
+            assert!(
+                findings.is_empty(),
+                "download-only script emitted SEC001: {script:?}: {findings:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn sec001_matches_only_high_confidence_network_response_to_shell_execution() {
+        let matching_signal = security_signal(
+            SecuritySignalKind::RemoteCodeExecution,
+            Some(SecuritySourceKind::NetworkResponse),
+            Some(SecuritySinkKind::ShellExecution),
+            AnalyzerConfidence::High,
+        );
+        let download_only_signal = security_signal(
+            SecuritySignalKind::ExecutableDownload,
+            Some(SecuritySourceKind::NetworkResponse),
+            Some(SecuritySinkKind::FileWrite),
+            AnalyzerConfidence::High,
+        );
+        let shell_only_signal = security_signal(
+            SecuritySignalKind::SubprocessExecution,
+            None,
+            Some(SecuritySinkKind::ShellExecution),
+            AnalyzerConfidence::High,
+        );
+        let medium_confidence_signal = security_signal(
+            SecuritySignalKind::RemoteCodeExecution,
+            Some(SecuritySourceKind::NetworkResponse),
+            Some(SecuritySinkKind::ShellExecution),
+            AnalyzerConfidence::Medium,
+        );
+
+        let findings = evaluate_security_signal_rules(&[
+            download_only_signal,
+            shell_only_signal,
+            medium_confidence_signal,
+            matching_signal,
+        ]);
+
+        assert_eq!(
+            finding_projection(&findings),
+            vec![(RuleId::Sec001, "scripts/install.sh", Some(1))]
+        );
+    }
+
+    #[test]
+    fn security_findings_are_sorted_by_path_location_rule_id_and_message() {
+        let scripts = [
+            ("zeta/install.sh", "curl https://example.test/z.sh | sh\n"),
+            (
+                "alpha/install.sh",
+                "\n\nwget -qO- https://example.test/a.sh | bash\n",
+            ),
+            ("alpha/install.sh", "curl https://example.test/a.sh | sh\n"),
+        ];
+        let signals = scripts
+            .into_iter()
+            .flat_map(|(path, script)| {
+                shell_security_analyzer()
+                    .analyze(&shell_analyzer_input(path, script.as_bytes()))
+                    .signals
+            })
+            .collect::<Vec<_>>();
+
+        let findings = evaluate_security_signal_rules(&signals);
+
+        assert_eq!(
+            finding_projection(&findings),
+            vec![
+                (RuleId::Sec001, "alpha/install.sh", Some(1)),
+                (RuleId::Sec001, "alpha/install.sh", Some(3)),
+                (RuleId::Sec001, "zeta/install.sh", Some(1)),
+            ]
+        );
+    }
+
+    #[test]
+    fn fixture_curl_bash_artifact_emits_sec001_through_analyzer_and_rule_evaluator() {
+        let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("fixtures/security/curl-bash/scripts/install.sh");
+        let script = fs::read(&fixture_path).expect("read curl-bash fixture");
+
+        let output = shell_security_analyzer().analyze(&shell_analyzer_input(
+            "fixtures/security/curl-bash/scripts/install.sh",
+            &script,
+        ));
+        let findings = evaluate_security_signal_rules(&output.signals);
+
+        assert_eq!(
+            findings,
+            vec![finding(
+                RuleId::Sec001,
+                "Remote content is piped directly into a shell, so unreviewed network content can execute on the user's machine.",
+                "fixtures/security/curl-bash/scripts/install.sh",
+                Some(3),
+            )]
+        );
     }
 
     #[test]
@@ -1827,5 +2054,53 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    fn shell_analyzer_input<'a>(path: &'a str, content: &'a [u8]) -> SecurityAnalyzerInput<'a> {
+        SecurityAnalyzerInput {
+            artifact: SecurityAnalyzerArtifactInput {
+                path,
+                kind: SecurityArtifactKind::Script,
+                language: SecurityLanguage::Shell,
+                classification_method: SecurityArtifactClassificationMethod::Extension,
+                classification_signals: &[SecurityArtifactClassificationSignal::Extension],
+                executable: true,
+                size_bytes: content.len() as u64,
+                content: SecurityAnalyzerContent::from_bytes(
+                    content,
+                    SecurityArtifactReadStatus::Full,
+                    content.len(),
+                ),
+            },
+            package: SecurityAnalyzerPackageContext {
+                package_root: ".",
+                manifest_path: "SKILL.md",
+                declared_tools: &[],
+                declared_permissions: &[],
+            },
+        }
+    }
+
+    fn security_signal(
+        kind: SecuritySignalKind,
+        source: Option<SecuritySourceKind>,
+        sink: Option<SecuritySinkKind>,
+        confidence: AnalyzerConfidence,
+    ) -> SecuritySignal {
+        SecuritySignal {
+            location: agent_audit_security::SecurityLocation {
+                path: "scripts/install.sh".to_owned(),
+                line: Some(1),
+                column: Some(1),
+                byte_offset: None,
+            },
+            kind,
+            source: source.map(|kind| SecuritySource { kind, name: None }),
+            sink: sink.map(|kind| SecuritySink { kind, target: None }),
+            risk: SecurityRiskScore::new(90),
+            confidence,
+            classification: ClassificationMethod::RegexFallback,
+            evidence: "curl https://example.test/install.sh | sh".to_owned(),
+        }
     }
 }
