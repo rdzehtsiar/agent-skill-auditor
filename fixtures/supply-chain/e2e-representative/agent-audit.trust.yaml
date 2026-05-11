@@ -1,0 +1,18 @@
+skill:
+  name: e2e-representative
+  version: 0.5.0
+provenance:
+  source: github.com/example/release-skill
+  commit: 0123456789abcdef0123456789abcdef01234567
+  signed: false
+permissions:
+  network: false
+  filesystem_write: none
+  secrets: []
+declared_dependencies:
+  commands:
+    - sh
+  packages:
+    - ecosystem: npm
+      name: is-number
+      version: 7.0.0

@@ -33,6 +33,7 @@ mod tests {
     const SUPPLY_CHAIN_FIXTURES: &[&str] = &[
         "binary-artifact",
         "downloaded-executable-no-checksum",
+        "e2e-representative",
         "github-raw-pinned",
         "github-raw-unpinned",
         "license-missing",
@@ -247,6 +248,52 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn milestone5_e2e_representative_outputs_match_expected_baselines() {
+        let fixture_root = supply_chain_root().join("e2e-representative");
+        let first_report =
+            scan_path(&fixture_root, &ScanOptions::default()).expect("scan e2e fixture");
+        let second_report =
+            scan_path(&fixture_root, &ScanOptions::default()).expect("rescan e2e fixture");
+
+        let first_json = render_json(&first_report).expect("render e2e JSON");
+        let second_json = render_json(&second_report).expect("rerender e2e JSON");
+        let expected_json = expected_e2e_representative_json();
+
+        assert_eq!(first_json.as_bytes(), second_json.as_bytes());
+        assert_eq!(first_json, expected_json);
+        assert_eq!(first_report.summary.package_count, 1);
+        assert_eq!(first_report.summary.finding_count, 0);
+        assert!(!json_contains_path(&first_json, &workspace_root()));
+        assert!(!first_json.contains("timestamp"));
+        assert!(!first_json.contains("generated_at"));
+
+        let value: serde_json::Value = serde_json::from_str(&first_json).expect("parse e2e JSON");
+        let supply_chain = &value["supply_chain"];
+        assert_eq!(supply_chain["trust_manifests"].as_array().unwrap().len(), 1);
+        assert_eq!(supply_chain["lockfiles"].as_array().unwrap().len(), 1);
+        assert_eq!(supply_chain["external_urls"].as_array().unwrap().len(), 2);
+        assert_eq!(supply_chain["executables"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            supply_chain["remote_dependencies"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            value["packages"][0]["graph"]["files"][0]["path"],
+            "assets/badge.txt"
+        );
+
+        let summary = render_summary(&first_report);
+        assert_eq!(summary, expected_e2e_representative_summary());
+        assert!(summary.contains("Supply chain:\n"));
+        assert!(summary.contains("External URLs: 2 total, 0 mutable"));
+        assert!(summary.contains("Dependencies: 2 observed, 0 unpinned"));
+        assert!(summary.contains("No findings."));
     }
 
     #[test]
@@ -870,6 +917,19 @@ mod tests {
                 .unwrap_or_else(|error| panic!("read expected projection {name}: {error}")),
         )
         .unwrap_or_else(|error| panic!("parse expected projection {name}: {error}"))
+    }
+
+    fn expected_e2e_representative_json() -> &'static str {
+        let expected = include_str!(
+            "../../../fixtures/supply-chain/expected/e2e-representative-full-report.json"
+        );
+        expected.strip_suffix('\n').unwrap_or(expected)
+    }
+
+    fn expected_e2e_representative_summary() -> &'static str {
+        let expected =
+            include_str!("../../../fixtures/supply-chain/expected/e2e-representative-summary.txt");
+        expected.strip_suffix('\n').unwrap_or(expected)
     }
 
     fn scan_security_corpus(options: ScanOptions) -> ScanReport {

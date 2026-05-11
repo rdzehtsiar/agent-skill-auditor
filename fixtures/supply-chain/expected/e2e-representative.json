@@ -1,0 +1,211 @@
+{
+  "fixture": "e2e-representative",
+  "description": "Small representative supply-chain package with local provenance, lockfile, pinned URL, executable script, declared dependency, and benign asset.",
+  "supply_chain": {
+    "licenses": [
+      {
+        "path": "e2e-representative/LICENSE.txt",
+        "line": null,
+        "source": "filesystem",
+        "scope": "skill",
+        "normalized": "Apache-2.0",
+        "raw": "LICENSE.txt",
+        "confidence": "medium"
+      },
+      {
+        "path": "e2e-representative/SKILL.md",
+        "line": 4,
+        "source": "frontmatter",
+        "scope": "skill",
+        "normalized": "Apache-2.0",
+        "raw": "license: Apache-2.0",
+        "confidence": "high"
+      }
+    ],
+    "trust_manifests": [
+      {
+        "path": "e2e-representative/agent-audit.trust.yaml",
+        "line": 1,
+        "source": "trust-manifest",
+        "format": "agent-audit",
+        "normalized": "e2e-representative@0.5.0",
+        "raw": "agent-audit.trust.yaml",
+        "confidence": "high",
+        "valid": true,
+        "diagnostics": [],
+        "skill": {
+          "name": "e2e-representative",
+          "version": "0.5.0"
+        },
+        "provenance": {
+          "source": "github.com/example/release-skill",
+          "commit": "0123456789abcdef0123456789abcdef01234567",
+          "signed": false
+        },
+        "permissions": {
+          "network": false,
+          "filesystem_write": "none",
+          "secrets": []
+        },
+        "declared_dependencies": {
+          "commands": [
+            "sh"
+          ],
+          "packages": [
+            {
+              "ecosystem": "npm",
+              "name": "is-number",
+              "version": "7.0.0"
+            }
+          ]
+        }
+      }
+    ],
+    "external_urls": [
+      {
+        "path": "e2e-representative/SKILL.md",
+        "line": 12,
+        "source": "markdown-link",
+        "kind": "github-raw",
+        "normalized": "https://raw.githubusercontent.com/example/release-skill/0123456789abcdef0123456789abcdef01234567/scripts/release-helper.sh",
+        "raw": "https://raw.githubusercontent.com/example/release-skill/0123456789abcdef0123456789abcdef01234567/scripts/release-helper.sh",
+        "confidence": "high",
+        "pinned": true
+      },
+      {
+        "path": "e2e-representative/package-lock.json",
+        "line": 15,
+        "source": "lockfile",
+        "kind": "package-registry",
+        "normalized": "https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz",
+        "raw": "https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz",
+        "confidence": "high",
+        "pinned": true
+      }
+    ],
+    "remote_dependencies": [
+      {
+        "path": "e2e-representative/SKILL.md",
+        "line": 12,
+        "source": "markdown-link",
+        "kind": "script",
+        "package_manager": null,
+        "name": "scripts/release-helper.sh",
+        "version": "0123456789abcdef0123456789abcdef01234567",
+        "normalized": "github-raw:example/release-skill@scripts/release-helper.sh",
+        "raw": "raw.githubusercontent.com/example/release-skill",
+        "confidence": "high",
+        "pinned": true
+      },
+      {
+        "path": "e2e-representative/package.json",
+        "line": 6,
+        "source": "package-manifest",
+        "kind": "package",
+        "package_manager": "npm",
+        "name": "is-number",
+        "version": "7.0.0",
+        "normalized": "npm:is-number@7.0.0",
+        "raw": "is-number 7.0.0",
+        "confidence": "high",
+        "pinned": true
+      }
+    ],
+    "package_managers": [
+      {
+        "path": "e2e-representative/package.json",
+        "line": 1,
+        "source": "package-manifest",
+        "manager": "npm",
+        "manifest_path": "e2e-representative/package.json",
+        "normalized": "npm",
+        "raw": "package.json",
+        "confidence": "high"
+      }
+    ],
+    "lockfiles": [
+      {
+        "path": "e2e-representative/package-lock.json",
+        "line": 1,
+        "source": "lockfile",
+        "manager": "npm",
+        "normalized": "package-lock.json",
+        "raw": "package-lock.json",
+        "confidence": "high"
+      }
+    ],
+    "executables": [
+      {
+        "path": "e2e-representative/agent-audit.trust.yaml",
+        "line": 14,
+        "source": "trust-manifest",
+        "kind": "command",
+        "language": null,
+        "reason": "declared trust manifest command dependency",
+        "referenced": false,
+        "normalized": "sh",
+        "raw": "sh",
+        "confidence": "high"
+      },
+      {
+        "path": "e2e-representative/scripts/check.sh",
+        "line": null,
+        "source": "filesystem",
+        "kind": "script",
+        "language": "shell",
+        "reason": "script extension .sh",
+        "referenced": true,
+        "normalized": "e2e-representative/scripts/check.sh",
+        "raw": "scripts/check.sh",
+        "confidence": "high"
+      }
+    ],
+    "binaries": [],
+    "checksums": [
+      {
+        "path": "e2e-representative/checksums.txt",
+        "line": 1,
+        "source": "filesystem",
+        "algorithm": "sha256",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "target_path": "e2e-representative/SKILL.md",
+        "normalized": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "raw": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  SKILL.md",
+        "confidence": "high"
+      }
+    ],
+    "permissions": [
+      {
+        "path": "e2e-representative/agent-audit.trust.yaml",
+        "line": 9,
+        "source": "trust-manifest",
+        "kind": "network",
+        "evidence": "declared",
+        "normalized": "network=false",
+        "raw": "network: false",
+        "confidence": "high"
+      },
+      {
+        "path": "e2e-representative/agent-audit.trust.yaml",
+        "line": 10,
+        "source": "trust-manifest",
+        "kind": "filesystem-write",
+        "evidence": "declared",
+        "normalized": "filesystem_write=none",
+        "raw": "filesystem_write: none",
+        "confidence": "high"
+      }
+    ],
+    "offline_readiness": [
+      {
+        "path": "e2e-representative/SKILL.md",
+        "status": "ready",
+        "score": 100,
+        "reasons": [
+          "local package evidence has no remote or install blockers"
+        ]
+      }
+    ]
+  },
+  "expected_findings": []
+}

@@ -1,0 +1,340 @@
+{
+  "packages": [
+    {
+      "root": "",
+      "manifest_path": "SKILL.md",
+      "manifest": {
+        "name": "e2e-representative",
+        "description": "Reviews a local release note draft with pinned helper evidence.",
+        "frontmatter": {
+          "description": "Reviews a local release note draft with pinned helper evidence.",
+          "license": "Apache-2.0",
+          "name": "e2e-representative"
+        },
+        "body": "\n# E2E Representative\n\nUse `scripts/check.sh` for local validation before publishing.\n\nThe helper reference is pinned to a reviewed commit:\n[release-helper](https://raw.githubusercontent.com/example/release-skill/0123456789abcdef0123456789abcdef01234567/scripts/release-helper.sh).\n\nThe local badge is in [assets/badge.txt](assets/badge.txt).\n",
+        "headings": [
+          "E2E Representative"
+        ],
+        "links": [
+          {
+            "target": "https://raw.githubusercontent.com/example/release-skill/0123456789abcdef0123456789abcdef01234567/scripts/release-helper.sh",
+            "line": 12,
+            "exists": null
+          },
+          {
+            "target": "assets/badge.txt",
+            "line": 14,
+            "exists": null
+          }
+        ],
+        "inline_code": [
+          "scripts/check.sh"
+        ],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [
+          {
+            "target": "assets/badge.txt",
+            "line": 14,
+            "exists": true
+          }
+        ],
+        "artifacts": [
+          "scripts",
+          "assets"
+        ],
+        "files": [
+          {
+            "path": "assets/badge.txt",
+            "artifact": "assets",
+            "kind": "file",
+            "size_bytes": 14,
+            "readonly": false
+          },
+          {
+            "path": "scripts/check.sh",
+            "artifact": "scripts",
+            "kind": "file",
+            "size_bytes": 52,
+            "readonly": false
+          }
+        ]
+      }
+    }
+  ],
+  "findings": [],
+  "suppressed_findings": [],
+  "summary": {
+    "package_count": 1,
+    "finding_count": 0,
+    "suppressed_finding_count": 0,
+    "invalid_manifest_count": 0,
+    "broken_reference_count": 0
+  },
+  "supply_chain": {
+    "licenses": [
+      {
+        "path": "LICENSE.txt",
+        "line": null,
+        "source": "filesystem",
+        "scope": "repository",
+        "normalized": "Apache-2.0",
+        "raw": "LICENSE.txt",
+        "confidence": "medium"
+      },
+      {
+        "path": "LICENSE.txt",
+        "line": null,
+        "source": "filesystem",
+        "scope": "skill",
+        "normalized": "Apache-2.0",
+        "raw": "LICENSE.txt",
+        "confidence": "medium"
+      },
+      {
+        "path": "SKILL.md",
+        "line": 4,
+        "source": "frontmatter",
+        "scope": "skill",
+        "normalized": "Apache-2.0",
+        "raw": "license: Apache-2.0",
+        "confidence": "high"
+      }
+    ],
+    "trust_manifests": [
+      {
+        "path": "agent-audit.trust.yaml",
+        "line": 1,
+        "source": "trust-manifest",
+        "format": "agent-audit",
+        "normalized": "e2e-representative@0.5.0",
+        "raw": "agent-audit.trust.yaml",
+        "confidence": "high",
+        "valid": true,
+        "diagnostics": [],
+        "skill": {
+          "name": "e2e-representative",
+          "version": "0.5.0"
+        },
+        "provenance": {
+          "source": "github.com/example/release-skill",
+          "commit": "0123456789abcdef0123456789abcdef01234567",
+          "signed": false
+        },
+        "permissions": {
+          "network": false,
+          "filesystem_write": "none",
+          "secrets": []
+        },
+        "declared_dependencies": {
+          "commands": [
+            "sh"
+          ],
+          "packages": [
+            {
+              "ecosystem": "npm",
+              "name": "is-number",
+              "version": "7.0.0"
+            }
+          ]
+        }
+      }
+    ],
+    "external_urls": [
+      {
+        "path": "SKILL.md",
+        "line": 12,
+        "source": "markdown-link",
+        "kind": "github-raw",
+        "normalized": "https://raw.githubusercontent.com/example/release-skill/0123456789abcdef0123456789abcdef01234567/scripts/release-helper.sh",
+        "raw": "https://raw.githubusercontent.com/example/release-skill/0123456789abcdef0123456789abcdef01234567/scripts/release-helper.sh",
+        "confidence": "high",
+        "pinned": true
+      },
+      {
+        "path": "package-lock.json",
+        "line": 15,
+        "source": "lockfile",
+        "kind": "package-registry",
+        "normalized": "https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz",
+        "raw": "https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz",
+        "confidence": "high",
+        "pinned": true
+      }
+    ],
+    "remote_dependencies": [
+      {
+        "path": "SKILL.md",
+        "line": 12,
+        "source": "markdown-link",
+        "kind": "script",
+        "package_manager": null,
+        "name": "scripts/release-helper.sh",
+        "version": "0123456789abcdef0123456789abcdef01234567",
+        "normalized": "github-raw:example/release-skill@scripts/release-helper.sh",
+        "raw": "raw.githubusercontent.com/example/release-skill",
+        "confidence": "high",
+        "pinned": true
+      },
+      {
+        "path": "package.json",
+        "line": 6,
+        "source": "package-manifest",
+        "kind": "package",
+        "package_manager": "npm",
+        "name": "is-number",
+        "version": "7.0.0",
+        "normalized": "npm:is-number@7.0.0",
+        "raw": "is-number 7.0.0",
+        "confidence": "high",
+        "pinned": true
+      }
+    ],
+    "package_managers": [
+      {
+        "path": "package.json",
+        "line": 1,
+        "source": "package-manifest",
+        "manager": "npm",
+        "manifest_path": "package.json",
+        "normalized": "npm",
+        "raw": "package.json",
+        "confidence": "high"
+      }
+    ],
+    "lockfiles": [
+      {
+        "path": "package-lock.json",
+        "line": 1,
+        "source": "lockfile",
+        "manager": "npm",
+        "normalized": "package-lock.json",
+        "raw": "package-lock.json",
+        "confidence": "high"
+      }
+    ],
+    "executables": [
+      {
+        "path": "agent-audit.trust.yaml",
+        "line": 14,
+        "source": "trust-manifest",
+        "kind": "command",
+        "language": null,
+        "reason": "declared trust manifest command dependency",
+        "referenced": false,
+        "normalized": "sh",
+        "raw": "sh",
+        "confidence": "high"
+      },
+      {
+        "path": "scripts/check.sh",
+        "line": null,
+        "source": "filesystem",
+        "kind": "script",
+        "language": "shell",
+        "reason": "script extension .sh",
+        "referenced": true,
+        "normalized": "scripts/check.sh",
+        "raw": "scripts/check.sh",
+        "confidence": "high"
+      }
+    ],
+    "binaries": [],
+    "checksums": [
+      {
+        "path": "checksums.txt",
+        "line": 1,
+        "source": "filesystem",
+        "algorithm": "sha256",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "target_path": "SKILL.md",
+        "normalized": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "raw": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  SKILL.md",
+        "confidence": "high"
+      }
+    ],
+    "permissions": [
+      {
+        "path": "agent-audit.trust.yaml",
+        "line": 9,
+        "source": "trust-manifest",
+        "kind": "network",
+        "evidence": "declared",
+        "normalized": "network=false",
+        "raw": "network: false",
+        "confidence": "high"
+      },
+      {
+        "path": "agent-audit.trust.yaml",
+        "line": 10,
+        "source": "trust-manifest",
+        "kind": "filesystem-write",
+        "evidence": "declared",
+        "normalized": "filesystem_write=none",
+        "raw": "filesystem_write: none",
+        "confidence": "high"
+      }
+    ],
+    "offline_readiness": [
+      {
+        "path": "SKILL.md",
+        "status": "ready",
+        "score": 100,
+        "reasons": [
+          "local package evidence has no remote or install blockers"
+        ]
+      }
+    ]
+  },
+  "compatibility": {
+    "profiles": [
+      "agent-skills-spec",
+      "claude-code",
+      "codex",
+      "github-copilot",
+      "vscode-copilot",
+      "generic"
+    ],
+    "matrix": [
+      {
+        "path": "SKILL.md",
+        "name": "e2e-representative",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "warn",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "warn",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "warn",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "warn",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "pass",
+            "finding_ids": []
+          }
+        ]
+      }
+    ]
+  }
+}
