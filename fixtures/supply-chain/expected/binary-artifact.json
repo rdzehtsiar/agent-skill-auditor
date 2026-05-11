@@ -1,0 +1,83 @@
+{
+  "fixture": "binary-artifact",
+  "description": "Binary executable and archive artifact evidence is present.",
+  "supply_chain": {
+    "licenses": [],
+    "trust_manifests": [],
+    "external_urls": [],
+    "remote_dependencies": [],
+    "package_managers": [],
+    "lockfiles": [],
+    "executables": [
+      {
+        "path": "binary-artifact/bin/helper.exe",
+        "line": null,
+        "source": "filesystem",
+        "kind": "binary",
+        "language": null,
+        "reason": "executable extension",
+        "referenced": true,
+        "normalized": "binary:helper.exe",
+        "raw": "bin/helper.exe",
+        "confidence": "high"
+      }
+    ],
+    "binaries": [
+      {
+        "path": "binary-artifact/assets/archive.zip",
+        "line": null,
+        "source": "filesystem",
+        "kind": "archive",
+        "size_bytes": 22,
+        "referenced": false,
+        "normalized": "archive:archive.zip",
+        "raw": "assets/archive.zip",
+        "confidence": "medium"
+      },
+      {
+        "path": "binary-artifact/bin/helper.exe",
+        "line": null,
+        "source": "filesystem",
+        "kind": "executable",
+        "size_bytes": 25,
+        "referenced": true,
+        "normalized": "executable:helper.exe",
+        "raw": "bin/helper.exe",
+        "confidence": "high"
+      }
+    ],
+    "checksums": [
+      {
+        "path": "binary-artifact/bin/helper.exe",
+        "line": null,
+        "source": "filesystem",
+        "algorithm": "sha256",
+        "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "target_path": "binary-artifact/bin/helper.exe",
+        "normalized": "sha256:helper.exe",
+        "raw": null,
+        "confidence": "high"
+      }
+    ],
+    "permissions": [
+      {
+        "path": "binary-artifact/bin/helper.exe",
+        "line": null,
+        "source": "filesystem",
+        "kind": "binary-execution",
+        "evidence": "observed",
+        "normalized": "binary executable",
+        "raw": "bin/helper.exe",
+        "confidence": "high"
+      }
+    ],
+    "offline_readiness": []
+  },
+  "expected_findings": [
+    {
+      "rule_id": "SUPPLY007",
+      "path": "binary-artifact/bin/helper.exe",
+      "message": "Binary executable is missing provenance evidence."
+    }
+  ]
+}

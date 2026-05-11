@@ -1,0 +1,49 @@
+{
+  "fixture": "github-raw-unpinned",
+  "description": "GitHub raw URL uses a mutable branch name.",
+  "supply_chain": {
+    "licenses": [],
+    "trust_manifests": [],
+    "external_urls": [
+      {
+        "path": "github-raw-unpinned/SKILL.md",
+        "line": 8,
+        "source": "markdown-link",
+        "kind": "github-raw",
+        "normalized": "https://raw.githubusercontent.com/example/skill/main/scripts/install.sh",
+        "raw": "https://raw.githubusercontent.com/example/skill/main/scripts/install.sh",
+        "confidence": "high",
+        "pinned": false
+      }
+    ],
+    "remote_dependencies": [
+      {
+        "path": "github-raw-unpinned/SKILL.md",
+        "line": 8,
+        "source": "markdown-link",
+        "kind": "script",
+        "package_manager": null,
+        "name": "scripts/install.sh",
+        "version": "main",
+        "normalized": "github-raw:example/skill@scripts/install.sh",
+        "raw": "raw.githubusercontent.com/example/skill",
+        "confidence": "high",
+        "pinned": false
+      }
+    ],
+    "package_managers": [],
+    "lockfiles": [],
+    "executables": [],
+    "binaries": [],
+    "checksums": [],
+    "permissions": [],
+    "offline_readiness": []
+  },
+  "expected_findings": [
+    {
+      "rule_id": "SUPPLY005",
+      "path": "github-raw-unpinned/SKILL.md",
+      "message": "Mutable GitHub raw URL reference."
+    }
+  ]
+}

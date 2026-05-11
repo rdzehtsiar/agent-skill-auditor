@@ -1,0 +1,85 @@
+{
+  "fixture": "offline-ready",
+  "description": "Package has local evidence needed for ready offline status.",
+  "supply_chain": {
+    "licenses": [
+      {
+        "path": "offline-ready/LICENSE.txt",
+        "line": null,
+        "source": "filesystem",
+        "scope": "skill",
+        "normalized": "Apache-2.0",
+        "raw": "LICENSE.txt",
+        "confidence": "medium"
+      }
+    ],
+    "trust_manifests": [
+      {
+        "path": "offline-ready/agent-audit.trust.yaml",
+        "line": 1,
+        "source": "trust-manifest",
+        "format": "agent-audit",
+        "normalized": "offline-ready@1.0.0",
+        "raw": "agent-audit.trust.yaml",
+        "confidence": "high",
+        "valid": true
+      }
+    ],
+    "external_urls": [],
+    "remote_dependencies": [],
+    "package_managers": [],
+    "lockfiles": [],
+    "executables": [
+      {
+        "path": "offline-ready/scripts/check.sh",
+        "line": 1,
+        "source": "filesystem",
+        "kind": "script",
+        "language": "sh",
+        "reason": "shebang",
+        "referenced": true,
+        "normalized": "script:sh",
+        "raw": "scripts/check.sh",
+        "confidence": "high"
+      }
+    ],
+    "binaries": [],
+    "checksums": [
+      {
+        "path": "offline-ready/checksums.txt",
+        "line": 1,
+        "source": "filesystem",
+        "algorithm": "sha256",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "target_path": "offline-ready/SKILL.md",
+        "normalized": "sha256:SKILL.md",
+        "raw": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  SKILL.md",
+        "confidence": "high"
+      }
+    ],
+    "permissions": [
+      {
+        "path": "offline-ready/agent-audit.trust.yaml",
+        "line": 9,
+        "source": "trust-manifest",
+        "kind": "network",
+        "evidence": "declared",
+        "normalized": "network=false",
+        "raw": "network: false",
+        "confidence": "high"
+      }
+    ],
+    "offline_readiness": [
+      {
+        "path": "offline-ready/SKILL.md",
+        "status": "ready",
+        "score": 100,
+        "reasons": [
+          "all referenced local files are present",
+          "no remote dependencies are required"
+        ]
+      }
+    ]
+  },
+  "expected_findings": []
+}

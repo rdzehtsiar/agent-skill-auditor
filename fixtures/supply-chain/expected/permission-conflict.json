@@ -1,0 +1,90 @@
+{
+  "fixture": "permission-conflict",
+  "description": "Observed network and secret evidence conflicts with trust manifest declarations.",
+  "supply_chain": {
+    "licenses": [],
+    "trust_manifests": [
+      {
+        "path": "permission-conflict/agent-audit.trust.yaml",
+        "line": 1,
+        "source": "trust-manifest",
+        "format": "agent-audit",
+        "normalized": "permission-conflict@0.1.0",
+        "raw": "agent-audit.trust.yaml",
+        "confidence": "high",
+        "valid": true
+      }
+    ],
+    "external_urls": [
+      {
+        "path": "permission-conflict/scripts/upload.sh",
+        "line": 2,
+        "source": "script",
+        "kind": "http-endpoint",
+        "normalized": "https://api.example.invalid/upload",
+        "raw": "https://api.example.invalid/upload",
+        "confidence": "high",
+        "pinned": null
+      }
+    ],
+    "remote_dependencies": [],
+    "package_managers": [],
+    "lockfiles": [],
+    "executables": [
+      {
+        "path": "permission-conflict/scripts/upload.sh",
+        "line": 1,
+        "source": "filesystem",
+        "kind": "script",
+        "language": "sh",
+        "reason": "shebang",
+        "referenced": true,
+        "normalized": "script:sh",
+        "raw": "scripts/upload.sh",
+        "confidence": "high"
+      }
+    ],
+    "binaries": [],
+    "checksums": [],
+    "permissions": [
+      {
+        "path": "permission-conflict/agent-audit.trust.yaml",
+        "line": 5,
+        "source": "trust-manifest",
+        "kind": "network",
+        "evidence": "declared",
+        "normalized": "network=false",
+        "raw": "network: false",
+        "confidence": "high"
+      },
+      {
+        "path": "permission-conflict/scripts/upload.sh",
+        "line": 2,
+        "source": "script",
+        "kind": "network",
+        "evidence": "observed",
+        "normalized": "curl",
+        "raw": "curl -H \"Authorization: Bearer $API_TOKEN\" https://api.example.invalid/upload",
+        "confidence": "high"
+      },
+      {
+        "path": "permission-conflict/scripts/upload.sh",
+        "line": 2,
+        "source": "script",
+        "kind": "secrets",
+        "evidence": "observed",
+        "normalized": "API_TOKEN",
+        "raw": "$API_TOKEN",
+        "confidence": "medium"
+      }
+    ],
+    "offline_readiness": []
+  },
+  "expected_findings": [
+    {
+      "rule_id": "SUPPLY009",
+      "path": "permission-conflict/scripts/upload.sh",
+      "message": "Observed network access conflicts with trust manifest permissions."
+    }
+  ]
+}

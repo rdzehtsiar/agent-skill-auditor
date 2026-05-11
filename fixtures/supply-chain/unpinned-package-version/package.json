@@ -1,0 +1,8 @@
+{
+  "name": "unpinned-package-version-fixture",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "prettier": "^3.2.5"
+  }
+}

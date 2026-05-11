@@ -1,0 +1,19 @@
+skill:
+  name: trust-manifest-valid
+  version: 0.2.1
+provenance:
+  source: github.com/example/trust-manifest-valid
+  commit: 0123456789abcdef0123456789abcdef01234567
+  signed: false
+permissions:
+  network: false
+  filesystem_write: repo-only
+  secrets:
+    - EXAMPLE_TOKEN
+declared_dependencies:
+  commands:
+    - git
+  packages:
+    - ecosystem: npm
+      name: prettier
+      version: 3.2.5

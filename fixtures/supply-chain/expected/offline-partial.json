@@ -1,0 +1,94 @@
+{
+  "fixture": "offline-partial",
+  "description": "Package has mutable remote and package-install evidence that should reduce offline readiness.",
+  "supply_chain": {
+    "licenses": [],
+    "trust_manifests": [],
+    "external_urls": [
+      {
+        "path": "offline-partial/SKILL.md",
+        "line": 8,
+        "source": "markdown-link",
+        "kind": "github-raw",
+        "normalized": "https://raw.githubusercontent.com/example/skill/main/setup.sh",
+        "raw": "https://raw.githubusercontent.com/example/skill/main/setup.sh",
+        "confidence": "high",
+        "pinned": false
+      }
+    ],
+    "remote_dependencies": [
+      {
+        "path": "offline-partial/scripts/install.sh",
+        "line": 2,
+        "source": "script",
+        "kind": "package",
+        "package_manager": "npm",
+        "name": "prettier",
+        "version": "latest",
+        "normalized": "npm:prettier@latest",
+        "raw": "prettier@latest",
+        "confidence": "high",
+        "pinned": false
+      }
+    ],
+    "package_managers": [],
+    "lockfiles": [],
+    "executables": [
+      {
+        "path": "offline-partial/scripts/install.sh",
+        "line": 1,
+        "source": "filesystem",
+        "kind": "script",
+        "language": "sh",
+        "reason": "shebang",
+        "referenced": true,
+        "normalized": "script:sh",
+        "raw": "scripts/install.sh",
+        "confidence": "high"
+      }
+    ],
+    "binaries": [],
+    "checksums": [],
+    "permissions": [
+      {
+        "path": "offline-partial/scripts/install.sh",
+        "line": 2,
+        "source": "script",
+        "kind": "package-install",
+        "evidence": "observed",
+        "normalized": "npm install",
+        "raw": "npm install prettier@latest",
+        "confidence": "high"
+      }
+    ],
+    "offline_readiness": [
+      {
+        "path": "offline-partial/SKILL.md",
+        "status": "partial",
+        "score": 62,
+        "reasons": [
+          "install command has no matching lockfile",
+          "mutable GitHub raw URL reference",
+          "package dependency uses latest"
+        ]
+      }
+    ]
+  },
+  "expected_findings": [
+    {
+      "rule_id": "SUPPLY003",
+      "path": "offline-partial/scripts/install.sh",
+      "message": "Install command has no matching lockfile."
+    },
+    {
+      "rule_id": "SUPPLY004",
+      "path": "offline-partial/scripts/install.sh",
+      "message": "Package dependency uses an unpinned version."
+    },
+    {
+      "rule_id": "SUPPLY005",
+      "path": "offline-partial/SKILL.md",
+      "message": "Mutable GitHub raw URL reference."
+    }
+  ]
+}

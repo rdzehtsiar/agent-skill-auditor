@@ -1,0 +1,77 @@
+{
+  "fixture": "unpinned-package-version",
+  "description": "Package manifests include range and missing version evidence.",
+  "supply_chain": {
+    "licenses": [],
+    "trust_manifests": [],
+    "external_urls": [],
+    "remote_dependencies": [
+      {
+        "path": "unpinned-package-version/package.json",
+        "line": 6,
+        "source": "package-manifest",
+        "kind": "package",
+        "package_manager": "npm",
+        "name": "prettier",
+        "version": "^3.2.5",
+        "normalized": "npm:prettier@^3.2.5",
+        "raw": "prettier ^3.2.5",
+        "confidence": "high",
+        "pinned": false
+      },
+      {
+        "path": "unpinned-package-version/requirements.txt",
+        "line": 1,
+        "source": "package-manifest",
+        "kind": "package",
+        "package_manager": "pip",
+        "name": "requests",
+        "version": ">=2.0",
+        "normalized": "pip:requests@>=2.0",
+        "raw": "requests>=2.0",
+        "confidence": "high",
+        "pinned": false
+      }
+    ],
+    "package_managers": [
+      {
+        "path": "unpinned-package-version/package.json",
+        "line": 1,
+        "source": "package-manifest",
+        "manager": "npm",
+        "manifest_path": "unpinned-package-version/package.json",
+        "normalized": "npm",
+        "raw": "package.json",
+        "confidence": "high"
+      },
+      {
+        "path": "unpinned-package-version/requirements.txt",
+        "line": 1,
+        "source": "package-manifest",
+        "manager": "pip",
+        "manifest_path": "unpinned-package-version/requirements.txt",
+        "normalized": "pip",
+        "raw": "requirements.txt",
+        "confidence": "high"
+      }
+    ],
+    "lockfiles": [],
+    "executables": [],
+    "binaries": [],
+    "checksums": [],
+    "permissions": [],
+    "offline_readiness": []
+  },
+  "expected_findings": [
+    {
+      "rule_id": "SUPPLY004",
+      "path": "unpinned-package-version/package.json",
+      "message": "Package dependency uses an unpinned version range."
+    },
+    {
+      "rule_id": "SUPPLY004",
+      "path": "unpinned-package-version/requirements.txt",
+      "message": "Package dependency uses an unpinned version range."
+    }
+  ]
+}

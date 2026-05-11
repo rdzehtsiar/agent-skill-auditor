@@ -1,0 +1,35 @@
+{
+  "fixture": "trust-manifest-invalid",
+  "description": "Malformed trust manifest input is recorded as invalid evidence.",
+  "supply_chain": {
+    "licenses": [],
+    "trust_manifests": [
+      {
+        "path": "trust-manifest-invalid/agent-audit.trust.yaml",
+        "line": 1,
+        "source": "trust-manifest",
+        "format": "agent-audit",
+        "normalized": "invalid-yaml",
+        "raw": "agent-audit.trust.yaml",
+        "confidence": "high",
+        "valid": false
+      }
+    ],
+    "external_urls": [],
+    "remote_dependencies": [],
+    "package_managers": [],
+    "lockfiles": [],
+    "executables": [],
+    "binaries": [],
+    "checksums": [],
+    "permissions": [],
+    "offline_readiness": []
+  },
+  "expected_findings": [
+    {
+      "rule_id": "SUPPLY012",
+      "path": "trust-manifest-invalid/agent-audit.trust.yaml",
+      "message": "Invalid trust manifest YAML."
+    }
+  ]
+}

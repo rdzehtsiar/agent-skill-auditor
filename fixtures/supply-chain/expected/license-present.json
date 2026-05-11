@@ -1,0 +1,28 @@
+{
+  "fixture": "license-present",
+  "description": "Skill-local license evidence is present.",
+  "supply_chain": {
+    "licenses": [
+      {
+        "path": "license-present/LICENSE.txt",
+        "line": null,
+        "source": "filesystem",
+        "scope": "skill",
+        "normalized": "Apache-2.0",
+        "raw": "LICENSE.txt",
+        "confidence": "medium"
+      }
+    ],
+    "trust_manifests": [],
+    "external_urls": [],
+    "remote_dependencies": [],
+    "package_managers": [],
+    "lockfiles": [],
+    "executables": [],
+    "binaries": [],
+    "checksums": [],
+    "permissions": [],
+    "offline_readiness": []
+  },
+  "expected_findings": []
+}

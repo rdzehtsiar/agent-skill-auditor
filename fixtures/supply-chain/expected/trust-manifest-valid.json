@@ -1,0 +1,54 @@
+{
+  "fixture": "trust-manifest-valid",
+  "description": "Valid agent-audit trust manifest is present.",
+  "supply_chain": {
+    "licenses": [],
+    "trust_manifests": [
+      {
+        "path": "trust-manifest-valid/agent-audit.trust.yaml",
+        "line": 1,
+        "source": "trust-manifest",
+        "format": "agent-audit",
+        "normalized": "trust-manifest-valid@0.2.1",
+        "raw": "agent-audit.trust.yaml",
+        "confidence": "high",
+        "valid": true
+      }
+    ],
+    "external_urls": [],
+    "remote_dependencies": [
+      {
+        "path": "trust-manifest-valid/agent-audit.trust.yaml",
+        "line": 18,
+        "source": "trust-manifest",
+        "kind": "package",
+        "package_manager": "npm",
+        "name": "prettier",
+        "version": "3.2.5",
+        "normalized": "npm:prettier@3.2.5",
+        "raw": "prettier 3.2.5",
+        "confidence": "high",
+        "pinned": true
+      }
+    ],
+    "package_managers": [],
+    "lockfiles": [],
+    "executables": [],
+    "binaries": [],
+    "checksums": [],
+    "permissions": [
+      {
+        "path": "trust-manifest-valid/agent-audit.trust.yaml",
+        "line": 9,
+        "source": "trust-manifest",
+        "kind": "network",
+        "evidence": "declared",
+        "normalized": "network=false",
+        "raw": "network: false",
+        "confidence": "high"
+      }
+    ],
+    "offline_readiness": []
+  },
+  "expected_findings": []
+}

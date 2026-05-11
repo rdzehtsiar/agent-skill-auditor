@@ -1,0 +1,15 @@
+skill:
+  name: offline-ready
+  version: 1.0.0
+provenance:
+  source: github.com/example/offline-ready
+  commit: 0123456789abcdef0123456789abcdef01234567
+  signed: false
+permissions:
+  network: false
+  filesystem_write: none
+  secrets: []
+declared_dependencies:
+  commands:
+    - sh
+  packages: []

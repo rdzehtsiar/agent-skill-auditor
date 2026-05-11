@@ -1,0 +1,43 @@
+{
+  "fixture": "github-raw-pinned",
+  "description": "GitHub raw URL is pinned to a full commit SHA.",
+  "supply_chain": {
+    "licenses": [],
+    "trust_manifests": [],
+    "external_urls": [
+      {
+        "path": "github-raw-pinned/SKILL.md",
+        "line": 8,
+        "source": "markdown-link",
+        "kind": "github-raw",
+        "normalized": "https://raw.githubusercontent.com/example/skill/0123456789abcdef0123456789abcdef01234567/scripts/install.sh",
+        "raw": "https://raw.githubusercontent.com/example/skill/0123456789abcdef0123456789abcdef01234567/scripts/install.sh",
+        "confidence": "high",
+        "pinned": true
+      }
+    ],
+    "remote_dependencies": [
+      {
+        "path": "github-raw-pinned/SKILL.md",
+        "line": 8,
+        "source": "markdown-link",
+        "kind": "script",
+        "package_manager": null,
+        "name": "scripts/install.sh",
+        "version": "0123456789abcdef0123456789abcdef01234567",
+        "normalized": "github-raw:example/skill@scripts/install.sh",
+        "raw": "raw.githubusercontent.com/example/skill",
+        "confidence": "high",
+        "pinned": true
+      }
+    ],
+    "package_managers": [],
+    "lockfiles": [],
+    "executables": [],
+    "binaries": [],
+    "checksums": [],
+    "permissions": [],
+    "offline_readiness": []
+  },
+  "expected_findings": []
+}

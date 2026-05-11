@@ -1,0 +1,3 @@
+skill:
+  name: trust-manifest-invalid
+permissions: [network: false

@@ -1,0 +1,8 @@
+skill:
+  name: permission-conflict
+  version: 0.1.0
+permissions:
+  network: false
+  filesystem_write: repo-only
+  secrets:
+    - DECLARED_TOKEN

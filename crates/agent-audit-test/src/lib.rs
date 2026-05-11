@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-pub const FIXTURE_GROUPS: &[&str] = &["spec", "compatibility", "security", "behavior"];
+pub const FIXTURE_GROUPS: &[&str] = &[
+    "spec",
+    "compatibility",
+    "security",
+    "behavior",
+    "supply-chain",
+];
 
 #[cfg(test)]
 mod tests {
@@ -24,13 +30,184 @@ mod tests {
         ("vscode-copilot", "warn", EMPTY_FINDING_IDS),
         ("generic", "pass", EMPTY_FINDING_IDS),
     ];
+    const SUPPLY_CHAIN_FIXTURES: &[&str] = &[
+        "binary-artifact",
+        "downloaded-executable-no-checksum",
+        "github-raw-pinned",
+        "github-raw-unpinned",
+        "license-missing",
+        "license-present",
+        "offline-partial",
+        "offline-ready",
+        "package-install-with-lockfile",
+        "package-install-without-lockfile",
+        "permission-conflict",
+        "trust-manifest-invalid",
+        "trust-manifest-valid",
+        "unpinned-package-version",
+    ];
+    const SUPPLY_CHAIN_SECTION_KEYS: &[&str] = &[
+        "binaries",
+        "checksums",
+        "executables",
+        "external_urls",
+        "licenses",
+        "lockfiles",
+        "offline_readiness",
+        "package_managers",
+        "permissions",
+        "remote_dependencies",
+        "trust_manifests",
+    ];
 
     #[test]
     fn fixture_groups_match_planned_fixture_directories() {
         assert_eq!(
             FIXTURE_GROUPS,
-            &["spec", "compatibility", "security", "behavior"]
+            &[
+                "spec",
+                "compatibility",
+                "security",
+                "behavior",
+                "supply-chain"
+            ]
         );
+    }
+
+    #[test]
+    fn milestone5_supply_chain_fixture_corpus_has_expected_projections() {
+        let root = supply_chain_root();
+        let expected_root = root.join("expected");
+        assert!(expected_root.is_dir(), "missing supply-chain expected dir");
+
+        assert_eq!(fixture_directory_names(&root), SUPPLY_CHAIN_FIXTURES);
+
+        let mut covered_sections = SUPPLY_CHAIN_SECTION_KEYS
+            .iter()
+            .map(|section| ((*section).to_owned(), 0usize))
+            .collect::<BTreeMap<_, _>>();
+
+        for fixture_name in SUPPLY_CHAIN_FIXTURES {
+            let fixture_root = root.join(fixture_name);
+            assert!(
+                fixture_root.join("SKILL.md").is_file(),
+                "{fixture_name} should include SKILL.md"
+            );
+
+            let expected_path = expected_root.join(format!("{fixture_name}.json"));
+            assert!(
+                expected_path.is_file(),
+                "{fixture_name} should include an expected JSON projection"
+            );
+
+            let expected_json =
+                fs::read_to_string(&expected_path).expect("read expected projection");
+            assert_portable_fixture_text(&expected_json, &expected_path);
+            let value: serde_json::Value =
+                serde_json::from_str(&expected_json).expect("parse expected projection JSON");
+            assert_eq!(value["fixture"], *fixture_name);
+            assert!(value["expected_findings"].is_array());
+
+            let supply_chain = value["supply_chain"]
+                .as_object()
+                .expect("expected supply_chain object");
+            let mut keys = supply_chain.keys().cloned().collect::<Vec<_>>();
+            keys.sort();
+            assert_eq!(keys, SUPPLY_CHAIN_SECTION_KEYS, "{fixture_name} keys");
+
+            for section_name in SUPPLY_CHAIN_SECTION_KEYS {
+                let section = supply_chain[*section_name]
+                    .as_array()
+                    .unwrap_or_else(|| panic!("{fixture_name}.{section_name} should be an array"));
+                if !section.is_empty() {
+                    *covered_sections
+                        .get_mut(*section_name)
+                        .expect("covered section") += 1;
+                }
+            }
+        }
+
+        assert!(
+            covered_sections.iter().all(|(_, count)| *count > 0),
+            "every supply-chain section should be represented: {covered_sections:?}"
+        );
+
+        let invalid_projection = expected_supply_chain_projection("trust-manifest-invalid");
+        assert_eq!(
+            invalid_projection["supply_chain"]["trust_manifests"][0]["valid"],
+            false
+        );
+        assert_eq!(
+            invalid_projection["expected_findings"][0]["rule_id"],
+            "SUPPLY012"
+        );
+
+        let pinned_projection = expected_supply_chain_projection("github-raw-pinned");
+        assert_eq!(
+            pinned_projection["supply_chain"]["external_urls"][0]["pinned"],
+            true
+        );
+        let unpinned_projection = expected_supply_chain_projection("github-raw-unpinned");
+        assert_eq!(
+            unpinned_projection["supply_chain"]["external_urls"][0]["pinned"],
+            false
+        );
+    }
+
+    #[test]
+    fn milestone5_supply_chain_fixture_files_are_portable_and_deterministic() {
+        for path in fixture_file_paths(&supply_chain_root()) {
+            let text = fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("read fixture file {}: {error}", path.display()));
+            assert_portable_fixture_text(&text, &path);
+        }
+    }
+
+    #[test]
+    fn milestone5_supply_chain_expected_source_locations_match_fixture_lines() {
+        let root = supply_chain_root();
+
+        for fixture_name in SUPPLY_CHAIN_FIXTURES {
+            let projection = expected_supply_chain_projection(fixture_name);
+            for section_name in SUPPLY_CHAIN_SECTION_KEYS {
+                let section = projection["supply_chain"][*section_name]
+                    .as_array()
+                    .unwrap_or_else(|| panic!("{fixture_name}.{section_name} should be an array"));
+
+                for entry in section {
+                    let path = entry["path"]
+                        .as_str()
+                        .unwrap_or_else(|| panic!("{fixture_name}.{section_name} entry has path"));
+                    let source_path = root.join(path);
+                    assert!(
+                        source_path.is_file(),
+                        "{fixture_name}.{section_name} source path should exist: {path}"
+                    );
+
+                    let Some(line) = entry["line"].as_u64() else {
+                        continue;
+                    };
+                    assert!(line > 0, "{fixture_name}.{section_name} line should be 1-based");
+
+                    let source_text = fs::read_to_string(&source_path).unwrap_or_else(|error| {
+                        panic!("read source fixture {}: {error}", source_path.display())
+                    });
+                    let source_line = source_text
+                        .lines()
+                        .nth((line - 1) as usize)
+                        .unwrap_or_else(|| {
+                            panic!("{fixture_name}.{section_name} line {line} exists in {path}")
+                        });
+
+                    for fragment in expected_source_line_fragments(section_name, entry) {
+                        assert!(
+                            source_line.contains(&fragment),
+                            "{fixture_name}.{section_name} {path}:{line} should contain evidence fragment {fragment:?}; line was {source_line:?}"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]
@@ -632,6 +809,21 @@ mod tests {
         workspace_root().join("fixtures/security")
     }
 
+    fn supply_chain_root() -> PathBuf {
+        workspace_root().join("fixtures/supply-chain")
+    }
+
+    fn expected_supply_chain_projection(name: &str) -> serde_json::Value {
+        let path = supply_chain_root()
+            .join("expected")
+            .join(format!("{name}.json"));
+        serde_json::from_str(
+            &fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("read expected projection {name}: {error}")),
+        )
+        .unwrap_or_else(|error| panic!("parse expected projection {name}: {error}"))
+    }
+
     fn scan_security_corpus(options: ScanOptions) -> ScanReport {
         scan_path(&security_root(), &options).expect("scan security corpus")
     }
@@ -783,6 +975,95 @@ mod tests {
             .iter()
             .map(|entry| entry.as_str().expect("string entry").to_owned())
             .collect()
+    }
+
+    fn fixture_directory_names(root: &Path) -> Vec<String> {
+        let mut names = fs::read_dir(root)
+            .unwrap_or_else(|error| panic!("read fixture root {}: {error}", root.display()))
+            .map(|entry| entry.expect("fixture entry"))
+            .filter(|entry| entry.file_type().expect("fixture file type").is_dir())
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name != "expected")
+            .collect::<Vec<_>>();
+        names.sort();
+        names
+    }
+
+    fn fixture_file_paths(root: &Path) -> Vec<PathBuf> {
+        let mut paths = Vec::new();
+        collect_fixture_file_paths(root, &mut paths);
+        paths.sort();
+        paths
+    }
+
+    fn collect_fixture_file_paths(root: &Path, paths: &mut Vec<PathBuf>) {
+        for entry in fs::read_dir(root)
+            .unwrap_or_else(|error| panic!("read fixture directory {}: {error}", root.display()))
+        {
+            let entry = entry.expect("fixture entry");
+            let path = entry.path();
+            if entry.file_type().expect("fixture file type").is_dir() {
+                collect_fixture_file_paths(&path, paths);
+            } else {
+                paths.push(path);
+            }
+        }
+    }
+
+    fn assert_portable_fixture_text(text: &str, path: &Path) {
+        assert!(
+            !json_contains_path(text, &workspace_root()),
+            "{} should not contain an absolute workspace path",
+            path.display()
+        );
+        for forbidden in ["timestamp", "generated_at", "C:\\", "C:/"] {
+            assert!(
+                !text.contains(forbidden),
+                "{} should not contain nondeterministic or host-specific text: {forbidden}",
+                path.display()
+            );
+        }
+    }
+
+    fn expected_source_line_fragments(
+        section_name: &str,
+        entry: &serde_json::Value,
+    ) -> Vec<String> {
+        match section_name {
+            "checksums" | "external_urls" | "permissions" => string_value(entry, "raw")
+                .map(|raw| vec![raw])
+                .unwrap_or_default(),
+            "executables" => string_value(entry, "language")
+                .map(|language| vec![language])
+                .unwrap_or_default(),
+            "remote_dependencies" => remote_dependency_source_line_fragments(entry),
+            _ => Vec::new(),
+        }
+    }
+
+    fn remote_dependency_source_line_fragments(entry: &serde_json::Value) -> Vec<String> {
+        match string_value(entry, "source").as_deref() {
+            Some("package-manifest") => {
+                let mut fragments = Vec::new();
+                if let Some(name) = string_value(entry, "name") {
+                    fragments.push(name);
+                }
+                if let Some(version) = string_value(entry, "version") {
+                    fragments.push(version);
+                }
+                fragments
+            }
+            Some("trust-manifest") => string_value(entry, "name")
+                .map(|name| vec![name])
+                .unwrap_or_default(),
+            _ => string_value(entry, "raw")
+                .map(|raw| vec![raw])
+                .unwrap_or_default(),
+        }
+    }
+
+    fn string_value(entry: &serde_json::Value, key: &str) -> Option<String> {
+        entry[key].as_str().map(str::to_owned)
     }
 
     fn assert_compatibility_profile_projection(
