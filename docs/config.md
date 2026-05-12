@@ -26,6 +26,9 @@ ignore:
   - rule: SKILL050
     path: .github/skills/reviewer/SKILL.md
     reason: Accepted risk: reviewed Copilot metadata exception for this package.
+  - rule: SKILL040
+    match: requires
+    reason: Accepted risk: generated requires metadata is reviewed by the platform team.
 ```
 
 All sections are optional. Missing sections, empty files, `{}`, and explicitly empty sections default to empty collections and default supply-chain policy:
@@ -182,7 +185,10 @@ CLI `--fail-on` values override config `fail_on` values when both are provided.
 
 ## Suppressions
 
-Use `ignore` entries only for reviewed false positives or accepted risks. Each entry must name one active rule ID, one exact manifest path, and a clear reason.
+Use `ignore` entries only for reviewed false positives or accepted risks. Each entry must name one active rule ID, a clear reason, and at least one match target:
+
+- `path` for exact finding paths.
+- `match` for normalized grouped evidence keys or dimensions.
 
 ```yaml
 ignore:
@@ -196,6 +202,26 @@ The rule ID must be active. Reserved rule IDs and unknown rule IDs are rejected.
 Suppression paths are relative to the scanned project and are normalized to forward slashes. They must stay inside the scanned project. Absolute paths and `..` parent traversal are rejected.
 
 Suppression paths are exact. Globs such as `skills/*/SKILL.md` do not match findings.
+
+Pattern suppressions use `match`. The value is not a glob or regex; it is compared exactly after whitespace normalization and lowercasing against the same evidence grouping semantics used by report `finding_groups` where available. This supports practical grouped exceptions such as suppressing all `SKILL040` findings for one reviewed frontmatter field without listing every generated skill path:
+
+```yaml
+ignore:
+  - rule: SKILL040
+    match: requires
+    reason: Accepted risk: generated requires metadata is reviewed by the platform team and tracked under SEC-214.
+```
+
+The full evidence key form also works:
+
+```yaml
+ignore:
+  - rule: SKILL040
+    match: frontmatter_field=requires
+    reason: Accepted risk: generated requires metadata is reviewed by the platform team and tracked under SEC-214.
+```
+
+`match` still requires a rule and reason. Blank `match` values are rejected. If both `path` and `match` are present, both must match, which is useful for narrowing a grouped evidence exception to one package.
 
 Suppression reasons should be specific enough for audit review. Prefer reasons that explain what was checked, who owns the exception, and when it should be revisited.
 
@@ -263,13 +289,22 @@ ignore:
     reason: Accepted risk: legacy runbook manifest exceeds the current size guidance, security reviewed 2026-05-01, tracked for split under SEC-184.
 ```
 
-Unknown frontmatter that is intentionally retained should suppress `SKILL040` only for the exact package path where the field is reviewed and accepted:
+Unknown frontmatter that is intentionally retained for one package can suppress `SKILL040` for the exact package path where the field is reviewed and accepted:
 
 ```yaml
 ignore:
   - rule: SKILL040
     path: skills/codex-release/SKILL.md
     reason: Accepted risk: codex-specific frontmatter is reviewed by the platform team and retained for this package.
+```
+
+Unknown frontmatter generated across many packages can suppress `SKILL040` by the reviewed frontmatter field:
+
+```yaml
+ignore:
+  - rule: SKILL040
+    match: requires
+    reason: Accepted risk: generated requires metadata is reviewed by the platform team and tracked under SEC-214.
 ```
 
 Host-specific metadata that a selected profile is likely to ignore can be suppressed with `SKILL050` when the exception is reviewed and intentionally retained:

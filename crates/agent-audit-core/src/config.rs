@@ -20,7 +20,8 @@ pub struct AuditConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigIgnoreEntry {
     pub rule: String,
-    pub path: String,
+    pub path: Option<String>,
+    pub match_value: Option<String>,
     pub reason: String,
 }
 
@@ -65,6 +66,8 @@ struct RawConfig {
 struct RawIgnoreEntry {
     rule: Option<String>,
     path: Option<String>,
+    #[serde(rename = "match")]
+    match_value: Option<String>,
     reason: Option<String>,
 }
 
@@ -152,14 +155,33 @@ fn validate_ignore_entry(index: usize, entry: RawIgnoreEntry) -> AuditResult<Con
         }
     }
 
-    let raw_path = required_non_empty_field(entry.path.as_deref(), index, "path")?;
-    let path = validate_ignore_path(index, raw_path)?;
+    let path = entry
+        .path
+        .as_deref()
+        .map(|raw_path| {
+            let raw_path = required_non_empty_field(Some(raw_path), index, "path")?;
+            validate_ignore_path(index, raw_path)
+        })
+        .transpose()?;
+    let match_value = entry
+        .match_value
+        .as_deref()
+        .map(|raw_match| required_non_empty_field(Some(raw_match), index, "match"))
+        .transpose()?
+        .map(normalize_ignore_match);
+
+    if path.is_none() && match_value.is_none() {
+        return Err(validation_error(format!(
+            "ignore[{index}] must include either path or match"
+        )));
+    }
 
     let reason = required_non_empty_field(entry.reason.as_deref(), index, "reason")?;
 
     Ok(ConfigIgnoreEntry {
         rule: rule.to_owned(),
         path,
+        match_value,
         reason: reason.to_owned(),
     })
 }
@@ -209,6 +231,15 @@ fn validate_ignore_path(index: usize, path: &str) -> AuditResult<String> {
     }
 
     Ok(path.replace('\\', "/"))
+}
+
+fn normalize_ignore_match(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim_matches(|character: char| matches!(character, '.' | ',' | ';' | ':'))
+        .to_ascii_lowercase()
 }
 
 pub fn parse_severity(value: &str) -> Option<Severity> {
@@ -261,7 +292,8 @@ mod tests {
             full.ignore,
             vec![ConfigIgnoreEntry {
                 rule: "SKILL010".to_owned(),
-                path: "skills/legacy/SKILL.md".to_owned(),
+                path: Some("skills/legacy/SKILL.md".to_owned()),
+                match_value: None,
                 reason: "Legacy fixture intentionally keeps a stale reference.".to_owned(),
             }]
         );
@@ -326,7 +358,8 @@ ignore:
             config.ignore,
             vec![ConfigIgnoreEntry {
                 rule: "SKILL010".to_owned(),
-                path: "skills/reviewer/SKILL.md".to_owned(),
+                path: Some("skills/reviewer/SKILL.md".to_owned()),
+                match_value: None,
                 reason: "Accepted compatibility fixture.".to_owned(),
             }]
         );
@@ -484,7 +517,8 @@ ignore:
             config.ignore,
             vec![ConfigIgnoreEntry {
                 rule: "SKILL050".to_owned(),
-                path: "SKILL.md".to_owned(),
+                path: Some("SKILL.md".to_owned()),
+                match_value: None,
                 reason:
                     "Accepted risk: target host accepts this metadata under a reviewed profile exception."
                         .to_owned(),
@@ -532,8 +566,52 @@ ignore:
 "#,
         );
 
-        assert_validation_contains(missing, "ignore[0].path must be a non-empty string");
+        assert_validation_contains(missing, "ignore[0] must include either path or match");
         assert_validation_contains(blank, "ignore[0].path must be a non-empty string");
+    }
+
+    #[test]
+    fn parses_match_suppressions_without_path() {
+        let config = parse(
+            r#"
+ignore:
+  - rule: SKILL040
+    match: " frontmatter_field=requires "
+    reason: Accepted compatibility metadata across generated skills.
+"#,
+        );
+
+        assert_eq!(
+            config.ignore,
+            vec![ConfigIgnoreEntry {
+                rule: "SKILL040".to_owned(),
+                path: None,
+                match_value: Some("frontmatter_field=requires".to_owned()),
+                reason: "Accepted compatibility metadata across generated skills.".to_owned(),
+            }]
+        );
+    }
+
+    #[test]
+    fn rejects_missing_and_blank_ignore_match_when_path_is_absent() {
+        let missing = parse_error(
+            r#"
+ignore:
+  - rule: SKILL040
+    reason: Accepted fixture.
+"#,
+        );
+        let blank = parse_error(
+            r#"
+ignore:
+  - rule: SKILL040
+    match: " "
+    reason: Accepted fixture.
+"#,
+        );
+
+        assert_validation_contains(missing, "ignore[0] must include either path or match");
+        assert_validation_contains(blank, "ignore[0].match must be a non-empty string");
     }
 
     #[test]
@@ -592,7 +670,8 @@ ignore:
         assert_eq!(config.profiles, vec!["codex"]);
         assert_eq!(config.fail_on, vec![Severity::Low]);
         assert_eq!(config.ignore[0].rule, "SKILL010");
-        assert_eq!(config.ignore[0].path, "skills/SKILL.md");
+        assert_eq!(config.ignore[0].path.as_deref(), Some("skills/SKILL.md"));
+        assert_eq!(config.ignore[0].match_value, None);
         assert_eq!(config.ignore[0].reason, "Accepted fixture.");
     }
 

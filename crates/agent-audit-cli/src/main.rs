@@ -1422,7 +1422,8 @@ ignore:
                 finding: test_finding("SEC005", Severity::High),
                 suppression: SuppressionMatch {
                     matched_rule: "SEC005".to_owned(),
-                    matched_path: "SKILL.md".to_owned(),
+                    matched_path: Some("SKILL.md".to_owned()),
+                    matched_match: None,
                     reason: "Accepted privileged setup fixture.".to_owned(),
                 },
             }],

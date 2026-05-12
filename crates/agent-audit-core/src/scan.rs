@@ -9,11 +9,11 @@ use crate::discovery::discover_skill_manifests;
 use crate::error::{AuditError, AuditResult};
 use crate::license_inventory::{inventory_license_files, inventory_manifest_license};
 use crate::model::{
-    build_finding_groups, BinaryArtifactKind, CompatibilityMatrix, ExternalUrlKind,
-    FindingConfidence, LicenseScope, PackageManagerKind, PermissionEvidenceKind, PermissionKind,
-    RemoteDependencyKind, ScanReport, ScanSummary, SkillArtifactKind, SkillCompatibilityRow,
-    SkillFile, SkillFileKind, SkillFinding, SkillGraph, SkillManifest, SkillPackage,
-    SkillReference, SupplyChainInventory, SupplyChainSourceKind, SuppressedFinding,
+    build_finding_groups, finding_suppression_match_keys, BinaryArtifactKind, CompatibilityMatrix,
+    ExternalUrlKind, FindingConfidence, LicenseScope, PackageManagerKind, PermissionEvidenceKind,
+    PermissionKind, RemoteDependencyKind, ScanReport, ScanSummary, SkillArtifactKind,
+    SkillCompatibilityRow, SkillFile, SkillFileKind, SkillFinding, SkillGraph, SkillManifest,
+    SkillPackage, SkillReference, SupplyChainInventory, SupplyChainSourceKind, SuppressedFinding,
     SuppressionMatch, TrustManifest, TrustManifestDiagnostic, TrustManifestDiagnosticKind,
 };
 use crate::offline_readiness::populate_offline_readiness;
@@ -1178,6 +1178,7 @@ fn apply_suppressions(
                 suppression: SuppressionMatch {
                     matched_rule: entry.rule.clone(),
                     matched_path: entry.path.clone(),
+                    matched_match: entry.match_value.clone(),
                     reason: entry.reason.clone(),
                 },
             }),
@@ -1193,10 +1194,23 @@ fn matching_ignore_entry<'a>(
     entries: &'a [ConfigIgnoreEntry],
 ) -> Option<&'a ConfigIgnoreEntry> {
     let finding_path = normalize_report_path(&finding.location.path);
+    let match_keys = finding_suppression_match_keys(finding);
 
-    entries
-        .iter()
-        .find(|entry| entry.rule == finding.rule_id && entry.path == finding_path)
+    entries.iter().find(|entry| {
+        if entry.rule != finding.rule_id {
+            return false;
+        }
+        let path_matches = entry
+            .path
+            .as_deref()
+            .is_none_or(|path| path == finding_path);
+        let evidence_matches = entry
+            .match_value
+            .as_deref()
+            .is_none_or(|match_value| match_keys.contains(match_value));
+
+        path_matches && evidence_matches
+    })
 }
 
 fn normalize_report_path(path: &str) -> String {
@@ -3743,8 +3757,11 @@ ignore:
             FindingCategory::Compatibility
         );
         assert_eq!(
-            report.suppressed_findings[0].suppression.matched_path,
-            "SKILL.md"
+            report.suppressed_findings[0]
+                .suppression
+                .matched_path
+                .as_deref(),
+            Some("SKILL.md")
         );
         assert_eq!(
             report.suppressed_findings[0].suppression.reason,
@@ -5824,8 +5841,11 @@ ignore:
             "SKILL001"
         );
         assert_eq!(
-            report.suppressed_findings[0].suppression.matched_path,
-            "nested/SKILL.md"
+            report.suppressed_findings[0]
+                .suppression
+                .matched_path
+                .as_deref(),
+            Some("nested/SKILL.md")
         );
         assert_eq!(
             report.suppressed_findings[0].suppression.reason,
@@ -5946,6 +5966,248 @@ ignore:
         assert!(report.suppressed_findings.is_empty());
         assert_eq!(report.findings[0].rule_id, "SKILL001");
         assert_eq!(report.findings[0].location.path, "SKILL.md");
+    }
+
+    #[test]
+    fn config_match_suppression_matches_grouped_frontmatter_evidence() {
+        let workspace = TestWorkspace::new("scan-suppression-match-frontmatter");
+        workspace.write_file(
+            "alpha/SKILL.md",
+            r#"---
+name: alpha
+description: Alpha fixture.
+requires: node
+---
+
+# Alpha
+"#,
+        );
+        workspace.write_file(
+            "beta/SKILL.md",
+            r#"---
+name: beta
+description: Beta fixture.
+requires: python
+owner: platform
+---
+
+# Beta
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+ignore:
+  - rule: SKILL040
+    match: requires
+    reason: Accepted generated requires metadata across reviewed fixtures.
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(report.summary.finding_count, 1);
+        assert_eq!(report.summary.suppressed_finding_count, 2);
+        assert_eq!(report.findings[0].rule_id, "SKILL040");
+        assert!(report.findings[0].message.contains("`owner`"));
+        assert_eq!(
+            suppressed_finding_projection(&report.suppressed_findings),
+            vec![
+                ("alpha/SKILL.md", "SKILL040"),
+                ("beta/SKILL.md", "SKILL040")
+            ]
+        );
+        assert!(report
+            .suppressed_findings
+            .iter()
+            .all(|entry| entry.suppression.matched_path.is_none()));
+        assert!(report.suppressed_findings.iter().all(|entry| entry
+            .suppression
+            .matched_match
+            .as_deref()
+            == Some("requires")));
+    }
+
+    #[test]
+    fn config_suppression_matches_combined_path_and_match() {
+        let workspace = TestWorkspace::new("scan-suppression-path-and-match");
+        workspace.write_file(
+            "alpha/SKILL.md",
+            r#"---
+name: alpha
+description: Alpha fixture.
+requires: node
+---
+
+# Alpha
+"#,
+        );
+        workspace.write_file(
+            "beta/SKILL.md",
+            r#"---
+name: beta
+description: Beta fixture.
+requires: python
+owner: platform
+---
+
+# Beta
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+ignore:
+  - rule: SKILL040
+    path: alpha/SKILL.md
+    match: requires
+    reason: Accepted generated requires metadata in alpha only.
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(report.summary.finding_count, 2);
+        assert_eq!(report.summary.suppressed_finding_count, 1);
+        assert_eq!(
+            suppressed_finding_projection(&report.suppressed_findings),
+            vec![("alpha/SKILL.md", "SKILL040")]
+        );
+        assert_eq!(
+            report.suppressed_findings[0]
+                .suppression
+                .matched_path
+                .as_deref(),
+            Some("alpha/SKILL.md")
+        );
+        assert_eq!(
+            report.suppressed_findings[0]
+                .suppression
+                .matched_match
+                .as_deref(),
+            Some("requires")
+        );
+        assert_eq!(
+            report
+                .findings
+                .iter()
+                .map(|finding| finding.location.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["beta/SKILL.md", "beta/SKILL.md"]
+        );
+    }
+
+    #[test]
+    fn config_match_suppression_does_not_match_unrelated_evidence() {
+        let workspace = TestWorkspace::new("scan-suppression-match-unmatched");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: unmatched
+description: Unmatched fixture.
+owner: platform
+---
+
+# Unmatched
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+ignore:
+  - rule: SKILL040
+    match: requires
+    reason: Accepted generated requires metadata only.
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(report.summary.finding_count, 1);
+        assert_eq!(report.summary.suppressed_finding_count, 0);
+        assert!(report.suppressed_findings.is_empty());
+        assert_eq!(report.findings[0].rule_id, "SKILL040");
+        assert!(report.findings[0].message.contains("`owner`"));
+    }
+
+    #[test]
+    fn config_match_suppression_keeps_json_order_deterministic() {
+        let workspace = TestWorkspace::new("scan-suppression-match-order-stability");
+        workspace.write_file(
+            "beta/SKILL.md",
+            r#"---
+name: beta
+description: Beta fixture.
+requires: python
+---
+
+# Beta
+"#,
+        );
+        workspace.write_file(
+            "alpha/SKILL.md",
+            r#"---
+name: alpha
+description: Alpha fixture.
+requires: node
+---
+
+# Alpha
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+ignore:
+  - rule: SKILL040
+    match: frontmatter_field=requires
+    reason: Accepted generated requires metadata across reviewed fixtures.
+"#,
+        )
+        .expect("valid config");
+        let options = ScanOptions {
+            config: Some(config),
+            ..ScanOptions::default()
+        };
+
+        let first = scan_path(workspace.root(), &options).expect("first scan");
+        let second = scan_path(workspace.root(), &options).expect("second scan");
+        let (first_json, first_value) = report_json_value(&first);
+        let (second_json, second_value) = report_json_value(&second);
+
+        assert_eq!(first_json.as_bytes(), second_json.as_bytes());
+        assert_eq!(first_value, second_value);
+        assert_eq!(
+            suppressed_finding_projection(&first.suppressed_findings),
+            vec![
+                ("alpha/SKILL.md", "SKILL040"),
+                ("beta/SKILL.md", "SKILL040")
+            ]
+        );
+        assert_eq!(
+            first_value["suppressed_findings"][0]["suppression"]["matched_match"],
+            "frontmatter_field=requires"
+        );
     }
 
     #[test]

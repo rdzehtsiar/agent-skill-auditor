@@ -61,7 +61,8 @@ mod tests {
                 finding: finding("SKILL001", Severity::Low),
                 suppression: SuppressionMatch {
                     matched_rule: "SKILL001".to_owned(),
-                    matched_path: "SKILL.md".to_owned(),
+                    matched_path: Some("SKILL.md".to_owned()),
+                    matched_match: None,
                     reason: "Accepted fixture.".to_owned(),
                 },
             }],
@@ -78,7 +79,8 @@ mod tests {
                 finding: compatibility_finding("SKILL040", Severity::Low),
                 suppression: SuppressionMatch {
                     matched_rule: "SKILL040".to_owned(),
-                    matched_path: "SKILL.md".to_owned(),
+                    matched_path: Some("SKILL.md".to_owned()),
+                    matched_match: None,
                     reason: "Accepted host metadata fixture.".to_owned(),
                 },
             }],
@@ -95,7 +97,8 @@ mod tests {
                 finding: security_finding("SEC009", Severity::Low),
                 suppression: SuppressionMatch {
                     matched_rule: "SEC009".to_owned(),
-                    matched_path: "scripts/install.sh".to_owned(),
+                    matched_path: Some("scripts/install.sh".to_owned()),
+                    matched_match: None,
                     reason: "Accepted reviewed package install fixture.".to_owned(),
                 },
             }],

@@ -103,7 +103,7 @@ When both config `fail_on` and CLI `--fail-on` values are provided, the CLI valu
 
 When no profile is selected in config or on the CLI, the scanner evaluates all supported compatibility profiles in registry order: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, and `generic`. CLI `--profile` values override config `profiles`.
 
-Path-scoped suppressions are configured with `ignore` entries. Suppressions match one exact rule ID and one normalized path relative to the scanned project; they do not use globs.
+Suppressions are configured with `ignore` entries. Exact suppressions match one active rule ID and one normalized path relative to the scanned project; they do not use globs. Pattern suppressions can use `match` for normalized grouped evidence keys, such as suppressing `SKILL040` for the reviewed `requires` frontmatter field across many generated skills.
 
 ```yaml
 profiles:
@@ -118,6 +118,9 @@ ignore:
   - rule: SKILL010
     path: skills/internal-search/SKILL.md
     reason: False positive: references/api.md is generated and packaged by the release process.
+  - rule: SKILL040
+    match: requires
+    reason: Accepted risk: generated requires metadata is reviewed by the platform team.
 ```
 
 JSON output includes suppressed findings, while SARIF reports active findings only. Suppressed findings do not trigger `fail_on` in either format. Each finding includes additive `confidence` metadata (`low`, `medium`, or `high`) to separate evidence certainty from severity.
@@ -252,7 +255,7 @@ Configuration is documented in [Config](./docs/config.md). Important current beh
 - `supply_chain.policy: strict` requires local trust manifest and license evidence. The default policy records evidence without turning missing optional metadata into findings.
 - CLI `--profile` values override config `profiles`.
 - CLI `--strict-supply-chain` overrides config supply-chain policy to strict for that scan.
-- Suppressions require active rule IDs and exact normalized paths, including for compatibility findings.
+- Suppressions require active rule IDs, clear reasons, and either exact normalized paths or grouped evidence `match` values, including for compatibility findings.
 
 ## Security Model
 

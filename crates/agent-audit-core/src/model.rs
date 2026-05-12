@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::{collections::BTreeMap, fmt};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+};
 
 use agent_audit_hosts::ProfileCompatibilityResult;
 use serde::{Deserialize, Serialize};
@@ -628,7 +631,10 @@ pub struct SuppressedFinding {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SuppressionMatch {
     pub matched_rule: String,
-    pub matched_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub matched_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub matched_match: Option<String>,
     pub reason: String,
 }
 
@@ -777,6 +783,35 @@ fn finding_group_dimensions(
     finding: &SkillFinding,
     compatibility: &CompatibilityMatrix,
 ) -> BTreeMap<String, String> {
+    let mut dimensions = finding_base_dimensions(finding);
+    if let Some(profile) = host_profile_for_finding(finding, compatibility) {
+        dimensions.insert("host_profile".to_owned(), profile);
+    }
+
+    dimensions
+}
+
+pub fn finding_suppression_match_keys(finding: &SkillFinding) -> BTreeSet<String> {
+    let dimensions = finding_base_dimensions(finding);
+    let mut keys = BTreeSet::new();
+
+    keys.insert(normalized_evidence_value(&finding_group_evidence_key(
+        finding,
+        &dimensions,
+    )));
+    for (key, value) in dimensions {
+        keys.insert(normalized_evidence_value(&format!("{key}={value}")));
+        keys.insert(normalized_evidence_value(&value));
+    }
+    if let Some(value) = first_backtick_value(&finding.message) {
+        keys.insert(normalized_evidence_value(&value));
+    }
+    keys.insert(normalized_evidence_value(&finding.message));
+
+    keys
+}
+
+fn finding_base_dimensions(finding: &SkillFinding) -> BTreeMap<String, String> {
     let mut dimensions = BTreeMap::new();
 
     if let Some(field) = frontmatter_field_for_finding(finding) {
@@ -788,7 +823,7 @@ fn finding_group_dimensions(
     if let Some(manager) = package_manager_for_finding(finding) {
         dimensions.insert("package_manager".to_owned(), manager);
     }
-    if let Some(profile) = host_profile_for_finding(finding, compatibility) {
+    if let Some(profile) = host_profile_from_message(finding) {
         dimensions.insert("host_profile".to_owned(), profile);
     }
 
@@ -846,20 +881,8 @@ fn host_profile_for_finding(
     finding: &SkillFinding,
     compatibility: &CompatibilityMatrix,
 ) -> Option<String> {
-    let message_profile = if finding.message.starts_with("Claude Code ") {
-        Some("claude-code".to_owned())
-    } else if finding.message.starts_with("Codex ") {
-        Some("codex".to_owned())
-    } else if finding.message.starts_with("GitHub Copilot ") {
-        Some("github-copilot".to_owned())
-    } else if finding.message.starts_with("VS Code Copilot ") {
-        Some("vscode-copilot".to_owned())
-    } else {
-        None
-    };
-
-    if message_profile.is_some() {
-        return message_profile;
+    if let Some(profile) = host_profile_from_message(finding) {
+        return Some(profile);
     }
 
     let profiles = compatibility
@@ -877,6 +900,20 @@ fn host_profile_for_finding(
         .collect::<std::collections::BTreeSet<_>>();
 
     (!profiles.is_empty()).then(|| profiles.into_iter().collect::<Vec<_>>().join(","))
+}
+
+fn host_profile_from_message(finding: &SkillFinding) -> Option<String> {
+    if finding.message.starts_with("Claude Code ") {
+        Some("claude-code".to_owned())
+    } else if finding.message.starts_with("Codex ") {
+        Some("codex".to_owned())
+    } else if finding.message.starts_with("GitHub Copilot ") {
+        Some("github-copilot".to_owned())
+    } else if finding.message.starts_with("VS Code Copilot ") {
+        Some("vscode-copilot".to_owned())
+    } else {
+        None
+    }
 }
 
 fn finding_group_evidence_key(

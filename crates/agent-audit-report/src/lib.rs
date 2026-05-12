@@ -4859,7 +4859,8 @@ mod tests {
             ),
             suppression: SuppressionMatch {
                 matched_rule: "SKILL001".to_owned(),
-                matched_path: "SKILL.md".to_owned(),
+                matched_path: Some("SKILL.md".to_owned()),
+                matched_match: None,
                 reason: "Accepted fixture.".to_owned(),
             },
         }];
