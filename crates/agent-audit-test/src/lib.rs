@@ -13,8 +13,9 @@ mod tests {
     use super::*;
     use agent_audit_core::model::ScanSummary;
     use agent_audit_core::{
-        parse_audit_config, scan_path, FindingCategory, FindingLocation, ScanOptions, ScanReport,
-        Severity, SkillFinding, SkillGraph, SkillManifest, SkillPackage,
+        build_finding_groups, parse_audit_config, scan_path, CompatibilityMatrix, FindingCategory,
+        FindingLocation, ScanOptions, ScanReport, Severity, SkillFinding, SkillGraph,
+        SkillManifest, SkillPackage,
     };
     use agent_audit_report::{
         render_html, render_json, render_report, render_sarif, render_summary, ReportFormat,
@@ -1085,6 +1086,11 @@ mod tests {
             schema["properties"]["supply_chain"]["$ref"],
             "#/$defs/supplyChainInventory"
         );
+        assert!(!string_array(&schema["required"]).contains(&"finding_groups".to_owned()));
+        assert_eq!(
+            schema["properties"]["finding_groups"]["items"]["$ref"],
+            "#/$defs/findingGroup"
+        );
         assert!(!string_array(&schema["required"]).contains(&"compatibility".to_owned()));
         assert_eq!(
             schema["properties"]["compatibility"]["$ref"],
@@ -1161,6 +1167,24 @@ mod tests {
             string_array(&schema["$defs"]["compatibilityStatus"]["enum"]),
             vec!["pass", "warn", "fail", "unknown"]
         );
+        assert_eq!(
+            string_array(&schema["$defs"]["findingGroup"]["required"]),
+            vec![
+                "rule_id",
+                "severity",
+                "category",
+                "title",
+                "rationale",
+                "remediation",
+                "suppression",
+                "evidence_key",
+                "dimensions",
+                "finding_count",
+                "affected_package_count",
+                "affected_packages",
+                "evidence_samples"
+            ]
+        );
 
         let report = scan_compatibility_fixture("matrix", ScanOptions::default());
         let json = render_json(&report).expect("render compatibility report JSON");
@@ -1189,6 +1213,7 @@ mod tests {
         }))
         .expect("deserialize legacy report without compatibility");
         assert!(legacy_report.compatibility.is_empty());
+        assert!(legacy_report.finding_groups.is_empty());
         assert!(legacy_report.supply_chain.licenses.is_empty());
     }
 
@@ -1213,7 +1238,7 @@ mod tests {
                 "<h2 id=\"secret-usage\">Secret Usage</h2>",
                 "<h2 id=\"offline-readiness\">Offline Readiness</h2>",
                 "<h2 id=\"packages\">Packages</h2>",
-                "<h2 id=\"findings\">Findings</h2>",
+                "<h2 id=\"findings\">Finding Groups</h2>",
                 "<h2 id=\"skill-details\">Skill Details</h2>",
             ],
         );
@@ -1444,6 +1469,7 @@ Bootstrap with scripts/install.sh.
     fn assert_json_report_matches_schema_contract(value: &serde_json::Value) {
         assert!(value["packages"].is_array());
         assert!(value["findings"].is_array());
+        assert!(value["finding_groups"].is_array());
         assert!(value["suppressed_findings"].is_array());
         assert!(value["summary"].is_object());
 
@@ -1773,6 +1799,9 @@ Bootstrap with scripts/install.sh.
             ),
         ];
 
+        let compatibility = CompatibilityMatrix::default();
+        let finding_groups = build_finding_groups(&packages, &findings, &compatibility);
+
         ScanReport {
             summary: ScanSummary {
                 package_count: packages.len(),
@@ -1783,9 +1812,10 @@ Bootstrap with scripts/install.sh.
             },
             packages,
             findings,
+            finding_groups,
             suppressed_findings: Vec::new(),
             supply_chain: Default::default(),
-            compatibility: Default::default(),
+            compatibility,
         }
     }
 

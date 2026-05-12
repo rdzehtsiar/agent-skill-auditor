@@ -9,12 +9,12 @@ use crate::discovery::discover_skill_manifests;
 use crate::error::{AuditError, AuditResult};
 use crate::license_inventory::{inventory_license_files, inventory_manifest_license};
 use crate::model::{
-    BinaryArtifactKind, CompatibilityMatrix, ExternalUrlKind, LicenseScope, PackageManagerKind,
-    PermissionEvidenceKind, PermissionKind, RemoteDependencyKind, ScanReport, ScanSummary,
-    SkillArtifactKind, SkillCompatibilityRow, SkillFile, SkillFileKind, SkillFinding, SkillGraph,
-    SkillManifest, SkillPackage, SkillReference, SupplyChainInventory, SupplyChainSourceKind,
-    SuppressedFinding, SuppressionMatch, TrustManifest, TrustManifestDiagnostic,
-    TrustManifestDiagnosticKind,
+    build_finding_groups, BinaryArtifactKind, CompatibilityMatrix, ExternalUrlKind, LicenseScope,
+    PackageManagerKind, PermissionEvidenceKind, PermissionKind, RemoteDependencyKind, ScanReport,
+    ScanSummary, SkillArtifactKind, SkillCompatibilityRow, SkillFile, SkillFileKind, SkillFinding,
+    SkillGraph, SkillManifest, SkillPackage, SkillReference, SupplyChainInventory,
+    SupplyChainSourceKind, SuppressedFinding, SuppressionMatch, TrustManifest,
+    TrustManifestDiagnostic, TrustManifestDiagnosticKind,
 };
 use crate::offline_readiness::populate_offline_readiness;
 use crate::package_inventory::{
@@ -305,6 +305,7 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
 
     let compatibility =
         compatibility_matrix_for_packages(&packages, &findings, options.config.as_ref());
+    let finding_groups = build_finding_groups(&packages, &findings, &compatibility);
 
     Ok(ScanReport {
         summary: ScanSummary {
@@ -316,6 +317,7 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         },
         packages,
         findings,
+        finding_groups,
         suppressed_findings,
         supply_chain,
         compatibility,
@@ -6321,6 +6323,7 @@ description: JSON stability fixture.
     }
   ],
   "findings": [],
+  "finding_groups": [],
   "suppressed_findings": [],
   "summary": {
     "package_count": 1,

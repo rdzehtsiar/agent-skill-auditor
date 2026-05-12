@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 pub struct ScanReport {
     pub packages: Vec<SkillPackage>,
     pub findings: Vec<SkillFinding>,
+    #[serde(default)]
+    pub finding_groups: Vec<FindingGroup>,
     pub suppressed_findings: Vec<SuppressedFinding>,
     pub summary: ScanSummary,
     #[serde(default)]
@@ -584,10 +586,33 @@ pub struct SkillFinding {
     pub suppression: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct FindingLocation {
     pub path: String,
     pub line: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FindingGroup {
+    pub rule_id: String,
+    pub severity: Severity,
+    pub category: FindingCategory,
+    pub title: String,
+    pub rationale: String,
+    pub remediation: String,
+    pub suppression: String,
+    pub evidence_key: String,
+    pub dimensions: BTreeMap<String, String>,
+    pub finding_count: usize,
+    pub affected_package_count: usize,
+    pub affected_packages: Vec<String>,
+    pub evidence_samples: Vec<FindingEvidenceSample>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FindingEvidenceSample {
+    pub location: FindingLocation,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -624,6 +649,292 @@ pub enum FindingCategory {
     Reproducibility,
 }
 
+pub const FINDING_GROUP_EVIDENCE_SAMPLE_LIMIT: usize = 3;
+
+pub fn build_finding_groups(
+    packages: &[SkillPackage],
+    findings: &[SkillFinding],
+    compatibility: &CompatibilityMatrix,
+) -> Vec<FindingGroup> {
+    let mut groups = BTreeMap::<FindingGroupKey, FindingGroupAccumulator>::new();
+    let mut sorted_findings = findings.iter().collect::<Vec<_>>();
+    sorted_findings.sort_by(|left, right| finding_order_key(left).cmp(&finding_order_key(right)));
+
+    for finding in sorted_findings {
+        let mut dimensions = finding_group_dimensions(finding, compatibility);
+        let evidence_key = finding_group_evidence_key(finding, &dimensions);
+        let key = FindingGroupKey {
+            rule_id: finding.rule_id.clone(),
+            evidence_key: evidence_key.clone(),
+            severity: finding.severity,
+            category: finding.category,
+            dimensions: dimensions.clone(),
+        };
+        let group = groups
+            .entry(key)
+            .or_insert_with(|| FindingGroupAccumulator {
+                rule_id: finding.rule_id.clone(),
+                severity: finding.severity,
+                category: finding.category,
+                title: finding.title.clone(),
+                rationale: finding.rationale.clone(),
+                remediation: finding.remediation.clone(),
+                suppression: finding.suppression.clone(),
+                evidence_key,
+                dimensions: std::mem::take(&mut dimensions),
+                finding_count: 0,
+                affected_packages: BTreeMap::new(),
+                evidence_samples: Vec::new(),
+            });
+
+        group.finding_count += 1;
+        if let Some(package) = package_for_finding(packages, finding) {
+            group
+                .affected_packages
+                .entry(package.manifest_path.clone())
+                .or_insert(());
+        }
+        if group.evidence_samples.len() < FINDING_GROUP_EVIDENCE_SAMPLE_LIMIT {
+            group.evidence_samples.push(FindingEvidenceSample {
+                location: finding.location.clone(),
+                message: finding.message.clone(),
+            });
+        }
+    }
+
+    groups
+        .into_values()
+        .map(FindingGroupAccumulator::into_group)
+        .collect()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct FindingGroupKey {
+    rule_id: String,
+    evidence_key: String,
+    severity: Severity,
+    category: FindingCategory,
+    dimensions: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone)]
+struct FindingGroupAccumulator {
+    rule_id: String,
+    severity: Severity,
+    category: FindingCategory,
+    title: String,
+    rationale: String,
+    remediation: String,
+    suppression: String,
+    evidence_key: String,
+    dimensions: BTreeMap<String, String>,
+    finding_count: usize,
+    affected_packages: BTreeMap<String, ()>,
+    evidence_samples: Vec<FindingEvidenceSample>,
+}
+
+impl FindingGroupAccumulator {
+    fn into_group(self) -> FindingGroup {
+        let affected_packages = self.affected_packages.into_keys().collect::<Vec<_>>();
+
+        FindingGroup {
+            rule_id: self.rule_id,
+            severity: self.severity,
+            category: self.category,
+            title: self.title,
+            rationale: self.rationale,
+            remediation: self.remediation,
+            suppression: self.suppression,
+            evidence_key: self.evidence_key,
+            dimensions: self.dimensions,
+            finding_count: self.finding_count,
+            affected_package_count: affected_packages.len(),
+            affected_packages,
+            evidence_samples: self.evidence_samples,
+        }
+    }
+}
+
+fn finding_group_dimensions(
+    finding: &SkillFinding,
+    compatibility: &CompatibilityMatrix,
+) -> BTreeMap<String, String> {
+    let mut dimensions = BTreeMap::new();
+
+    if let Some(field) = frontmatter_field_for_finding(finding) {
+        dimensions.insert("frontmatter_field".to_owned(), field);
+    }
+    if let Some(pattern) = command_pattern_for_finding(finding) {
+        dimensions.insert("command_pattern".to_owned(), pattern);
+    }
+    if let Some(manager) = package_manager_for_finding(finding) {
+        dimensions.insert("package_manager".to_owned(), manager);
+    }
+    if let Some(profile) = host_profile_for_finding(finding, compatibility) {
+        dimensions.insert("host_profile".to_owned(), profile);
+    }
+
+    dimensions
+}
+
+fn frontmatter_field_for_finding(finding: &SkillFinding) -> Option<String> {
+    let message = finding.message.to_ascii_lowercase();
+    if !message.contains("frontmatter field") && !message.contains("unknown field") {
+        return None;
+    }
+
+    first_backtick_value(&finding.message)
+}
+
+fn command_pattern_for_finding(finding: &SkillFinding) -> Option<String> {
+    let message = finding.message.to_ascii_lowercase();
+
+    if message.contains("npm install") {
+        Some("npm install".to_owned())
+    } else if message.contains("pip install") {
+        Some("pip install".to_owned())
+    } else if message.contains("cargo install") {
+        Some("cargo install".to_owned())
+    } else if message.contains("gem install") {
+        Some("gem install".to_owned())
+    } else if message.contains("javascript package install") {
+        Some("javascript package install".to_owned())
+    } else if message.contains("python package install") {
+        Some("python package install".to_owned())
+    } else if message.contains("ruby gem install") {
+        Some("ruby gem install".to_owned())
+    } else if message.contains("system package install") {
+        Some("system package install".to_owned())
+    } else {
+        None
+    }
+}
+
+fn package_manager_for_finding(finding: &SkillFinding) -> Option<String> {
+    let message = finding.message.to_ascii_lowercase();
+
+    for manager in [
+        "npm", "yarn", "pnpm", "pip", "poetry", "uv", "cargo", "go", "gem", "composer",
+    ] {
+        if message.contains(&format!("{manager} install")) {
+            return Some(manager.to_owned());
+        }
+    }
+
+    None
+}
+
+fn host_profile_for_finding(
+    finding: &SkillFinding,
+    compatibility: &CompatibilityMatrix,
+) -> Option<String> {
+    let message_profile = if finding.message.starts_with("Claude Code ") {
+        Some("claude-code".to_owned())
+    } else if finding.message.starts_with("Codex ") {
+        Some("codex".to_owned())
+    } else if finding.message.starts_with("GitHub Copilot ") {
+        Some("github-copilot".to_owned())
+    } else if finding.message.starts_with("VS Code Copilot ") {
+        Some("vscode-copilot".to_owned())
+    } else {
+        None
+    };
+
+    if message_profile.is_some() {
+        return message_profile;
+    }
+
+    let profiles = compatibility
+        .matrix
+        .iter()
+        .filter(|row| row.path == finding.location.path)
+        .flat_map(|row| row.profiles.iter())
+        .filter(|profile| {
+            profile
+                .finding_ids
+                .iter()
+                .any(|rule_id| rule_id == &finding.rule_id)
+        })
+        .map(|profile| profile.profile.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+
+    (!profiles.is_empty()).then(|| profiles.into_iter().collect::<Vec<_>>().join(","))
+}
+
+fn finding_group_evidence_key(
+    finding: &SkillFinding,
+    dimensions: &BTreeMap<String, String>,
+) -> String {
+    if !dimensions.is_empty() {
+        return dimensions
+            .iter()
+            .map(|(key, value)| format!("{key}={value}"))
+            .collect::<Vec<_>>()
+            .join("|");
+    }
+
+    first_backtick_value(&finding.message)
+        .map(|value| format!("evidence={}", normalized_evidence_value(&value)))
+        .unwrap_or_else(|| normalized_evidence_value(&finding.message))
+}
+
+fn first_backtick_value(value: &str) -> Option<String> {
+    let (_, after_open) = value.split_once('`')?;
+    let (inside, _) = after_open.split_once('`')?;
+    let trimmed = inside.trim();
+
+    (!trimmed.is_empty()).then(|| trimmed.to_owned())
+}
+
+fn normalized_evidence_value(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim_matches(|character: char| matches!(character, '.' | ',' | ';' | ':'))
+        .to_ascii_lowercase()
+}
+
+fn package_for_finding<'a>(
+    packages: &'a [SkillPackage],
+    finding: &SkillFinding,
+) -> Option<&'a SkillPackage> {
+    packages
+        .iter()
+        .find(|package| package.manifest_path == finding.location.path)
+        .or_else(|| {
+            packages
+                .iter()
+                .filter(|package| path_has_root_prefix(&finding.location.path, &package.root))
+                .max_by(|left, right| {
+                    left.root
+                        .len()
+                        .cmp(&right.root.len())
+                        .then_with(|| right.manifest_path.cmp(&left.manifest_path))
+                })
+        })
+}
+
+fn path_has_root_prefix(path: &str, root: &str) -> bool {
+    if root.is_empty() || root == "." {
+        return true;
+    }
+
+    path == root
+        || path
+            .strip_prefix(root)
+            .is_some_and(|suffix| suffix.starts_with('/'))
+}
+
+fn finding_order_key(finding: &SkillFinding) -> (&str, Option<usize>, &str, &str) {
+    (
+        finding.location.path.as_str(),
+        finding.location.line,
+        finding.rule_id.as_str(),
+        finding.message.as_str(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -646,6 +957,7 @@ mod tests {
         let expected = r#"{
   "packages": [],
   "findings": [],
+  "finding_groups": [],
   "suppressed_findings": [],
   "summary": {
     "package_count": 0,
@@ -1061,10 +1373,141 @@ mod tests {
         assert!(report.compatibility.is_empty());
     }
 
+    #[test]
+    fn finding_groups_order_deterministically_and_capture_inferable_dimensions() {
+        let packages = vec![
+            test_package("skills/beta", "skills/beta/SKILL.md", "beta"),
+            test_package("skills/alpha", "skills/alpha/SKILL.md", "alpha"),
+        ];
+        let findings = vec![
+            test_finding(
+                "SKILL050",
+                Severity::Low,
+                FindingCategory::Compatibility,
+                "Host-specific metadata may be ignored",
+                "Codex is likely to ignore the `permissions` frontmatter field.",
+                "skills/beta/SKILL.md",
+                Some(1),
+            ),
+            test_finding(
+                "SUPPLY003",
+                Severity::Medium,
+                FindingCategory::Reproducibility,
+                "Install command without matching lockfile",
+                "The skill runs a npm install command without matching lockfile evidence.",
+                "skills/alpha/scripts/install.sh",
+                Some(4),
+            ),
+        ];
+
+        let groups = build_finding_groups(&packages, &findings, &CompatibilityMatrix::default());
+
+        assert_eq!(
+            groups
+                .iter()
+                .map(|group| (
+                    group.rule_id.as_str(),
+                    group.evidence_key.as_str(),
+                    group.affected_package_count,
+                    group.dimensions.clone()
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    "SKILL050",
+                    "frontmatter_field=permissions|host_profile=codex",
+                    1,
+                    BTreeMap::from([
+                        ("frontmatter_field".to_owned(), "permissions".to_owned()),
+                        ("host_profile".to_owned(), "codex".to_owned()),
+                    ]),
+                ),
+                (
+                    "SUPPLY003",
+                    "command_pattern=npm install|package_manager=npm",
+                    1,
+                    BTreeMap::from([
+                        ("command_pattern".to_owned(), "npm install".to_owned()),
+                        ("package_manager".to_owned(), "npm".to_owned()),
+                    ]),
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn finding_groups_count_affected_packages_and_limit_evidence_samples() {
+        let packages = vec![
+            test_package("skills/alpha", "skills/alpha/SKILL.md", "alpha"),
+            test_package("skills/beta", "skills/beta/SKILL.md", "beta"),
+        ];
+        let findings = vec![
+            test_finding(
+                "SEC009",
+                Severity::Medium,
+                FindingCategory::Security,
+                "Package install without lockfile",
+                "The artifact runs a JavaScript package install without nearby lockfile evidence.",
+                "skills/beta/scripts/install.sh",
+                Some(2),
+            ),
+            test_finding(
+                "SEC009",
+                Severity::Medium,
+                FindingCategory::Security,
+                "Package install without lockfile",
+                "The artifact runs a JavaScript package install without nearby lockfile evidence.",
+                "skills/alpha/scripts/install.sh",
+                Some(3),
+            ),
+            test_finding(
+                "SEC009",
+                Severity::Medium,
+                FindingCategory::Security,
+                "Package install without lockfile",
+                "The artifact runs a JavaScript package install without nearby lockfile evidence.",
+                "skills/alpha/scripts/bootstrap.sh",
+                Some(4),
+            ),
+            test_finding(
+                "SEC009",
+                Severity::Medium,
+                FindingCategory::Security,
+                "Package install without lockfile",
+                "The artifact runs a JavaScript package install without nearby lockfile evidence.",
+                "skills/beta/scripts/bootstrap.sh",
+                Some(5),
+            ),
+        ];
+
+        let groups = build_finding_groups(&packages, &findings, &CompatibilityMatrix::default());
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].finding_count, 4);
+        assert_eq!(groups[0].affected_package_count, 2);
+        assert_eq!(
+            groups[0].affected_packages,
+            vec!["skills/alpha/SKILL.md", "skills/beta/SKILL.md"]
+        );
+        assert_eq!(
+            groups[0]
+                .evidence_samples
+                .iter()
+                .map(|sample| sample.location.path.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "skills/alpha/scripts/bootstrap.sh",
+                "skills/alpha/scripts/install.sh",
+                "skills/beta/scripts/bootstrap.sh",
+            ]
+        );
+    }
+
     fn empty_report() -> ScanReport {
         ScanReport {
             packages: Vec::new(),
             findings: Vec::new(),
+            finding_groups: Vec::new(),
             suppressed_findings: Vec::new(),
             summary: ScanSummary {
                 package_count: 0,
@@ -1075,6 +1518,56 @@ mod tests {
             },
             supply_chain: SupplyChainInventory::default(),
             compatibility: CompatibilityMatrix::default(),
+        }
+    }
+
+    fn test_package(root: &str, manifest_path: &str, name: &str) -> SkillPackage {
+        SkillPackage {
+            root: root.to_owned(),
+            manifest_path: manifest_path.to_owned(),
+            manifest: SkillManifest {
+                name: Some(name.to_owned()),
+                description: Some(format!("{name} description.")),
+                frontmatter: BTreeMap::new(),
+                body: String::new(),
+                headings: Vec::new(),
+                links: Vec::new(),
+                inline_code: Vec::new(),
+                inline_code_locations: Vec::new(),
+                code_blocks: Vec::new(),
+                declared_tools: Vec::new(),
+                declared_permissions: Vec::new(),
+            },
+            graph: SkillGraph {
+                references: Vec::new(),
+                artifacts: Vec::new(),
+                files: Vec::new(),
+            },
+        }
+    }
+
+    fn test_finding(
+        rule_id: &str,
+        severity: Severity,
+        category: FindingCategory,
+        title: &str,
+        message: &str,
+        path: &str,
+        line: Option<usize>,
+    ) -> SkillFinding {
+        SkillFinding {
+            rule_id: rule_id.to_owned(),
+            severity,
+            category,
+            title: title.to_owned(),
+            message: message.to_owned(),
+            location: FindingLocation {
+                path: path.to_owned(),
+                line,
+            },
+            rationale: "Rationale.".to_owned(),
+            remediation: "Remediation.".to_owned(),
+            suppression: "Suppression.".to_owned(),
         }
     }
 

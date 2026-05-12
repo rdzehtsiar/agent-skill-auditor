@@ -22,6 +22,12 @@
         "type": "object"
       }
     },
+    "finding_groups": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/findingGroup"
+      }
+    },
     "suppressed_findings": {
       "type": "array",
       "items": {
@@ -930,6 +936,130 @@
         "partial",
         "not-ready",
         "unknown"
+      ]
+    },
+    "findingGroup": {
+      "type": "object",
+      "required": [
+        "rule_id",
+        "severity",
+        "category",
+        "title",
+        "rationale",
+        "remediation",
+        "suppression",
+        "evidence_key",
+        "dimensions",
+        "finding_count",
+        "affected_package_count",
+        "affected_packages",
+        "evidence_samples"
+      ],
+      "properties": {
+        "rule_id": {
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/severity"
+        },
+        "category": {
+          "$ref": "#/$defs/findingCategory"
+        },
+        "title": {
+          "type": "string"
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "remediation": {
+          "type": "string"
+        },
+        "suppression": {
+          "type": "string"
+        },
+        "evidence_key": {
+          "type": "string"
+        },
+        "dimensions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "finding_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "affected_package_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "affected_packages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidence_samples": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/findingEvidenceSample"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "findingEvidenceSample": {
+      "type": "object",
+      "required": [
+        "location",
+        "message"
+      ],
+      "properties": {
+        "location": {
+          "$ref": "#/$defs/findingLocation"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "findingLocation": {
+      "type": "object",
+      "required": [
+        "path",
+        "line"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "$ref": "#/$defs/optionalLine"
+        }
+      },
+      "additionalProperties": false
+    },
+    "severity": {
+      "type": "string",
+      "enum": [
+        "info",
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "findingCategory": {
+      "type": "string",
+      "enum": [
+        "spec",
+        "compatibility",
+        "security",
+        "quality",
+        "portability",
+        "reproducibility"
       ]
     },
     "compatibilityMatrix": {

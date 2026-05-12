@@ -69,6 +69,61 @@
       "suppression": "Suppress `SUPPLY004` only when a reviewed local policy intentionally allows version ranges and documents the update and review process."
     }
   ],
+  "finding_groups": [
+    {
+      "rule_id": "SUPPLY003",
+      "severity": "medium",
+      "category": "reproducibility",
+      "title": "Install command without matching lockfile",
+      "rationale": "Package installation without a matching lockfile can resolve different dependency graphs over time and weakens reproducible offline review.",
+      "remediation": "Commit the package manager lockfile for the install command, switch to a lockfile-backed install mode, or remove package installation from the skill workflow.",
+      "suppression": "Suppress `SUPPLY003` only for a reviewed install path whose dependency set is pinned or controlled by another documented local mechanism.",
+      "evidence_key": "command_pattern=npm install|package_manager=npm",
+      "dimensions": {
+        "command_pattern": "npm install",
+        "package_manager": "npm"
+      },
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "scripts/install.sh",
+            "line": 3
+          },
+          "message": "The skill runs a npm install command without matching lockfile evidence, so dependency resolution may change between audits."
+        }
+      ]
+    },
+    {
+      "rule_id": "SUPPLY004",
+      "severity": "medium",
+      "category": "reproducibility",
+      "title": "Unpinned package dependency",
+      "rationale": "Unpinned package versions can change without a skill package change, making audits less reproducible and increasing supply-chain risk.",
+      "remediation": "Use exact package versions and commit the relevant lockfile when the package manager supports one.",
+      "suppression": "Suppress `SUPPLY004` only when a reviewed local policy intentionally allows version ranges and documents the update and review process.",
+      "evidence_key": "evidence=npm:left-pad",
+      "dimensions": {},
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "scripts/install.sh",
+            "line": 3
+          },
+          "message": "The package dependency `npm:left-pad` is not pinned to an exact version, so future installs may resolve different code."
+        }
+      ]
+    }
+  ],
   "suppressed_findings": [
     {
       "finding": {

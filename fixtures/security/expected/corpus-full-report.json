@@ -1099,6 +1099,766 @@
       "suppression": "Suppress `SEC007` only for a narrow, documented output path that the user explicitly selected and that does not overwrite credentials, host configuration, or repository state."
     }
   ],
+  "finding_groups": [
+    {
+      "rule_id": "SEC001",
+      "severity": "high",
+      "category": "security",
+      "title": "Remote content piped into shell",
+      "rationale": "Piping network content directly into a shell prevents review, pinning, and integrity checks before code runs on the user's machine.",
+      "remediation": "Download remote content to a local file, pin the source version, verify integrity, and require explicit review before execution.",
+      "suppression": "Suppress `SEC001` only for a reviewed bootstrap path that pins the source, verifies integrity, and documents why direct execution is still required.",
+      "evidence_key": "remote content is piped directly into a shell, so unreviewed network content can execute on the user's machine",
+      "dimensions": {},
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "curl-bash/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "curl-bash/scripts/install.sh",
+            "line": 3
+          },
+          "message": "Remote content is piped directly into a shell, so unreviewed network content can execute on the user's machine."
+        }
+      ]
+    },
+    {
+      "rule_id": "SEC002",
+      "severity": "medium",
+      "category": "security",
+      "title": "Secret-like environment variable access",
+      "rationale": "Reading token-, key-, password-, or credential-like environment variables can expose secrets to scripts, logs, prompts, or external services.",
+      "remediation": "Avoid broad secret reads; require explicit user-provided configuration for the narrow credential needed and keep it out of logs and generated reports.",
+      "suppression": "Suppress `SEC002` only for a reviewed credential access path with least-privilege scope, documented handling, and no logging or unintended disclosure.",
+      "evidence_key": "evidence=service_token",
+      "dimensions": {},
+      "finding_count": 4,
+      "affected_package_count": 2,
+      "affected_packages": [
+        "env-exfiltration/SKILL.md",
+        "multi-language/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "env-exfiltration/scripts/upload.sh",
+            "line": 3
+          },
+          "message": "The artifact reads secret-like environment variable `SERVICE_TOKEN`. This may be legitimate, but it needs review, declaration, and careful handling to avoid accidental disclosure."
+        },
+        {
+          "location": {
+            "path": "multi-language/scripts/client.js",
+            "line": 2
+          },
+          "message": "The artifact reads secret-like environment variable `SERVICE_TOKEN`. This may be legitimate, but it needs review, declaration, and careful handling to avoid accidental disclosure."
+        },
+        {
+          "location": {
+            "path": "multi-language/scripts/send.py",
+            "line": 5
+          },
+          "message": "The artifact reads secret-like environment variable `SERVICE_TOKEN`. This may be legitimate, but it needs review, declaration, and careful handling to avoid accidental disclosure."
+        }
+      ]
+    },
+    {
+      "rule_id": "SEC003",
+      "severity": "high",
+      "category": "security",
+      "title": "Data sent to external URL",
+      "rationale": "Sending secret-like environment variables or credentials to an external URL can disclose private authentication material outside the local audit boundary.",
+      "remediation": "Keep processing local by default, document any required network destination, minimize the transmitted data, and require explicit user consent.",
+      "suppression": "Suppress `SEC003` only for a documented endpoint with reviewed data scope, least-privilege credentials, and explicit user-approved transmission.",
+      "evidence_key": "evidence=service_token",
+      "dimensions": {},
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "env-exfiltration/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "env-exfiltration/scripts/upload.sh",
+            "line": 3
+          },
+          "message": "The artifact reads sensitive source `SERVICE_TOKEN` and sends data to external URL `https://collector.example/upload`. This may be legitimate, but it needs review, documented consent, and careful handling to avoid accidental disclosure."
+        }
+      ]
+    },
+    {
+      "rule_id": "SEC007",
+      "severity": "medium",
+      "category": "security",
+      "title": "Write outside skill directory",
+      "rationale": "Writes outside the skill directory can alter repositories, home directories, credentials, or system configuration beyond the user's expected audit scope.",
+      "remediation": "Keep generated files under the skill directory or a user-selected output path, and document any required external write before it occurs.",
+      "suppression": "Suppress `SEC007` only for a narrow, documented output path that the user explicitly selected and that does not overwrite credentials, host configuration, or repository state.",
+      "evidence_key": "evidence=$home/.config/agent-skill-auditor.json",
+      "dimensions": {},
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "write-outside/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "write-outside/scripts/write-outside.sh",
+            "line": 5
+          },
+          "message": "The artifact writes to `$HOME/.config/agent-skill-auditor.json`, which appears outside the skill directory. Keep writes inside the skill package boundary or require an explicit user-selected output path."
+        }
+      ]
+    },
+    {
+      "rule_id": "SEC007",
+      "severity": "medium",
+      "category": "security",
+      "title": "Write outside skill directory",
+      "rationale": "Writes outside the skill directory can alter repositories, home directories, credentials, or system configuration beyond the user's expected audit scope.",
+      "remediation": "Keep generated files under the skill directory or a user-selected output path, and document any required external write before it occurs.",
+      "suppression": "Suppress `SEC007` only for a narrow, documented output path that the user explicitly selected and that does not overwrite credentials, host configuration, or repository state.",
+      "evidence_key": "evidence=/secret.txt",
+      "dimensions": {},
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "write-outside/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "write-outside/scripts/write-outside.sh",
+            "line": 3
+          },
+          "message": "The artifact writes to `../secret.txt`, which appears outside the skill directory. Keep writes inside the skill package boundary or require an explicit user-selected output path."
+        }
+      ]
+    },
+    {
+      "rule_id": "SEC007",
+      "severity": "medium",
+      "category": "security",
+      "title": "Write outside skill directory",
+      "rationale": "Writes outside the skill directory can alter repositories, home directories, credentials, or system configuration beyond the user's expected audit scope.",
+      "remediation": "Keep generated files under the skill directory or a user-selected output path, and document any required external write before it occurs.",
+      "suppression": "Suppress `SEC007` only for a narrow, documented output path that the user explicitly selected and that does not overwrite credentials, host configuration, or repository state.",
+      "evidence_key": "evidence=/tmp/agent-skill-auditor.out",
+      "dimensions": {},
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "write-outside/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "write-outside/scripts/write-outside.sh",
+            "line": 6
+          },
+          "message": "The artifact writes to `/tmp/agent-skill-auditor.out`, which appears outside the skill directory. Keep writes inside the skill package boundary or require an explicit user-selected output path."
+        }
+      ]
+    },
+    {
+      "rule_id": "SEC007",
+      "severity": "medium",
+      "category": "security",
+      "title": "Write outside skill directory",
+      "rationale": "Writes outside the skill directory can alter repositories, home directories, credentials, or system configuration beyond the user's expected audit scope.",
+      "remediation": "Keep generated files under the skill directory or a user-selected output path, and document any required external write before it occurs.",
+      "suppression": "Suppress `SEC007` only for a narrow, documented output path that the user explicitly selected and that does not overwrite credentials, host configuration, or repository state.",
+      "evidence_key": "evidence=\\outside-windows.txt",
+      "dimensions": {},
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "write-outside/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "write-outside/scripts/write-outside.sh",
+            "line": 8
+          },
+          "message": "The artifact writes to `..\\outside-windows.txt`, which appears outside the skill directory. Keep writes inside the skill package boundary or require an explicit user-selected output path."
+        }
+      ]
+    },
+    {
+      "rule_id": "SEC007",
+      "severity": "medium",
+      "category": "security",
+      "title": "Write outside skill directory",
+      "rationale": "Writes outside the skill directory can alter repositories, home directories, credentials, or system configuration beyond the user's expected audit scope.",
+      "remediation": "Keep generated files under the skill directory or a user-selected output path, and document any required external write before it occurs.",
+      "suppression": "Suppress `SEC007` only for a narrow, documented output path that the user explicitly selected and that does not overwrite credentials, host configuration, or repository state.",
+      "evidence_key": "evidence=c:/users/example/.codex/config.toml",
+      "dimensions": {},
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "write-outside/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "write-outside/scripts/write-outside.sh",
+            "line": 7
+          },
+          "message": "The artifact writes to `C:/Users/example/.codex/config.toml`, which appears outside the skill directory. Keep writes inside the skill package boundary or require an explicit user-selected output path."
+        }
+      ]
+    },
+    {
+      "rule_id": "SEC007",
+      "severity": "medium",
+      "category": "security",
+      "title": "Write outside skill directory",
+      "rationale": "Writes outside the skill directory can alter repositories, home directories, credentials, or system configuration beyond the user's expected audit scope.",
+      "remediation": "Keep generated files under the skill directory or a user-selected output path, and document any required external write before it occurs.",
+      "suppression": "Suppress `SEC007` only for a narrow, documented output path that the user explicitly selected and that does not overwrite credentials, host configuration, or repository state.",
+      "evidence_key": "evidence=scripts/../../.claude/settings.json",
+      "dimensions": {},
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "write-outside/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "write-outside/scripts/write-outside.sh",
+            "line": 4
+          },
+          "message": "The artifact writes to `scripts/../../.claude/settings.json`, which appears outside the skill directory. Keep writes inside the skill package boundary or require an explicit user-selected output path."
+        }
+      ]
+    },
+    {
+      "rule_id": "SEC009",
+      "severity": "low",
+      "category": "security",
+      "title": "Package install without lockfile",
+      "rationale": "Package installs without a lockfile or equivalent pinning can resolve different dependency versions across machines and over time.",
+      "remediation": "Use lockfile-backed install commands, root-level or same-subtree ecosystem lockfiles, or complete exact package pins. The initial policy treats npm/pnpm/yarn/bun, pip, cargo, gem, and system package installs without those offline-verifiable signals as `SEC009`.",
+      "suppression": "Suppress `SEC009` only when another reviewed, offline-verifiable mechanism pins the package set and preserves reproducible installation behavior.",
+      "evidence_key": "command_pattern=gem install|package_manager=gem",
+      "dimensions": {
+        "command_pattern": "gem install",
+        "package_manager": "gem"
+      },
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "package-install-unpinned/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "package-install-unpinned/scripts/install.sh",
+            "line": 6
+          },
+          "message": "The artifact runs a Ruby gem install without nearby lockfile or exact version pinning evidence. This can make installs resolve different packages over time and increases reproducibility and supply-chain risk."
+        }
+      ]
+    },
+    {
+      "rule_id": "SEC009",
+      "severity": "low",
+      "category": "security",
+      "title": "Package install without lockfile",
+      "rationale": "Package installs without a lockfile or equivalent pinning can resolve different dependency versions across machines and over time.",
+      "remediation": "Use lockfile-backed install commands, root-level or same-subtree ecosystem lockfiles, or complete exact package pins. The initial policy treats npm/pnpm/yarn/bun, pip, cargo, gem, and system package installs without those offline-verifiable signals as `SEC009`.",
+      "suppression": "Suppress `SEC009` only when another reviewed, offline-verifiable mechanism pins the package set and preserves reproducible installation behavior.",
+      "evidence_key": "command_pattern=javascript package install",
+      "dimensions": {
+        "command_pattern": "javascript package install"
+      },
+      "finding_count": 2,
+      "affected_package_count": 2,
+      "affected_packages": [
+        "package-install-unpinned/SKILL.md",
+        "suppressed-package-install/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "package-install-unpinned/scripts/install.sh",
+            "line": 3
+          },
+          "message": "The artifact runs a JavaScript package install without nearby lockfile or exact version pinning evidence. This can make installs resolve different packages over time and increases reproducibility and supply-chain risk."
+        },
+        {
+          "location": {
+            "path": "suppressed-package-install/scripts/install.sh",
+            "line": 3
+          },
+          "message": "The artifact runs a JavaScript package install without nearby lockfile or exact version pinning evidence. This can make installs resolve different packages over time and increases reproducibility and supply-chain risk."
+        }
+      ]
+    },
+    {
+      "rule_id": "SEC009",
+      "severity": "low",
+      "category": "security",
+      "title": "Package install without lockfile",
+      "rationale": "Package installs without a lockfile or equivalent pinning can resolve different dependency versions across machines and over time.",
+      "remediation": "Use lockfile-backed install commands, root-level or same-subtree ecosystem lockfiles, or complete exact package pins. The initial policy treats npm/pnpm/yarn/bun, pip, cargo, gem, and system package installs without those offline-verifiable signals as `SEC009`.",
+      "suppression": "Suppress `SEC009` only when another reviewed, offline-verifiable mechanism pins the package set and preserves reproducible installation behavior.",
+      "evidence_key": "command_pattern=python package install",
+      "dimensions": {
+        "command_pattern": "python package install"
+      },
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "package-install-unpinned/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "package-install-unpinned/scripts/install.sh",
+            "line": 4
+          },
+          "message": "The artifact runs a Python package install without nearby lockfile or exact version pinning evidence. This can make installs resolve different packages over time and increases reproducibility and supply-chain risk."
+        }
+      ]
+    },
+    {
+      "rule_id": "SEC009",
+      "severity": "low",
+      "category": "security",
+      "title": "Package install without lockfile",
+      "rationale": "Package installs without a lockfile or equivalent pinning can resolve different dependency versions across machines and over time.",
+      "remediation": "Use lockfile-backed install commands, root-level or same-subtree ecosystem lockfiles, or complete exact package pins. The initial policy treats npm/pnpm/yarn/bun, pip, cargo, gem, and system package installs without those offline-verifiable signals as `SEC009`.",
+      "suppression": "Suppress `SEC009` only when another reviewed, offline-verifiable mechanism pins the package set and preserves reproducible installation behavior.",
+      "evidence_key": "command_pattern=system package install",
+      "dimensions": {
+        "command_pattern": "system package install"
+      },
+      "finding_count": 2,
+      "affected_package_count": 2,
+      "affected_packages": [
+        "package-install-unpinned/SKILL.md",
+        "sudo-install/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "package-install-unpinned/scripts/install.sh",
+            "line": 7
+          },
+          "message": "The artifact runs a system package install without nearby lockfile or exact version pinning evidence. This can make installs resolve different packages over time and increases reproducibility and supply-chain risk."
+        },
+        {
+          "location": {
+            "path": "sudo-install/scripts/install.sh",
+            "line": 3
+          },
+          "message": "The artifact runs a system package install without nearby lockfile or exact version pinning evidence. This can make installs resolve different packages over time and increases reproducibility and supply-chain risk."
+        }
+      ]
+    },
+    {
+      "rule_id": "SEC009",
+      "severity": "low",
+      "category": "security",
+      "title": "Package install without lockfile",
+      "rationale": "Package installs without a lockfile or equivalent pinning can resolve different dependency versions across machines and over time.",
+      "remediation": "Use lockfile-backed install commands, root-level or same-subtree ecosystem lockfiles, or complete exact package pins. The initial policy treats npm/pnpm/yarn/bun, pip, cargo, gem, and system package installs without those offline-verifiable signals as `SEC009`.",
+      "suppression": "Suppress `SEC009` only when another reviewed, offline-verifiable mechanism pins the package set and preserves reproducible installation behavior.",
+      "evidence_key": "the artifact runs a cargo package install without nearby lockfile or exact version pinning evidence. this can make installs resolve different packages over time and increases reproducibility and supply-chain risk",
+      "dimensions": {},
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "package-install-unpinned/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "package-install-unpinned/scripts/install.sh",
+            "line": 5
+          },
+          "message": "The artifact runs a Cargo package install without nearby lockfile or exact version pinning evidence. This can make installs resolve different packages over time and increases reproducibility and supply-chain risk."
+        }
+      ]
+    },
+    {
+      "rule_id": "SEC011",
+      "severity": "medium",
+      "category": "security",
+      "title": "Prompt-injection-like instruction",
+      "rationale": "Instructions that ask an agent to ignore policy, bypass review, reveal secrets, or override higher-priority directions can subvert host safety controls.",
+      "remediation": "Remove adversarial instructions and rewrite the skill so it states legitimate behavior, required permissions, and user confirmation points plainly.",
+      "suppression": "Suppress `SEC011` only for a benign quoted example that is clearly labeled and cannot be mistaken for an instruction.",
+      "evidence_key": "the text contains an instruction that appears to tell an agent to ignore higher-priority policy, bypass review, override behavior, or expose secrets. review this content as prompt-injection-like before trusting the skill",
+      "dimensions": {},
+      "finding_count": 2,
+      "affected_package_count": 2,
+      "affected_packages": [
+        "env-exfiltration/SKILL.md",
+        "prompt-injection/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "env-exfiltration/scripts/upload.sh",
+            "line": 3
+          },
+          "message": "The text contains an instruction that appears to tell an agent to ignore higher-priority policy, bypass review, override behavior, or expose secrets. Review this content as prompt-injection-like before trusting the skill."
+        },
+        {
+          "location": {
+            "path": "prompt-injection/SKILL.md",
+            "line": 8
+          },
+          "message": "The text contains an instruction that appears to tell an agent to ignore higher-priority policy, bypass review, override behavior, or expose secrets. Review this content as prompt-injection-like before trusting the skill."
+        }
+      ]
+    },
+    {
+      "rule_id": "SEC012",
+      "severity": "medium",
+      "category": "security",
+      "title": "Hidden instruction in comment or code block",
+      "rationale": "Instructions hidden in comments, examples, or code blocks can be overlooked by human reviewers while still being consumed by an agent.",
+      "remediation": "Remove hidden instructions or move legitimate operational guidance into visible prose with clear scope and rationale.",
+      "suppression": "Suppress `SEC012` only for inert test fixtures or quoted examples that are visibly labeled as non-instructions.",
+      "evidence_key": "evidence=fenced-code-block",
+      "dimensions": {},
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "hidden-instruction-code-block/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "hidden-instruction-code-block/SKILL.md",
+            "line": 9
+          },
+          "message": "The text contains a prompt-like instruction inside `fenced-code-block`, a context reviewers may treat as inert. Move legitimate guidance into visible prose or remove the hidden instruction."
+        }
+      ]
+    },
+    {
+      "rule_id": "SEC012",
+      "severity": "medium",
+      "category": "security",
+      "title": "Hidden instruction in comment or code block",
+      "rationale": "Instructions hidden in comments, examples, or code blocks can be overlooked by human reviewers while still being consumed by an agent.",
+      "remediation": "Remove hidden instructions or move legitimate operational guidance into visible prose with clear scope and rationale.",
+      "suppression": "Suppress `SEC012` only for inert test fixtures or quoted examples that are visibly labeled as non-instructions.",
+      "evidence_key": "evidence=markdown-comment",
+      "dimensions": {},
+      "finding_count": 2,
+      "affected_package_count": 2,
+      "affected_packages": [
+        "hidden-instruction-comments/SKILL.md",
+        "hidden-instruction-multiline-comment/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "hidden-instruction-comments/SKILL.md",
+            "line": 8
+          },
+          "message": "The text contains a prompt-like instruction inside `markdown-comment`, a context reviewers may treat as inert. Move legitimate guidance into visible prose or remove the hidden instruction."
+        },
+        {
+          "location": {
+            "path": "hidden-instruction-multiline-comment/SKILL.md",
+            "line": 9
+          },
+          "message": "The text contains a prompt-like instruction inside `markdown-comment`, a context reviewers may treat as inert. Move legitimate guidance into visible prose or remove the hidden instruction."
+        }
+      ]
+    },
+    {
+      "rule_id": "SUPPLY003",
+      "severity": "medium",
+      "category": "reproducibility",
+      "title": "Install command without matching lockfile",
+      "rationale": "Package installation without a matching lockfile can resolve different dependency graphs over time and weakens reproducible offline review.",
+      "remediation": "Commit the package manager lockfile for the install command, switch to a lockfile-backed install mode, or remove package installation from the skill workflow.",
+      "suppression": "Suppress `SUPPLY003` only for a reviewed install path whose dependency set is pinned or controlled by another documented local mechanism.",
+      "evidence_key": "command_pattern=cargo install|package_manager=cargo",
+      "dimensions": {
+        "command_pattern": "cargo install",
+        "package_manager": "cargo"
+      },
+      "finding_count": 2,
+      "affected_package_count": 2,
+      "affected_packages": [
+        "package-install-pinned/SKILL.md",
+        "package-install-unpinned/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "package-install-pinned/scripts/install.sh",
+            "line": 5
+          },
+          "message": "The skill runs a cargo install command without matching lockfile evidence, so dependency resolution may change between audits."
+        },
+        {
+          "location": {
+            "path": "package-install-unpinned/scripts/install.sh",
+            "line": 5
+          },
+          "message": "The skill runs a cargo install command without matching lockfile evidence, so dependency resolution may change between audits."
+        }
+      ]
+    },
+    {
+      "rule_id": "SUPPLY003",
+      "severity": "medium",
+      "category": "reproducibility",
+      "title": "Install command without matching lockfile",
+      "rationale": "Package installation without a matching lockfile can resolve different dependency graphs over time and weakens reproducible offline review.",
+      "remediation": "Commit the package manager lockfile for the install command, switch to a lockfile-backed install mode, or remove package installation from the skill workflow.",
+      "suppression": "Suppress `SUPPLY003` only for a reviewed install path whose dependency set is pinned or controlled by another documented local mechanism.",
+      "evidence_key": "command_pattern=gem install|package_manager=gem",
+      "dimensions": {
+        "command_pattern": "gem install",
+        "package_manager": "gem"
+      },
+      "finding_count": 2,
+      "affected_package_count": 2,
+      "affected_packages": [
+        "package-install-pinned/SKILL.md",
+        "package-install-unpinned/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "package-install-pinned/scripts/install.sh",
+            "line": 6
+          },
+          "message": "The skill runs a gem install command without matching lockfile evidence, so dependency resolution may change between audits."
+        },
+        {
+          "location": {
+            "path": "package-install-unpinned/scripts/install.sh",
+            "line": 6
+          },
+          "message": "The skill runs a gem install command without matching lockfile evidence, so dependency resolution may change between audits."
+        }
+      ]
+    },
+    {
+      "rule_id": "SUPPLY003",
+      "severity": "medium",
+      "category": "reproducibility",
+      "title": "Install command without matching lockfile",
+      "rationale": "Package installation without a matching lockfile can resolve different dependency graphs over time and weakens reproducible offline review.",
+      "remediation": "Commit the package manager lockfile for the install command, switch to a lockfile-backed install mode, or remove package installation from the skill workflow.",
+      "suppression": "Suppress `SUPPLY003` only for a reviewed install path whose dependency set is pinned or controlled by another documented local mechanism.",
+      "evidence_key": "command_pattern=npm install|package_manager=npm",
+      "dimensions": {
+        "command_pattern": "npm install",
+        "package_manager": "npm"
+      },
+      "finding_count": 3,
+      "affected_package_count": 3,
+      "affected_packages": [
+        "package-install-pinned/SKILL.md",
+        "package-install-unpinned/SKILL.md",
+        "suppressed-package-install/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "package-install-pinned/scripts/install.sh",
+            "line": 3
+          },
+          "message": "The skill runs a npm install command without matching lockfile evidence, so dependency resolution may change between audits."
+        },
+        {
+          "location": {
+            "path": "package-install-unpinned/scripts/install.sh",
+            "line": 3
+          },
+          "message": "The skill runs a npm install command without matching lockfile evidence, so dependency resolution may change between audits."
+        },
+        {
+          "location": {
+            "path": "suppressed-package-install/scripts/install.sh",
+            "line": 3
+          },
+          "message": "The skill runs a npm install command without matching lockfile evidence, so dependency resolution may change between audits."
+        }
+      ]
+    },
+    {
+      "rule_id": "SUPPLY003",
+      "severity": "medium",
+      "category": "reproducibility",
+      "title": "Install command without matching lockfile",
+      "rationale": "Package installation without a matching lockfile can resolve different dependency graphs over time and weakens reproducible offline review.",
+      "remediation": "Commit the package manager lockfile for the install command, switch to a lockfile-backed install mode, or remove package installation from the skill workflow.",
+      "suppression": "Suppress `SUPPLY003` only for a reviewed install path whose dependency set is pinned or controlled by another documented local mechanism.",
+      "evidence_key": "command_pattern=pip install|package_manager=pip",
+      "dimensions": {
+        "command_pattern": "pip install",
+        "package_manager": "pip"
+      },
+      "finding_count": 2,
+      "affected_package_count": 2,
+      "affected_packages": [
+        "package-install-pinned/SKILL.md",
+        "package-install-unpinned/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "package-install-pinned/scripts/install.sh",
+            "line": 4
+          },
+          "message": "The skill runs a pip install command without matching lockfile evidence, so dependency resolution may change between audits."
+        },
+        {
+          "location": {
+            "path": "package-install-unpinned/scripts/install.sh",
+            "line": 4
+          },
+          "message": "The skill runs a pip install command without matching lockfile evidence, so dependency resolution may change between audits."
+        }
+      ]
+    },
+    {
+      "rule_id": "SUPPLY004",
+      "severity": "medium",
+      "category": "reproducibility",
+      "title": "Unpinned package dependency",
+      "rationale": "Unpinned package versions can change without a skill package change, making audits less reproducible and increasing supply-chain risk.",
+      "remediation": "Use exact package versions and commit the relevant lockfile when the package manager supports one.",
+      "suppression": "Suppress `SUPPLY004` only when a reviewed local policy intentionally allows version ranges and documents the update and review process.",
+      "evidence_key": "evidence=cargo:ripgrep",
+      "dimensions": {},
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "package-install-unpinned/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "package-install-unpinned/scripts/install.sh",
+            "line": 5
+          },
+          "message": "The package dependency `cargo:ripgrep` is not pinned to an exact version, so future installs may resolve different code."
+        }
+      ]
+    },
+    {
+      "rule_id": "SUPPLY004",
+      "severity": "medium",
+      "category": "reproducibility",
+      "title": "Unpinned package dependency",
+      "rationale": "Unpinned package versions can change without a skill package change, making audits less reproducible and increasing supply-chain risk.",
+      "remediation": "Use exact package versions and commit the relevant lockfile when the package manager supports one.",
+      "suppression": "Suppress `SUPPLY004` only when a reviewed local policy intentionally allows version ranges and documents the update and review process.",
+      "evidence_key": "evidence=gem:rake",
+      "dimensions": {},
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "package-install-unpinned/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "package-install-unpinned/scripts/install.sh",
+            "line": 6
+          },
+          "message": "The package dependency `gem:rake` is not pinned to an exact version, so future installs may resolve different code."
+        }
+      ]
+    },
+    {
+      "rule_id": "SUPPLY004",
+      "severity": "medium",
+      "category": "reproducibility",
+      "title": "Unpinned package dependency",
+      "rationale": "Unpinned package versions can change without a skill package change, making audits less reproducible and increasing supply-chain risk.",
+      "remediation": "Use exact package versions and commit the relevant lockfile when the package manager supports one.",
+      "suppression": "Suppress `SUPPLY004` only when a reviewed local policy intentionally allows version ranges and documents the update and review process.",
+      "evidence_key": "evidence=npm:left-pad",
+      "dimensions": {},
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "package-install-lockfile-backed/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "package-install-lockfile-backed/scripts/install.sh",
+            "line": 3
+          },
+          "message": "The package dependency `npm:left-pad` is not pinned to an exact version, so future installs may resolve different code."
+        }
+      ]
+    },
+    {
+      "rule_id": "SUPPLY004",
+      "severity": "medium",
+      "category": "reproducibility",
+      "title": "Unpinned package dependency",
+      "rationale": "Unpinned package versions can change without a skill package change, making audits less reproducible and increasing supply-chain risk.",
+      "remediation": "Use exact package versions and commit the relevant lockfile when the package manager supports one.",
+      "suppression": "Suppress `SUPPLY004` only when a reviewed local policy intentionally allows version ranges and documents the update and review process.",
+      "evidence_key": "evidence=pip:demo",
+      "dimensions": {},
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "package-install-unpinned/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "package-install-unpinned/scripts/install.sh",
+            "line": 4
+          },
+          "message": "The package dependency `pip:demo` is not pinned to an exact version, so future installs may resolve different code."
+        }
+      ]
+    },
+    {
+      "rule_id": "SUPPLY005",
+      "severity": "medium",
+      "category": "security",
+      "title": "Unpinned remote URL reference",
+      "rationale": "Mutable remote URLs can serve different content over time, which prevents deterministic review and can introduce unreviewed behavior.",
+      "remediation": "Pin GitHub raw URLs to full commit SHAs, use immutable release assets with checksum evidence, or vendor reviewed content locally.",
+      "suppression": "Suppress `SUPPLY005` only for a reviewed remote reference whose mutability is intentional and whose update process is documented.",
+      "evidence_key": "evidence=script:install.sh",
+      "dimensions": {},
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "curl-bash/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "curl-bash/scripts/install.sh",
+            "line": 3
+          },
+          "message": "The remote dependency `script:install.sh` is not pinned to immutable content, so reviewed behavior can change without a skill package change."
+        }
+      ]
+    }
+  ],
   "suppressed_findings": [],
   "summary": {
     "package_count": 16,

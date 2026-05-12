@@ -118,6 +118,7 @@ mod tests {
                 broken_reference_count: 0,
             },
             findings,
+            finding_groups: Vec::new(),
             suppressed_findings,
             supply_chain: SupplyChainInventory::default(),
             compatibility: CompatibilityMatrix::default(),

@@ -1127,7 +1127,7 @@ name: [unterminated
         assert!(output.starts_with("Agent Skill Auditor scan summary\n"));
         assert!(output.contains("Packages: 1\n"));
         assert!(output.contains("Invalid manifests: 1\n"));
-        assert!(output.contains("SKILL041 [low/spec] SKILL.md:"));
+        assert!(output.contains("SKILL041 [low/spec] x1 packages=1"));
         assert!(output.contains("The skill manifest frontmatter could not be parsed:"));
         assert!(output.ends_with('\n'));
     }
@@ -1167,7 +1167,7 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
         let output = run_scan_output(scan_command(&workspace, ReportFormat::Summary))
             .expect("run summary scan");
 
-        assert!(output.contains("Finding details:\n"));
+        assert!(output.contains("Finding groups:\n"));
         assert!(output.contains("[low/spec]"));
         assert!(output.contains("SKILL.md:"));
         assert!(output.contains("The skill manifest does not declare a name."));
@@ -1182,7 +1182,7 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
         let output = run_scan_output(scan_command(&workspace, ReportFormat::Summary))
             .expect("default scan should render low findings without failing");
 
-        assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
+        assert!(output.contains("SKILL001 [low/spec] x1 packages=1"));
     }
 
     #[test]
@@ -1205,7 +1205,7 @@ fail_on:
         let error = result.expect_err("low fail_on should fail after rendering");
 
         assert!(output.starts_with("Agent Skill Auditor scan summary\n"));
-        assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
+        assert!(output.contains("SKILL001 [low/spec] x1 packages=1"));
         assert!(error
             .to_string()
             .contains("fail_on matched an unsuppressed finding severity"));
@@ -1231,7 +1231,7 @@ fail_on:
         ));
         let error = result.expect_err("multiple config fail_on values should match low finding");
 
-        assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
+        assert!(output.contains("SKILL001 [low/spec] x1 packages=1"));
         assert!(error
             .to_string()
             .contains("fail_on matched an unsuppressed finding severity"));
@@ -1256,7 +1256,7 @@ fail_on:
         ))
         .expect("high fail_on should not match low finding");
 
-        assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
+        assert!(output.contains("SKILL001 [low/spec] x1 packages=1"));
     }
 
     #[test]
@@ -1279,7 +1279,7 @@ fail_on:
         ))
         .expect("multiple config fail_on values should not match low finding");
 
-        assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
+        assert!(output.contains("SKILL001 [low/spec] x1 packages=1"));
     }
 
     #[test]
@@ -1326,6 +1326,7 @@ ignore:
                 broken_reference_count: 0,
             },
             findings: Vec::new(),
+            finding_groups: Vec::new(),
             suppressed_findings: vec![SuppressedFinding {
                 finding: test_finding("SEC005", Severity::High),
                 suppression: SuppressionMatch {
@@ -1368,7 +1369,7 @@ ignore:
         ));
 
         result.expect_err("CLI fail_on low should fail without config");
-        assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
+        assert!(output.contains("SKILL001 [low/spec] x1 packages=1"));
     }
 
     #[test]
@@ -1383,7 +1384,7 @@ ignore:
         ));
         let error = result.expect_err("multiple CLI fail_on values should match low finding");
 
-        assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
+        assert!(output.contains("SKILL001 [low/spec] x1 packages=1"));
         assert!(error
             .to_string()
             .contains("fail_on matched an unsuppressed finding severity"));
@@ -1407,7 +1408,7 @@ fail_on:
         let output =
             run_scan_output(command).expect("CLI fail_on high should override config fail_on low");
 
-        assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
+        assert!(output.contains("SKILL001 [low/spec] x1 packages=1"));
     }
 
     #[test]
@@ -1421,7 +1422,7 @@ fail_on:
         ));
         let error = result.expect_err("low fail_on fixture should fail");
 
-        assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
+        assert!(output.contains("SKILL001 [low/spec] x1 packages=1"));
         assert!(error
             .to_string()
             .contains("fail_on matched an unsuppressed finding severity"));
@@ -1458,7 +1459,7 @@ fail_on:
         ))
         .expect("high threshold should not fail low findings");
 
-        assert!(output.contains("SKILL001 [low/spec] SKILL.md:"));
+        assert!(output.contains("SKILL001 [low/spec] x1 packages=1"));
     }
 
     #[test]

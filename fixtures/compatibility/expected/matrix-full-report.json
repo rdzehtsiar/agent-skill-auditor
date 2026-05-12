@@ -227,6 +227,63 @@
       "suppression": "Suppress `SKILL040` only with a documented reason in the project audit config."
     }
   ],
+  "finding_groups": [
+    {
+      "rule_id": "SKILL002",
+      "severity": "low",
+      "category": "spec",
+      "title": "Missing skill description",
+      "rationale": "Reviewers and host profiles need a concise behavior statement for the skill.",
+      "remediation": "Add a non-empty `description` field to frontmatter or an opening paragraph.",
+      "suppression": "Suppress `SKILL002` only with a documented reason in the project audit config.",
+      "evidence_key": "host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot",
+      "dimensions": {
+        "host_profile": "agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot"
+      },
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "generic/missing-description/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "generic/missing-description/SKILL.md",
+            "line": 1
+          },
+          "message": "The skill manifest does not declare a description."
+        }
+      ]
+    },
+    {
+      "rule_id": "SKILL040",
+      "severity": "low",
+      "category": "compatibility",
+      "title": "Unknown frontmatter field",
+      "rationale": "Unknown fields may be ignored, rejected, or interpreted differently by hosts, reducing portability and reviewability.",
+      "remediation": "Remove the field, move the information into the Markdown body, or wait for documented host profile support.",
+      "suppression": "Suppress `SKILL040` only with a documented reason in the project audit config.",
+      "evidence_key": "frontmatter_field=owner|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot",
+      "dimensions": {
+        "frontmatter_field": "owner",
+        "host_profile": "agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot"
+      },
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "generic/unknown-frontmatter/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "generic/unknown-frontmatter/SKILL.md",
+            "line": 4
+          },
+          "message": "The manifest declares unsupported frontmatter field `owner`."
+        }
+      ]
+    }
+  ],
   "suppressed_findings": [],
   "summary": {
     "package_count": 6,

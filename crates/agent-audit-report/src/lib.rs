@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 use std::str::FromStr;
 
 use agent_audit_core::{
-    CompatibilityMatrix, ExternalUrl, FindingCategory, OfflineReadinessStatus, PermissionEvidence,
-    PermissionKind, ScanReport, Severity, SkillCompatibilityRow, SkillFinding, SkillPackage,
-    SupplyChainInventory,
+    build_finding_groups, CompatibilityMatrix, ExternalUrl, FindingCategory, FindingGroup,
+    OfflineReadinessStatus, PermissionEvidence, PermissionKind, ScanReport, Severity,
+    SkillCompatibilityRow, SkillFinding, SkillPackage, SupplyChainInventory,
 };
 use agent_audit_rules::{active_rule_metadata, RuleMetadata, RuleSeverity};
 use serde_json::{json, Value};
@@ -108,27 +109,52 @@ pub fn render_summary(report: &ScanReport) -> String {
     extend_supply_chain_summary(&mut lines, report);
     extend_compatibility_summary(&mut lines, &report.compatibility);
 
-    let findings = sorted_findings(&report.findings);
-    if findings.is_empty() {
+    let finding_groups = effective_finding_groups(report);
+    if finding_groups.is_empty() {
         lines.push(String::new());
         lines.push("No findings.".to_owned());
     } else {
         lines.push(String::new());
-        lines.push("Finding details:".to_owned());
+        lines.push("Finding groups:".to_owned());
 
-        for finding in findings {
+        for group in finding_groups.iter() {
             lines.push(format!(
-                "{} [{}/{}] {}: {}",
-                finding.rule_id,
-                severity_name(finding.severity),
-                category_name(finding.category),
-                location_display(&finding.location.path, finding.location.line),
-                finding.message
+                "{} [{}/{}] x{} packages={}{}: {}",
+                group.rule_id,
+                severity_name(group.severity),
+                category_name(group.category),
+                group.finding_count,
+                group.affected_package_count,
+                summary_group_dimensions(group),
+                group.title
             ));
+            for sample in &group.evidence_samples {
+                lines.push(format!(
+                    "  sample: {}: {}",
+                    location_display(&sample.location.path, sample.location.line),
+                    sample.message
+                ));
+            }
         }
     }
 
     lines.join("\n")
+}
+
+fn summary_group_dimensions(group: &FindingGroup) -> String {
+    if group.dimensions.is_empty() {
+        return format!(" evidence={}", group.evidence_key);
+    }
+
+    format!(
+        " {}",
+        group
+            .dimensions
+            .iter()
+            .map(|(key, value)| format!("{key}={value}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    )
 }
 
 fn extend_supply_chain_summary(lines: &mut Vec<String>, report: &ScanReport) {
@@ -412,6 +438,18 @@ tbody tr:nth-child(even){background:var(--soft)}
     html.push_str("</main>\n</body>\n</html>\n");
 
     html
+}
+
+fn effective_finding_groups(report: &ScanReport) -> Cow<'_, [FindingGroup]> {
+    if report.finding_groups.is_empty() && !report.findings.is_empty() {
+        Cow::Owned(build_finding_groups(
+            &report.packages,
+            &report.findings,
+            &report.compatibility,
+        ))
+    } else {
+        Cow::Borrowed(&report.finding_groups)
+    }
 }
 
 pub fn render_sarif(report: &ScanReport) -> serde_json::Result<String> {
@@ -751,42 +789,75 @@ fn extend_html_package_inventory(html: &mut String, report: &ScanReport) {
 }
 
 fn extend_html_findings(html: &mut String, report: &ScanReport) {
+    let finding_groups = effective_finding_groups(report);
+
     html.push_str(
-        "<section aria-labelledby=\"findings\"><h2 id=\"findings\">Findings</h2><table><thead><tr><th>Rule</th><th>Severity</th><th>Category</th><th>Location</th><th>Title</th><th>Message</th><th>Why it matters</th><th>How to fix</th><th>Suppression</th></tr></thead><tbody>",
+        "<section aria-labelledby=\"findings\"><h2 id=\"findings\">Finding Groups</h2><table><thead><tr><th>Rule</th><th>Severity</th><th>Category</th><th>Findings</th><th>Affected packages</th><th>Evidence</th><th>Dimensions</th><th>Samples</th><th>Title</th><th>Why it matters</th><th>How to fix</th><th>Suppression</th></tr></thead><tbody>",
     );
-    let findings = sorted_findings(&report.findings);
-    if findings.is_empty() {
-        html.push_str("<tr><td colspan=\"9\">No findings.</td></tr>");
+    if finding_groups.is_empty() {
+        html.push_str("<tr><td colspan=\"12\">No findings.</td></tr>");
     }
-    for finding in findings {
-        extend_html_finding_row(html, finding);
+    for group in finding_groups.iter() {
+        extend_html_finding_group_row(html, group);
     }
     html.push_str("</tbody></table></section>\n");
 }
 
-fn extend_html_finding_row(html: &mut String, finding: &SkillFinding) {
+fn extend_html_finding_group_row(html: &mut String, group: &FindingGroup) {
     html.push_str("<tr><td>");
-    html.push_str(&escape_html(&finding.rule_id));
+    html.push_str(&escape_html(&group.rule_id));
     html.push_str("</td><td>");
-    html.push_str(&html_severity(severity_name(finding.severity)));
+    html.push_str(&html_severity(severity_name(group.severity)));
     html.push_str("</td><td>");
-    html.push_str(category_name(finding.category));
+    html.push_str(category_name(group.category));
     html.push_str("</td><td>");
-    html.push_str(&escape_html(&location_display(
-        &finding.location.path,
-        finding.location.line,
-    )));
+    html.push_str(&group.finding_count.to_string());
     html.push_str("</td><td>");
-    html.push_str(&escape_html(&finding.title));
+    html.push_str(&group.affected_package_count.to_string());
+    if !group.affected_packages.is_empty() {
+        html.push_str("<br><span class=\"finding-ids\">");
+        html.push_str(&escape_html(&group.affected_packages.join(", ")));
+        html.push_str("</span>");
+    }
     html.push_str("</td><td>");
-    html.push_str(&escape_html(&finding.message));
+    html.push_str(&escape_html(&group.evidence_key));
     html.push_str("</td><td>");
-    html.push_str(&escape_html(&finding.rationale));
+    html.push_str(&escape_html(&html_group_dimensions(group)));
     html.push_str("</td><td>");
-    html.push_str(&escape_html(&finding.remediation));
+    html.push_str(&html_group_samples(group));
     html.push_str("</td><td>");
-    html.push_str(&escape_html(&finding.suppression));
+    html.push_str(&escape_html(&group.title));
+    html.push_str("</td><td>");
+    html.push_str(&escape_html(&group.rationale));
+    html.push_str("</td><td>");
+    html.push_str(&escape_html(&group.remediation));
+    html.push_str("</td><td>");
+    html.push_str(&escape_html(&group.suppression));
     html.push_str("</td></tr>");
+}
+
+fn html_group_dimensions(group: &FindingGroup) -> String {
+    group
+        .dimensions
+        .iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn html_group_samples(group: &FindingGroup) -> String {
+    group
+        .evidence_samples
+        .iter()
+        .map(|sample| {
+            escape_html(&format!(
+                "{}: {}",
+                location_display(&sample.location.path, sample.location.line),
+                sample.message
+            ))
+        })
+        .collect::<Vec<_>>()
+        .join("<br>")
 }
 
 fn extend_html_skill_details(html: &mut String, view_model: &HtmlReportViewModel<'_>) {
@@ -1779,8 +1850,8 @@ mod tests {
     use super::*;
     use agent_audit_core::model::ScanSummary;
     use agent_audit_core::{
-        FindingLocation, SkillFinding, SkillGraph, SkillManifest, SkillPackage, SkillReference,
-        SupplyChainInventory, SuppressedFinding, SuppressionMatch,
+        build_finding_groups, FindingLocation, SkillFinding, SkillGraph, SkillManifest,
+        SkillPackage, SkillReference, SupplyChainInventory, SuppressedFinding, SuppressionMatch,
     };
     use std::collections::BTreeMap;
     use std::path::Path;
@@ -2318,6 +2389,27 @@ mod tests {
     }
 
     #[test]
+    fn summary_output_derives_groups_for_legacy_reports_without_finding_groups() {
+        let mut report = review_skill_report(
+            "SKILL001",
+            Severity::Low,
+            FindingCategory::Spec,
+            "Missing skill name",
+            "The skill manifest does not declare a name.",
+            Some(1),
+        );
+        report.finding_groups.clear();
+
+        let summary = render_summary(&report);
+
+        assert!(summary.contains("Findings: 1"));
+        assert!(summary.contains("Finding groups:\n"));
+        assert!(summary.contains("SKILL001 [low/spec] x1 packages=1"));
+        assert!(summary.contains("sample: skills/review/SKILL.md:1"));
+        assert!(!summary.contains("\nNo findings."));
+    }
+
+    #[test]
     fn json_output_includes_full_supply_chain_inventory_with_stable_keys() {
         let mut report = report_with_summary(0, 0, 0, 0, 0);
         report.supply_chain = supply_chain_inventory(json!({
@@ -2601,8 +2693,11 @@ mod tests {
                 "Checksums: 0 evidence",
                 "Permissions: 1 evidence, 1 conflicts",
                 "Offline readiness: ready=0 partial=1 not-ready=1 unknown=0",
-                "SUPPLY003 [medium/reproducibility] scripts/install.sh:2: npm install is not paired with a lockfile.",
-                "SUPPLY009 [medium/security] scripts/upload.sh:4: Network access conflicts with declared permissions.",
+                "Finding groups:",
+                "SUPPLY003 [medium/reproducibility] x1 packages=0 command_pattern=npm install package_manager=npm: Install command without matching lockfile",
+                "sample: scripts/install.sh:2: npm install is not paired with a lockfile.",
+                "SUPPLY009 [medium/security] x1 packages=0 evidence=network access conflicts with declared permissions: Observed permission conflicts with trust manifest",
+                "sample: scripts/upload.sh:4: Network access conflicts with declared permissions.",
             ],
         );
     }
@@ -2727,7 +2822,7 @@ mod tests {
     }
 
     #[test]
-    fn summary_output_orders_findings_and_uses_lowercase_metadata() {
+    fn summary_output_orders_finding_groups_and_uses_lowercase_metadata() {
         let report = report_with_findings(vec![
             finding(
                 "SKILL020",
@@ -2777,10 +2872,15 @@ mod tests {
         assert_in_order(
             &summary,
             &[
-                "SKILL010 [low/compatibility] alpha/SKILL.md: No line sorts before line.",
-                "SKILL001 [info/quality] alpha/SKILL.md:1: Line one.",
-                "SEC005 [high/security] alpha/SKILL.md:2: Line two.",
-                "SKILL020 [medium/spec] zeta/SKILL.md:1: Later path.",
+                "Finding groups:",
+                "SEC005 [high/security] x1 packages=0 evidence=line two: Use of sudo",
+                "sample: alpha/SKILL.md:2: Line two.",
+                "SKILL001 [info/quality] x1 packages=0 evidence=line one: Missing skill name",
+                "sample: alpha/SKILL.md:1: Line one.",
+                "SKILL010 [low/compatibility] x1 packages=0 evidence=no line sorts before line: Broken relative reference",
+                "sample: alpha/SKILL.md: No line sorts before line.",
+                "SKILL020 [medium/spec] x1 packages=0 evidence=later path: Oversized skill manifest",
+                "sample: zeta/SKILL.md:1: Later path.",
             ],
         );
     }
@@ -2862,7 +2962,7 @@ mod tests {
 
         assert!(html.contains("<h2 id=\"summary\">Executive Summary</h2>"));
         assert!(html.contains("<h2 id=\"packages\">Packages</h2>"));
-        assert!(html.contains("<h2 id=\"findings\">Findings</h2>"));
+        assert!(html.contains("<h2 id=\"findings\">Finding Groups</h2>"));
         assert!(html.contains("<span class=\"count\">1</span>Packages"));
         assert!(html.contains("<span class=\"count\">1</span>Findings"));
         assert!(html.contains("<span class=\"count\">0</span>Invalid manifests"));
@@ -2873,6 +2973,45 @@ mod tests {
         assert!(html.contains("SKILL010"));
         assert!(html.contains("Broken relative reference"));
         assert!(html.contains("The referenced file could not be found."));
+    }
+
+    #[test]
+    fn html_output_renders_grouped_findings_with_counts_dimensions_and_samples() {
+        let report = report_with_packages_and_findings(
+            vec![
+                package("skills/alpha", "skills/alpha/SKILL.md", Some("alpha"), None),
+                package("skills/beta", "skills/beta/SKILL.md", Some("beta"), None),
+            ],
+            vec![
+                finding(
+                    "SEC009",
+                    Severity::Medium,
+                    FindingCategory::Security,
+                    "Package install without lockfile",
+                    "The artifact runs a JavaScript package install without nearby lockfile evidence.",
+                    "skills/alpha/scripts/install.sh",
+                    Some(2),
+                ),
+                finding(
+                    "SEC009",
+                    Severity::Medium,
+                    FindingCategory::Security,
+                    "Package install without lockfile",
+                    "The artifact runs a JavaScript package install without nearby lockfile evidence.",
+                    "skills/beta/scripts/install.sh",
+                    Some(3),
+                ),
+            ],
+        );
+
+        let html = render_html(&report);
+
+        assert!(html.contains("<h2 id=\"findings\">Finding Groups</h2>"));
+        assert!(html.contains("<td>SEC009</td>"));
+        assert!(html.contains("<td>2</td><td>2<br><span class=\"finding-ids\">skills/alpha/SKILL.md, skills/beta/SKILL.md</span></td>"));
+        assert!(html.contains("<td>command_pattern=javascript package install</td>"));
+        assert!(html.contains("skills/alpha/scripts/install.sh:2: The artifact runs a JavaScript package install without nearby lockfile evidence."));
+        assert!(html.contains("skills/beta/scripts/install.sh:3: The artifact runs a JavaScript package install without nearby lockfile evidence."));
     }
 
     #[test]
@@ -2914,7 +3053,7 @@ mod tests {
         let html = render_html(&report);
 
         assert!(html.contains("<tr><td colspan=\"4\">No packages discovered.</td></tr>"));
-        assert!(html.contains("<tr><td colspan=\"9\">No findings.</td></tr>"));
+        assert!(html.contains("<tr><td colspan=\"12\">No findings.</td></tr>"));
         assert!(!html.contains("<h2 id=\"compatibility\">Compatibility</h2>"));
     }
 
@@ -2994,7 +3133,7 @@ mod tests {
             &[
                 "<h2 id=\"compatibility\">Compatibility / Host Support</h2>",
                 "<h2 id=\"packages\">Packages</h2>",
-                "<h2 id=\"findings\">Findings</h2>",
+                "<h2 id=\"findings\">Finding Groups</h2>",
             ],
         );
     }
@@ -3099,8 +3238,8 @@ mod tests {
             &html,
             &[
                 "No line sorts before line.",
-                "Second message.",
                 "Later path.",
+                "Second message.",
             ],
         );
     }
@@ -3226,7 +3365,7 @@ mod tests {
     }
 
     #[test]
-    fn html_output_orders_findings_by_path_line_rule_id_then_message() {
+    fn html_output_orders_finding_groups_by_rule_and_evidence() {
         let report = report_with_findings(vec![
             finding(
                 "SKILL200",
@@ -3280,11 +3419,11 @@ mod tests {
         assert_in_order(
             &html,
             &[
-                "marker-01",
                 "marker-02",
                 "marker-03",
                 "marker-04",
                 "marker-05",
+                "marker-01",
             ],
         );
     }
@@ -3415,7 +3554,7 @@ mod tests {
                 "<h2 id=\"secret-usage\">Secret Usage</h2>",
                 "<h2 id=\"offline-readiness\">Offline Readiness</h2>",
                 "<h2 id=\"packages\">Packages</h2>",
-                "<h2 id=\"findings\">Findings</h2>",
+                "<h2 id=\"findings\">Finding Groups</h2>",
                 "<h2 id=\"skill-details\">Skill Details</h2>",
             ],
         );
@@ -3495,6 +3634,32 @@ mod tests {
         assert!(html.contains("<h3>review</h3>"));
         assert!(html.contains("<tr><th>Anchor</th><td>skill-detail-2</td></tr>"));
         assert!(!html.contains("href="));
+    }
+
+    #[test]
+    fn html_output_derives_finding_groups_for_legacy_reports_without_finding_groups() {
+        let mut report = review_skill_report(
+            "SKILL001",
+            Severity::Low,
+            FindingCategory::Spec,
+            "Missing skill name",
+            "The skill manifest does not declare a name.",
+            Some(1),
+        );
+        report.finding_groups.clear();
+
+        let html = render_html(&report);
+
+        assert!(html.contains("<h2 id=\"findings\">Finding Groups</h2>"));
+        assert!(html.contains("<td>SKILL001</td>"));
+        assert!(html.contains("<td>spec</td>"));
+        assert!(html.contains(
+            "<td>1</td><td>1<br><span class=\"finding-ids\">skills/review/SKILL.md</span></td>"
+        ));
+        assert!(
+            html.contains("skills/review/SKILL.md:1: The skill manifest does not declare a name.")
+        );
+        assert!(!html.contains("<td colspan=\"12\">No findings.</td>"));
     }
 
     #[test]
@@ -4433,6 +4598,7 @@ mod tests {
                 broken_reference_count,
             },
             findings: Vec::new(),
+            finding_groups: Vec::new(),
             suppressed_findings: Vec::new(),
             supply_chain: SupplyChainInventory::default(),
             compatibility: CompatibilityMatrix::default(),
@@ -4444,6 +4610,9 @@ mod tests {
         findings: Vec<SkillFinding>,
     ) -> ScanReport {
         let package_count = packages.len();
+
+        let compatibility = CompatibilityMatrix::default();
+        let finding_groups = build_finding_groups(&packages, &findings, &compatibility);
 
         ScanReport {
             packages,
@@ -4458,9 +4627,10 @@ mod tests {
                     .count(),
             },
             findings,
+            finding_groups,
             suppressed_findings: Vec::new(),
             supply_chain: SupplyChainInventory::default(),
-            compatibility: CompatibilityMatrix::default(),
+            compatibility,
         }
     }
 
