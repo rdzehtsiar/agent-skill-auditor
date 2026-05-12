@@ -463,7 +463,9 @@ fn extend_html_executive_summary(
 
 fn extend_html_risk_distribution(html: &mut String, view_model: &HtmlReportViewModel<'_>) {
     html.push_str("<section aria-labelledby=\"risk-distribution\"><h2 id=\"risk-distribution\">Risk Distribution</h2>");
-    html.push_str("<table><thead><tr><th>Severity</th><th>Active findings</th></tr></thead><tbody>");
+    html.push_str(
+        "<table><thead><tr><th>Severity</th><th>Active findings</th></tr></thead><tbody>",
+    );
     for (severity, count) in [
         ("critical", view_model.severity_counts.critical),
         ("high", view_model.severity_counts.high),
@@ -479,14 +481,19 @@ fn extend_html_risk_distribution(html: &mut String, view_model: &HtmlReportViewM
     }
     html.push_str("</tbody></table>");
 
-    html.push_str("<table><thead><tr><th>Category</th><th>Active findings</th></tr></thead><tbody>");
+    html.push_str(
+        "<table><thead><tr><th>Category</th><th>Active findings</th></tr></thead><tbody>",
+    );
     for (category, count) in [
         ("spec", view_model.category_counts.spec),
         ("compatibility", view_model.category_counts.compatibility),
         ("security", view_model.category_counts.security),
         ("quality", view_model.category_counts.quality),
         ("portability", view_model.category_counts.portability),
-        ("reproducibility", view_model.category_counts.reproducibility),
+        (
+            "reproducibility",
+            view_model.category_counts.reproducibility,
+        ),
     ] {
         html.push_str("<tr><td>");
         html.push_str(category);
@@ -596,7 +603,10 @@ fn extend_html_secret_usage(html: &mut String, view_model: &HtmlReportViewModel<
             }
             SecretSecurityEvidence::Permission(permission) => {
                 html.push_str("<tr><td>");
-                html.push_str(&escape_html(&location_display(&permission.path, permission.line)));
+                html.push_str(&escape_html(&location_display(
+                    &permission.path,
+                    permission.line,
+                )));
                 html.push_str("</td><td>permission</td><td>");
                 html.push_str(&escape_html(&permission.normalized));
                 html.push_str("</td><td>");
@@ -614,7 +624,10 @@ fn extend_html_offline_readiness(
     view_model: &HtmlReportViewModel<'_>,
 ) {
     html.push_str("<section aria-labelledby=\"offline-readiness\"><h2 id=\"offline-readiness\">Offline Readiness</h2><div class=\"summary\">");
-    html.push_str(&summary_count("Ready", view_model.offline_readiness_totals.ready));
+    html.push_str(&summary_count(
+        "Ready",
+        view_model.offline_readiness_totals.ready,
+    ));
     html.push_str(&summary_count(
         "Partial",
         view_model.offline_readiness_totals.partial,
@@ -629,7 +642,11 @@ fn extend_html_offline_readiness(
     ));
     html.push_str("</div><table><thead><tr><th>Path</th><th>Status</th><th>Score</th><th>Reasons</th></tr></thead><tbody>");
 
-    let mut readiness = report.supply_chain.offline_readiness.iter().collect::<Vec<_>>();
+    let mut readiness = report
+        .supply_chain
+        .offline_readiness
+        .iter()
+        .collect::<Vec<_>>();
     readiness.sort();
     if readiness.is_empty() {
         html.push_str("<tr><td colspan=\"4\">No offline readiness evidence.</td></tr>");
@@ -773,7 +790,9 @@ fn extend_html_finding_row(html: &mut String, finding: &SkillFinding) {
 }
 
 fn extend_html_skill_details(html: &mut String, view_model: &HtmlReportViewModel<'_>) {
-    html.push_str("<section aria-labelledby=\"skill-details\"><h2 id=\"skill-details\">Skill Details</h2>");
+    html.push_str(
+        "<section aria-labelledby=\"skill-details\"><h2 id=\"skill-details\">Skill Details</h2>",
+    );
     if view_model.finding_groups.is_empty() {
         html.push_str("<p class=\"muted\">No per-skill findings to report.</p>");
     }
@@ -1307,7 +1326,9 @@ fn skill_finding_groups(report: &ScanReport) -> Vec<SkillFindingGroup<'_>> {
     let mut grouped = BTreeMap::<Option<String>, Vec<&SkillFinding>>::new();
 
     for package in &packages {
-        grouped.entry(Some(package.manifest_path.clone())).or_default();
+        grouped
+            .entry(Some(package.manifest_path.clone()))
+            .or_default();
     }
 
     for finding in sorted_findings(&report.findings) {
@@ -3591,7 +3612,10 @@ mod tests {
             "secrets=<TOKEN>",
             "<reason>",
         ] {
-            assert!(!html.contains(raw), "raw dangerous value was rendered: {raw}");
+            assert!(
+                !html.contains(raw),
+                "raw dangerous value was rendered: {raw}"
+            );
         }
     }
 
