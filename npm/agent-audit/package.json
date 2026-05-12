@@ -1,0 +1,19 @@
+{
+  "name": "agent-audit",
+  "version": "0.6.0",
+  "description": "Dependency-free npm wrapper for the Agent Skill Auditor CLI.",
+  "license": "Apache-2.0",
+  "bin": {
+    "agent-audit": "bin/agent-audit.js"
+  },
+  "files": [
+    "bin",
+    "lib"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
