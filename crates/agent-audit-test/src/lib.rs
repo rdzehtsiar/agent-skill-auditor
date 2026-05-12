@@ -182,6 +182,67 @@ mod tests {
     }
 
     #[test]
+    fn pre_commit_metadata_and_examples_use_installed_binary_hook() {
+        let hook_path = workspace_root().join(".pre-commit-hooks.yaml");
+        let example_root = workspace_root().join("examples").join("pre-commit");
+        let readme_path = example_root.join("README.md");
+        let example_path = example_root.join(".pre-commit-config.yaml");
+
+        let hook_content = fs::read_to_string(&hook_path).expect("read pre-commit hook metadata");
+        let readme = fs::read_to_string(&readme_path).expect("read pre-commit README");
+        let example_content =
+            fs::read_to_string(&example_path).expect("read pre-commit config example");
+
+        let hooks: serde_yaml::Value =
+            serde_yaml::from_str(&hook_content).expect("parse pre-commit hook metadata");
+        let hooks = hooks.as_sequence().expect("hook metadata sequence");
+        assert_eq!(hooks.len(), 1);
+        let hook = &hooks[0];
+
+        assert_eq!(hook["id"], "agent-audit");
+        assert_eq!(hook["language"], "system");
+        assert_eq!(hook["pass_filenames"], false);
+        assert_eq!(hook["always_run"], true);
+        assert_hook_entry_uses_installed_agent_audit(hook["entry"].as_str().expect("hook entry"));
+
+        let example: serde_yaml::Value =
+            serde_yaml::from_str(&example_content).expect("parse pre-commit config example");
+        let local_hook = &example["repos"][0]["hooks"][0];
+        assert_eq!(example["repos"][0]["repo"], "local");
+        assert_eq!(local_hook["id"], "agent-audit");
+        assert_eq!(local_hook["language"], "system");
+        assert_eq!(local_hook["pass_filenames"], false);
+        assert_eq!(local_hook["always_run"], true);
+        assert_hook_entry_uses_installed_agent_audit(
+            local_hook["entry"].as_str().expect("local hook entry"),
+        );
+
+        for (name, content) in [
+            ("pre-commit hook metadata", hook_content.as_str()),
+            ("pre-commit README", readme.as_str()),
+            ("pre-commit config example", example_content.as_str()),
+        ] {
+            assert_no_pre_commit_placeholder_text(name, content);
+        }
+
+        for required in [
+            "repo: local",
+            "repo: https://github.com/rdzehtsiar/agent-skill-auditor",
+            "id: agent-audit",
+            "pass_filenames: false",
+            "--fail-on high --fail-on critical",
+            "--profile agent-skills-spec --profile codex --profile generic",
+            "Pin `rev` to a release tag or commit",
+            "offline by default",
+            "does not execute skill scripts",
+            "does not use telemetry",
+            "does not call an AI API",
+        ] {
+            assert!(readme.contains(required), "README missing {required:?}");
+        }
+    }
+
+    #[test]
     fn milestone5_supply_chain_fixture_corpus_has_expected_projections() {
         let root = supply_chain_root();
         let expected_root = root.join("expected");
@@ -1652,6 +1713,33 @@ Bootstrap with scripts/install.sh.
                 .unwrap_or_else(|| panic!("missing {needle:?} after byte {search_start}"));
             search_start += relative + needle.len();
         }
+    }
+
+    fn assert_hook_entry_uses_installed_agent_audit(entry: &str) {
+        assert!(entry.starts_with("agent-audit scan"));
+        assert!(entry.contains("--profile agent-skills-spec"));
+        assert!(entry.contains("--profile codex"));
+        assert!(entry.contains("--profile generic"));
+        assert!(entry.contains("--fail-on high"));
+        assert!(entry.contains("--fail-on critical"));
+        assert!(!entry.contains("cargo run"));
+        assert!(!entry.contains("curl"));
+        assert!(!entry.contains("wget"));
+    }
+
+    fn assert_no_pre_commit_placeholder_text(name: &str, content: &str) {
+        assert!(
+            !content.contains("OWNER"),
+            "{name} should not contain non-copyable OWNER placeholders"
+        );
+        assert!(
+            !content.contains("Planned example"),
+            "{name} should not contain planned-example placeholder text"
+        );
+        assert!(
+            !content.to_lowercase().contains("placeholder"),
+            "{name} should not contain placeholder guidance"
+        );
     }
 
     fn html_contains_path(html: &str, path: &Path) -> bool {

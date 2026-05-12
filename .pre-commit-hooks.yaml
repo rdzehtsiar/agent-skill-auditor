@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+
+- id: agent-audit
+  name: Agent Skill Auditor
+  description: Offline security and compatibility audit for AI agent skills.
+  entry: agent-audit scan --profile agent-skills-spec --profile codex --profile generic --fail-on high --fail-on critical
+  language: system
+  pass_filenames: false
+  always_run: true
