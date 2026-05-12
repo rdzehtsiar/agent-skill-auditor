@@ -11,7 +11,8 @@ use agent_audit_core::{
 };
 use agent_audit_hosts::{canonical_host_profile, HOST_PROFILES};
 use agent_audit_report::{
-    render_report, ReportFormat, UnsupportedReportFormat, SUPPORTED_REPORT_FORMATS_HELP,
+    render_report_with_mode, ReportFormat, ReportMode, UnsupportedReportFormat,
+    UnsupportedReportMode, SUPPORTED_REPORT_FORMATS_HELP, SUPPORTED_REPORT_MODES_HELP,
 };
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
@@ -42,6 +43,14 @@ struct ScanCommand {
         help = SUPPORTED_REPORT_FORMATS_HELP
     )]
     format: ReportFormat,
+    #[arg(
+        long,
+        value_parser = parse_report_mode,
+        default_value = "default",
+        value_name = "MODE",
+        help = SUPPORTED_REPORT_MODES_HELP
+    )]
+    mode: ReportMode,
     #[arg(
         long,
         value_name = "PATH",
@@ -138,7 +147,7 @@ fn write_report_apply_fail_on_and_maybe_open(
     writer: &mut impl Write,
     opener: impl FnOnce(&Path) -> Result<()>,
 ) -> Result<()> {
-    let rendered = render_report(report, command.format)?;
+    let rendered = render_report_with_mode(report, command.format, command.mode)?;
 
     if let Some(output_path) = command.output.as_deref() {
         write_output_file(output_path, &rendered)?;
@@ -250,6 +259,7 @@ fn write_report_and_apply_fail_on(
     let command = ScanCommand {
         path: PathBuf::from("."),
         format,
+        mode: ReportMode::Default,
         config: None,
         fail_on: fail_on.to_vec(),
         output: None,
@@ -343,6 +353,10 @@ fn parse_report_format(value: &str) -> Result<ReportFormat, UnsupportedReportFor
     value.parse()
 }
 
+fn parse_report_mode(value: &str) -> Result<ReportMode, UnsupportedReportMode> {
+    value.parse()
+}
+
 fn parse_fail_on_severity(value: &str) -> Result<Severity, String> {
     parse_severity(value).ok_or_else(|| {
         format!("unknown severity `{value}`; expected one of: info, low, medium, high, critical")
@@ -410,6 +424,22 @@ mod tests {
 
         assert!(help.contains("--format <FORMAT>"));
         assert!(help.contains("[aliases: --report]"));
+    }
+
+    #[test]
+    fn scan_help_lists_supported_report_modes() {
+        let mut command = Cli::command();
+        let help = command
+            .find_subcommand_mut("scan")
+            .expect("scan subcommand should be registered")
+            .render_long_help()
+            .to_string();
+
+        assert!(help.contains("--mode <MODE>"));
+        assert!(help.contains("default"));
+        assert!(help.contains("verbose"));
+        assert!(help.contains("research"));
+        assert!(help.contains("ci"));
     }
 
     #[test]
@@ -493,6 +523,7 @@ mod tests {
             Command::Scan(command) => {
                 assert_eq!(command.path, PathBuf::from("."));
                 assert_eq!(command.format, ReportFormat::Summary);
+                assert_eq!(command.mode, ReportMode::Default);
                 assert_eq!(command.config, None);
                 assert_eq!(command.fail_on, Vec::<Severity>::new());
                 assert_eq!(command.output, None);
@@ -776,6 +807,14 @@ mod tests {
         assert_parsed_scan_format("html", ReportFormat::Html);
     }
 
+    #[test]
+    fn parses_scan_report_modes() {
+        assert_parsed_report_mode("default", ReportMode::Default);
+        assert_parsed_report_mode("verbose", ReportMode::Verbose);
+        assert_parsed_report_mode("research", ReportMode::Research);
+        assert_parsed_report_mode("ci", ReportMode::Ci);
+    }
+
     fn assert_parsed_scan_format(value: &str, expected: ReportFormat) {
         let cli = Cli::parse_from([
             "agent-audit",
@@ -789,10 +828,29 @@ mod tests {
             Command::Scan(command) => {
                 assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
                 assert_eq!(command.format, expected);
+                assert_eq!(command.mode, ReportMode::Default);
                 assert_eq!(command.config, None);
                 assert_eq!(command.fail_on, Vec::<Severity>::new());
                 assert_eq!(command.output, None);
                 assert!(!command.open);
+            }
+        }
+    }
+
+    fn assert_parsed_report_mode(value: &str, expected: ReportMode) {
+        let cli = Cli::parse_from([
+            "agent-audit",
+            "scan",
+            "fixtures/spec/basic",
+            "--mode",
+            value,
+        ]);
+
+        match cli.command {
+            Command::Scan(command) => {
+                assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
+                assert_eq!(command.format, ReportFormat::Summary);
+                assert_eq!(command.mode, expected);
             }
         }
     }
@@ -812,6 +870,23 @@ mod tests {
 
         assert!(message.contains("unsupported report format 'xml'"));
         assert!(message.contains("supported: summary, json, sarif, html"));
+    }
+
+    #[test]
+    fn rejects_unsupported_scan_mode_with_clear_message() {
+        let error = Cli::try_parse_from([
+            "agent-audit",
+            "scan",
+            "fixtures/spec/basic",
+            "--mode",
+            "debug",
+        ])
+        .expect_err("unsupported mode should fail");
+
+        let message = error.to_string();
+
+        assert!(message.contains("unsupported report mode 'debug'"));
+        assert!(message.contains("supported: default, verbose, research, ci"));
     }
 
     #[test]
@@ -1172,6 +1247,22 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
         assert!(output.contains("SKILL.md:"));
         assert!(output.contains("The skill manifest does not declare a name."));
         assert!(output.ends_with('\n'));
+    }
+
+    #[test]
+    fn run_scan_passes_report_mode_to_renderer() {
+        let workspace = CliTestWorkspace::new("verbose-mode-output");
+        workspace.write_file("SKILL.md", missing_name_skill());
+
+        let output = run_scan_output(ScanCommand {
+            mode: ReportMode::Verbose,
+            ..scan_command(&workspace, ReportFormat::Summary)
+        })
+        .expect("run verbose summary scan");
+
+        assert!(output.starts_with("Agent Skill Auditor verbose scan summary\n"));
+        assert!(output.contains("Full findings:"));
+        assert!(output.contains("The skill manifest does not declare a name."));
     }
 
     #[test]
@@ -2130,6 +2221,7 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
         ScanCommand {
             path,
             format,
+            mode: ReportMode::Default,
             config: None,
             fail_on: Vec::new(),
             output: None,

@@ -58,12 +58,14 @@ See [Install And Workflow Paths](./docs/release/install.md) for v0.7.0 release-c
 ## CLI Usage
 
 ```text
-agent-audit scan [PATH] [--format FORMAT] [--output PATH] [--open] [--config PATH] [--fail-on SEVERITY] [--profile PROFILE] [--supply-chain] [--strict-supply-chain]
+agent-audit scan [PATH] [--format FORMAT] [--mode MODE] [--output PATH] [--open] [--config PATH] [--fail-on SEVERITY] [--profile PROFILE] [--supply-chain] [--strict-supply-chain]
 ```
 
 - `PATH` defaults to `.`.
 - `--format` defaults to `summary`.
 - Supported formats are `summary`, `json`, `sarif`, and `html`.
+- `--mode` defaults to `default`. Supported modes are `default`, `verbose`, `research`, and `ci`.
+- Human-readable summary and HTML output use `--mode` to control density: grouped default output, expanded verbose findings, grouped research evidence with normalized keys, or compact CI logs. JSON and SARIF preserve the full finding set.
 - `--output PATH` writes the selected report format to a file instead of standard output.
 - `--open` opens an HTML report after it is written. It applies only with `--format html --output PATH`, and only after `fail_on` checks pass.
 - `--config PATH` explicitly reads and validates a YAML audit config before scanning.
@@ -84,6 +86,8 @@ agent-audit scan fixtures/compatibility/host/mixed-profile-metadata --profile co
 agent-audit scan fixtures/spec/basic --format json
 agent-audit scan fixtures/spec/basic --format sarif
 agent-audit scan fixtures/spec/basic --format html
+agent-audit scan fixtures/spec/basic --mode verbose
+agent-audit scan fixtures/spec/basic --mode ci
 agent-audit scan fixtures/spec/basic --format html --output report.html
 agent-audit scan fixtures/spec/basic --format html --output report.html --open
 agent-audit scan fixtures/supply-chain/trust-manifest-valid --format json

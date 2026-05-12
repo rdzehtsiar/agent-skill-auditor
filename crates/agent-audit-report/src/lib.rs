@@ -16,7 +16,10 @@ use serde_json::{json, Value};
 
 pub const SUPPORTED_REPORT_FORMATS: &[&str] = &["summary", "json", "sarif", "html"];
 pub const SUPPORTED_REPORT_FORMATS_HELP: &str = "supported: summary, json, sarif, html";
+pub const SUPPORTED_REPORT_MODES: &[&str] = &["default", "verbose", "research", "ci"];
+pub const SUPPORTED_REPORT_MODES_HELP: &str = "supported: default, verbose, research, ci";
 const SUMMARY_COMPATIBILITY_ROW_LIMIT: usize = 5;
+const CI_TOP_GROUP_LIMIT: usize = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReportFormat {
@@ -76,18 +79,97 @@ impl fmt::Display for UnsupportedReportFormat {
 
 impl Error for UnsupportedReportFormat {}
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReportMode {
+    Default,
+    Verbose,
+    Research,
+    Ci,
+}
+
+impl ReportMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::Verbose => "verbose",
+            Self::Research => "research",
+            Self::Ci => "ci",
+        }
+    }
+}
+
+impl FromStr for ReportMode {
+    type Err = UnsupportedReportMode;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "default" => Ok(Self::Default),
+            "verbose" => Ok(Self::Verbose),
+            "research" => Ok(Self::Research),
+            "ci" => Ok(Self::Ci),
+            _ => Err(UnsupportedReportMode {
+                value: value.to_owned(),
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnsupportedReportMode {
+    value: String,
+}
+
+impl UnsupportedReportMode {
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+}
+
+impl fmt::Display for UnsupportedReportMode {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "unsupported report mode '{}' ({})",
+            self.value, SUPPORTED_REPORT_MODES_HELP
+        )
+    }
+}
+
+impl Error for UnsupportedReportMode {}
+
 pub fn render_report(report: &ScanReport, format: ReportFormat) -> serde_json::Result<String> {
+    render_report_with_mode(report, format, ReportMode::Default)
+}
+
+pub fn render_report_with_mode(
+    report: &ScanReport,
+    format: ReportFormat,
+    mode: ReportMode,
+) -> serde_json::Result<String> {
     let rendered = match format {
-        ReportFormat::Summary => render_summary(report),
+        ReportFormat::Summary => render_summary_with_mode(report, mode),
         ReportFormat::Json => render_json(report)?,
         ReportFormat::Sarif => render_sarif(report)?,
-        ReportFormat::Html => render_html(report),
+        ReportFormat::Html => render_html_with_mode(report, mode),
     };
 
     Ok(with_trailing_newline(rendered))
 }
 
 pub fn render_summary(report: &ScanReport) -> String {
+    render_summary_with_mode(report, ReportMode::Default)
+}
+
+pub fn render_summary_with_mode(report: &ScanReport, mode: ReportMode) -> String {
+    match mode {
+        ReportMode::Default => render_default_summary(report),
+        ReportMode::Verbose => render_verbose_summary(report),
+        ReportMode::Research => render_research_summary(report),
+        ReportMode::Ci => render_ci_summary(report),
+    }
+}
+
+fn render_default_summary(report: &ScanReport) -> String {
     let mut lines = vec![
         "Agent Skill Auditor scan summary".to_owned(),
         format!("Packages: {}", report.summary.package_count),
@@ -139,6 +221,178 @@ pub fn render_summary(report: &ScanReport) -> String {
     }
 
     lines.join("\n")
+}
+
+fn render_verbose_summary(report: &ScanReport) -> String {
+    let mut lines = summary_header("Agent Skill Auditor verbose scan summary", report);
+
+    extend_supply_chain_summary(&mut lines, report);
+    extend_compatibility_summary(&mut lines, &report.compatibility);
+    extend_full_findings_summary(&mut lines, report, false);
+
+    lines.join("\n")
+}
+
+fn render_research_summary(report: &ScanReport) -> String {
+    let mut lines = summary_header("Agent Skill Auditor research scan summary", report);
+
+    extend_supply_chain_summary(&mut lines, report);
+    extend_compatibility_summary(&mut lines, &report.compatibility);
+    extend_research_finding_groups_summary(&mut lines, report);
+    extend_full_findings_summary(&mut lines, report, true);
+
+    lines.join("\n")
+}
+
+fn render_ci_summary(report: &ScanReport) -> String {
+    let severity_counts = severity_counts(&report.findings);
+    let category_counts = category_counts(&report.findings);
+    let compatibility_counts = compatibility_status_counts(&report.compatibility);
+    let readiness_counts = offline_readiness_counts(&report.supply_chain);
+    let finding_groups = effective_finding_groups(report);
+    let top_groups = ci_top_finding_groups(finding_groups.as_ref());
+
+    let mut lines = summary_header("Agent Skill Auditor CI scan summary", report);
+    lines.push(format!(
+        "Severity totals: critical={} high={} medium={} low={} info={}",
+        severity_counts.critical,
+        severity_counts.high,
+        severity_counts.medium,
+        severity_counts.low,
+        severity_counts.info
+    ));
+    lines.push(format!(
+        "Category totals: spec={} compatibility={} security={} quality={} portability={} reproducibility={}",
+        category_counts.spec,
+        category_counts.compatibility,
+        category_counts.security,
+        category_counts.quality,
+        category_counts.portability,
+        category_counts.reproducibility
+    ));
+    if !report.compatibility.is_empty() {
+        lines.push(format!(
+            "Compatibility totals: pass={} warn={} fail={} unknown={}",
+            compatibility_counts.pass,
+            compatibility_counts.warn,
+            compatibility_counts.fail,
+            compatibility_counts.unknown
+        ));
+    }
+    lines.push(format!(
+        "Offline readiness: ready={} partial={} not-ready={} unknown={}",
+        readiness_counts.ready,
+        readiness_counts.partial,
+        readiness_counts.not_ready,
+        readiness_counts.unknown
+    ));
+
+    if top_groups.is_empty() {
+        lines.push("Top finding groups: none".to_owned());
+    } else {
+        lines.push("Top finding groups:".to_owned());
+        for group in top_groups {
+            lines.push(format!(
+                "{} [{}/{}] x{} packages={}: {}",
+                group.rule_id,
+                severity_name(group.severity),
+                category_name(group.category),
+                group.finding_count,
+                group.affected_package_count,
+                group.title
+            ));
+        }
+    }
+
+    lines.join("\n")
+}
+
+fn summary_header(title: &str, report: &ScanReport) -> Vec<String> {
+    vec![
+        title.to_owned(),
+        format!("Packages: {}", report.summary.package_count),
+        format!("Findings: {}", report.summary.finding_count),
+        format!(
+            "Suppressed findings: {}",
+            report.summary.suppressed_finding_count
+        ),
+        format!(
+            "Invalid manifests: {}",
+            report.summary.invalid_manifest_count
+        ),
+        format!(
+            "Broken references: {}",
+            report.summary.broken_reference_count
+        ),
+    ]
+}
+
+fn extend_research_finding_groups_summary(lines: &mut Vec<String>, report: &ScanReport) {
+    let finding_groups = effective_finding_groups(report);
+
+    if finding_groups.is_empty() {
+        lines.push(String::new());
+        lines.push("Finding groups: none".to_owned());
+        return;
+    }
+
+    lines.push(String::new());
+    lines.push("Finding groups:".to_owned());
+    for group in finding_groups.iter() {
+        lines.push(format!(
+            "{} normalized_key={} evidence_key={} dimensions={} count={} affected_packages={}: {}",
+            group.rule_id,
+            finding_group_normalized_key(group),
+            group.evidence_key,
+            summary_group_dimensions(group),
+            group.finding_count,
+            group.affected_package_count,
+            group.title
+        ));
+        for sample in &group.evidence_samples {
+            lines.push(format!(
+                "  evidence_sample: {}: {}",
+                location_display(&sample.location.path, sample.location.line),
+                sample.message
+            ));
+        }
+    }
+}
+
+fn extend_full_findings_summary(
+    lines: &mut Vec<String>,
+    report: &ScanReport,
+    include_research_keys: bool,
+) {
+    let findings = sorted_findings(&report.findings);
+
+    lines.push(String::new());
+    if findings.is_empty() {
+        lines.push("Full findings: none".to_owned());
+        return;
+    }
+
+    lines.push("Full findings:".to_owned());
+    for finding in findings {
+        lines.push(format!(
+            "{} [{}/{}] {}: {}",
+            finding.rule_id,
+            severity_name(finding.severity),
+            category_name(finding.category),
+            location_display(&finding.location.path, finding.location.line),
+            finding.title
+        ));
+        if include_research_keys {
+            lines.push(format!(
+                "  normalized_key: {}",
+                finding_normalized_key(finding)
+            ));
+        }
+        lines.push(format!("  message: {}", finding.message));
+        lines.push(format!("  why: {}", finding.rationale));
+        lines.push(format!("  fix: {}", finding.remediation));
+        lines.push(format!("  suppress: {}", finding.suppression));
+    }
 }
 
 fn summary_group_dimensions(group: &FindingGroup) -> String {
@@ -380,6 +634,10 @@ pub fn render_json(report: &ScanReport) -> serde_json::Result<String> {
 }
 
 pub fn render_html(report: &ScanReport) -> String {
+    render_html_with_mode(report, ReportMode::Default)
+}
+
+pub fn render_html_with_mode(report: &ScanReport, mode: ReportMode) -> String {
     let view_model = HtmlReportViewModel::from_report(report);
     let mut html = String::from(
         r#"<!doctype html>
@@ -424,6 +682,13 @@ tbody tr:nth-child(even){background:var(--soft)}
 "#,
     );
 
+    if mode == ReportMode::Ci {
+        extend_html_executive_summary(&mut html, report, &view_model);
+        extend_html_ci_summary(&mut html, report, &view_model);
+        html.push_str("</main>\n</body>\n</html>\n");
+        return html;
+    }
+
     extend_html_executive_summary(&mut html, report, &view_model);
     extend_html_risk_distribution(&mut html, &view_model);
     extend_html_compatibility(&mut html, report, &view_model);
@@ -433,8 +698,16 @@ tbody tr:nth-child(even){background:var(--soft)}
     extend_html_secret_usage(&mut html, &view_model);
     extend_html_offline_readiness(&mut html, report, &view_model);
     extend_html_packages(&mut html, report);
-    extend_html_findings(&mut html, report);
-    extend_html_skill_details(&mut html, &view_model);
+    match mode {
+        ReportMode::Default => extend_html_findings(&mut html, report),
+        ReportMode::Verbose => extend_html_full_findings(&mut html, report, false),
+        ReportMode::Research => {
+            extend_html_findings(&mut html, report);
+            extend_html_full_findings(&mut html, report, true);
+        }
+        ReportMode::Ci => unreachable!("CI mode returns before full report sections"),
+    }
+    extend_html_skill_details(&mut html, &view_model, mode);
     html.push_str("</main>\n</body>\n</html>\n");
 
     html
@@ -450,6 +723,59 @@ fn effective_finding_groups(report: &ScanReport) -> Cow<'_, [FindingGroup]> {
     } else {
         Cow::Borrowed(&report.finding_groups)
     }
+}
+
+fn ci_top_finding_groups(groups: &[FindingGroup]) -> Vec<&FindingGroup> {
+    let mut groups = groups.iter().collect::<Vec<_>>();
+    groups.sort_by(|left, right| {
+        ci_finding_group_order_key(left).cmp(&ci_finding_group_order_key(right))
+    });
+    groups.truncate(CI_TOP_GROUP_LIMIT);
+    groups
+}
+
+fn ci_finding_group_order_key(
+    group: &FindingGroup,
+) -> (
+    std::cmp::Reverse<usize>,
+    std::cmp::Reverse<usize>,
+    &str,
+    &str,
+) {
+    (
+        std::cmp::Reverse(severity_weight(group.severity)),
+        std::cmp::Reverse(group.finding_count),
+        group.rule_id.as_str(),
+        group.evidence_key.as_str(),
+    )
+}
+
+fn finding_group_normalized_key(group: &FindingGroup) -> String {
+    format!(
+        "{}|{}|{}|{}|{}",
+        group.rule_id,
+        severity_name(group.severity),
+        category_name(group.category),
+        group.evidence_key,
+        group
+            .dimensions
+            .iter()
+            .map(|(key, value)| format!("{key}={value}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    )
+}
+
+fn finding_normalized_key(finding: &SkillFinding) -> String {
+    format!(
+        "{}|{}|{}|{}|{}|{}",
+        finding.location.path,
+        finding.location.line.unwrap_or(0),
+        finding.rule_id,
+        severity_name(finding.severity),
+        category_name(finding.category),
+        finding.message
+    )
 }
 
 pub fn render_sarif(report: &ScanReport) -> serde_json::Result<String> {
@@ -537,6 +863,79 @@ fn extend_html_risk_distribution(html: &mut String, view_model: &HtmlReportViewM
         html.push_str(category);
         html.push_str("</td><td>");
         html.push_str(&count.to_string());
+        html.push_str("</td></tr>");
+    }
+    html.push_str("</tbody></table></section>\n");
+}
+
+fn extend_html_ci_summary(
+    html: &mut String,
+    report: &ScanReport,
+    view_model: &HtmlReportViewModel<'_>,
+) {
+    let finding_groups = effective_finding_groups(report);
+    let top_groups = ci_top_finding_groups(finding_groups.as_ref());
+
+    html.push_str("<section aria-labelledby=\"ci-summary\"><h2 id=\"ci-summary\">CI Summary</h2>");
+    html.push_str("<table><thead><tr><th>Signal</th><th>Counts</th></tr></thead><tbody>");
+    html.push_str("<tr><td>Severity totals</td><td>");
+    html.push_str(&escape_html(&format!(
+        "critical={} high={} medium={} low={} info={}",
+        view_model.severity_counts.critical,
+        view_model.severity_counts.high,
+        view_model.severity_counts.medium,
+        view_model.severity_counts.low,
+        view_model.severity_counts.info
+    )));
+    html.push_str("</td></tr><tr><td>Category totals</td><td>");
+    html.push_str(&escape_html(&format!(
+        "spec={} compatibility={} security={} quality={} portability={} reproducibility={}",
+        view_model.category_counts.spec,
+        view_model.category_counts.compatibility,
+        view_model.category_counts.security,
+        view_model.category_counts.quality,
+        view_model.category_counts.portability,
+        view_model.category_counts.reproducibility
+    )));
+    html.push_str("</td></tr><tr><td>Offline readiness</td><td>");
+    html.push_str(&escape_html(&format!(
+        "ready={} partial={} not-ready={} unknown={}",
+        view_model.offline_readiness_totals.ready,
+        view_model.offline_readiness_totals.partial,
+        view_model.offline_readiness_totals.not_ready,
+        view_model.offline_readiness_totals.unknown
+    )));
+    html.push_str("</td></tr>");
+    if !report.compatibility.is_empty() {
+        html.push_str("<tr><td>Compatibility totals</td><td>");
+        html.push_str(&escape_html(&format!(
+            "pass={} warn={} fail={} unknown={}",
+            view_model.compatibility_totals.pass,
+            view_model.compatibility_totals.warn,
+            view_model.compatibility_totals.fail,
+            view_model.compatibility_totals.unknown
+        )));
+        html.push_str("</td></tr>");
+    }
+    html.push_str("</tbody></table>");
+
+    html.push_str("<h3>Top Finding Groups</h3><table><thead><tr><th>Rule</th><th>Severity</th><th>Category</th><th>Findings</th><th>Affected packages</th><th>Title</th></tr></thead><tbody>");
+    if top_groups.is_empty() {
+        html.push_str("<tr><td colspan=\"6\">No findings.</td></tr>");
+    }
+    for group in top_groups {
+        html.push_str("<tr><td>");
+        html.push_str(&escape_html(&group.rule_id));
+        html.push_str("</td><td>");
+        html.push_str(&html_severity(severity_name(group.severity)));
+        html.push_str("</td><td>");
+        html.push_str(category_name(group.category));
+        html.push_str("</td><td>");
+        html.push_str(&group.finding_count.to_string());
+        html.push_str("</td><td>");
+        html.push_str(&group.affected_package_count.to_string());
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&group.title));
         html.push_str("</td></tr>");
     }
     html.push_str("</tbody></table></section>\n");
@@ -803,6 +1202,72 @@ fn extend_html_findings(html: &mut String, report: &ScanReport) {
     html.push_str("</tbody></table></section>\n");
 }
 
+fn extend_html_full_findings(html: &mut String, report: &ScanReport, include_research_keys: bool) {
+    let findings = sorted_findings(&report.findings);
+    let heading = if include_research_keys {
+        "Full Finding Evidence"
+    } else {
+        "Findings"
+    };
+    let heading_id = if include_research_keys {
+        "full-finding-evidence"
+    } else {
+        "findings"
+    };
+    let key_header = if include_research_keys {
+        "<th>Normalized key</th>"
+    } else {
+        ""
+    };
+    let colspan = if include_research_keys { 10 } else { 9 };
+
+    html.push_str("<section aria-labelledby=\"");
+    html.push_str(heading_id);
+    html.push_str("\"><h2 id=\"");
+    html.push_str(heading_id);
+    html.push_str("\">");
+    html.push_str(heading);
+    html.push_str("</h2><table><thead><tr>");
+    html.push_str(key_header);
+    html.push_str("<th>Rule</th><th>Severity</th><th>Category</th><th>Location</th><th>Title</th><th>Message</th><th>Why it matters</th><th>How to fix</th><th>Suppression</th></tr></thead><tbody>");
+    if findings.is_empty() {
+        html.push_str(&format!(
+            "<tr><td colspan=\"{colspan}\">No findings.</td></tr>"
+        ));
+    }
+    for finding in findings {
+        html.push_str("<tr>");
+        if include_research_keys {
+            html.push_str("<td>");
+            html.push_str(&escape_html(&finding_normalized_key(finding)));
+            html.push_str("</td>");
+        }
+        html.push_str("<td>");
+        html.push_str(&escape_html(&finding.rule_id));
+        html.push_str("</td><td>");
+        html.push_str(&html_severity(severity_name(finding.severity)));
+        html.push_str("</td><td>");
+        html.push_str(category_name(finding.category));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&location_display(
+            &finding.location.path,
+            finding.location.line,
+        )));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&finding.title));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&finding.message));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&finding.rationale));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&finding.remediation));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&finding.suppression));
+        html.push_str("</td></tr>");
+    }
+    html.push_str("</tbody></table></section>\n");
+}
+
 fn extend_html_finding_group_row(html: &mut String, group: &FindingGroup) {
     html.push_str("<tr><td>");
     html.push_str(&escape_html(&group.rule_id));
@@ -860,7 +1325,11 @@ fn html_group_samples(group: &FindingGroup) -> String {
         .join("<br>")
 }
 
-fn extend_html_skill_details(html: &mut String, view_model: &HtmlReportViewModel<'_>) {
+fn extend_html_skill_details(
+    html: &mut String,
+    view_model: &HtmlReportViewModel<'_>,
+    mode: ReportMode,
+) {
     html.push_str(
         "<section aria-labelledby=\"skill-details\"><h2 id=\"skill-details\">Skill Details</h2>",
     );
@@ -894,9 +1363,17 @@ fn extend_html_skill_details(html: &mut String, view_model: &HtmlReportViewModel
         html.push_str(&group.findings.len().to_string());
         html.push_str("</td></tr></tbody></table>");
 
-        html.push_str("<table><thead><tr><th>Rule</th><th>Severity</th><th>Location</th><th>Message</th></tr></thead><tbody>");
+        let include_details = matches!(mode, ReportMode::Verbose | ReportMode::Research);
+        if include_details {
+            html.push_str("<table><thead><tr><th>Rule</th><th>Severity</th><th>Location</th><th>Message</th><th>Why it matters</th><th>How to fix</th><th>Suppression</th></tr></thead><tbody>");
+        } else {
+            html.push_str("<table><thead><tr><th>Rule</th><th>Severity</th><th>Location</th><th>Message</th></tr></thead><tbody>");
+        }
         if group.findings.is_empty() {
-            html.push_str("<tr><td colspan=\"4\">No findings for this package.</td></tr>");
+            let colspan = if include_details { 7 } else { 4 };
+            html.push_str(&format!(
+                "<tr><td colspan=\"{colspan}\">No findings for this package.</td></tr>"
+            ));
         }
         for finding in &group.findings {
             html.push_str("<tr><td>");
@@ -910,6 +1387,14 @@ fn extend_html_skill_details(html: &mut String, view_model: &HtmlReportViewModel
             )));
             html.push_str("</td><td>");
             html.push_str(&escape_html(&finding.message));
+            if include_details {
+                html.push_str("</td><td>");
+                html.push_str(&escape_html(&finding.rationale));
+                html.push_str("</td><td>");
+                html.push_str(&escape_html(&finding.remediation));
+                html.push_str("</td><td>");
+                html.push_str(&escape_html(&finding.suppression));
+            }
             html.push_str("</td></tr>");
         }
         html.push_str("</tbody></table></section>");
@@ -1904,6 +2389,53 @@ mod tests {
     }
 
     #[test]
+    fn supported_report_modes_match_scan_output_modes() {
+        assert_eq!(
+            SUPPORTED_REPORT_MODES,
+            &["default", "verbose", "research", "ci"]
+        );
+    }
+
+    #[test]
+    fn report_mode_parses_supported_modes() {
+        assert_eq!("default".parse::<ReportMode>(), Ok(ReportMode::Default));
+        assert_eq!("verbose".parse::<ReportMode>(), Ok(ReportMode::Verbose));
+        assert_eq!("research".parse::<ReportMode>(), Ok(ReportMode::Research));
+        assert_eq!("ci".parse::<ReportMode>(), Ok(ReportMode::Ci));
+    }
+
+    #[test]
+    fn report_mode_rejects_unsupported_modes_with_supported_list() {
+        let error = "debug"
+            .parse::<ReportMode>()
+            .expect_err("unsupported mode should fail");
+
+        assert_eq!(error.value(), "debug");
+        assert_eq!(
+            error.to_string(),
+            "unsupported report mode 'debug' (supported: default, verbose, research, ci)"
+        );
+    }
+
+    #[test]
+    fn report_mode_as_str_matches_supported_metadata() {
+        let modes = [
+            ReportMode::Default,
+            ReportMode::Verbose,
+            ReportMode::Research,
+            ReportMode::Ci,
+        ];
+
+        assert_eq!(
+            modes
+                .into_iter()
+                .map(ReportMode::as_str)
+                .collect::<Vec<_>>(),
+            SUPPORTED_REPORT_MODES
+        );
+    }
+
+    #[test]
     fn render_report_dispatches_supported_formats_with_trailing_newline() {
         let report = review_skill_report(
             "SKILL001",
@@ -1928,6 +2460,37 @@ mod tests {
         assert!(sarif.ends_with('\n'));
         assert!(html.ends_with('\n'));
         assert_eq!(html, render_html(&report));
+    }
+
+    #[test]
+    fn render_report_with_mode_preserves_full_json_and_sarif_findings() {
+        let report = repeated_finding_report(4);
+
+        for mode in [
+            ReportMode::Default,
+            ReportMode::Verbose,
+            ReportMode::Research,
+            ReportMode::Ci,
+        ] {
+            let json =
+                render_report_with_mode(&report, ReportFormat::Json, mode).expect("render JSON");
+            let value: Value = serde_json::from_str(&json).expect("parse JSON report");
+            assert_eq!(
+                value["findings"].as_array().expect("findings array").len(),
+                4
+            );
+
+            let sarif =
+                render_report_with_mode(&report, ReportFormat::Sarif, mode).expect("render SARIF");
+            let value: Value = serde_json::from_str(&sarif).expect("parse SARIF report");
+            assert_eq!(
+                value["runs"][0]["results"]
+                    .as_array()
+                    .expect("SARIF results array")
+                    .len(),
+                4
+            );
+        }
     }
 
     #[test]
@@ -2886,6 +3449,69 @@ mod tests {
     }
 
     #[test]
+    fn default_summary_mode_keeps_grouped_limited_samples() {
+        let report = repeated_finding_report(4);
+
+        let summary = render_summary_with_mode(&report, ReportMode::Default);
+
+        assert!(summary.contains("Agent Skill Auditor scan summary"));
+        assert!(summary.contains("Finding groups:"));
+        assert!(summary.contains("sample: skills/repeated-0/scripts/install.sh:2"));
+        assert!(summary.contains("sample: skills/repeated-1/scripts/install.sh:2"));
+        assert!(summary.contains("sample: skills/repeated-2/scripts/install.sh:2"));
+        assert!(!summary.contains("skills/repeated-3/scripts/install.sh:2"));
+        assert!(!summary.contains("Full findings:"));
+    }
+
+    #[test]
+    fn verbose_summary_mode_expands_all_findings() {
+        let report = repeated_finding_report(4);
+
+        let summary = render_summary_with_mode(&report, ReportMode::Verbose);
+
+        assert!(summary.contains("Agent Skill Auditor verbose scan summary"));
+        assert!(summary.contains("Full findings:"));
+        assert!(summary.contains("skills/repeated-0/scripts/install.sh:2"));
+        assert!(summary.contains("skills/repeated-1/scripts/install.sh:2"));
+        assert!(summary.contains("skills/repeated-2/scripts/install.sh:2"));
+        assert!(summary.contains("skills/repeated-3/scripts/install.sh:2"));
+        assert!(summary.contains("why: Package install without lockfile rationale."));
+        assert!(!summary.contains("Finding groups:"));
+    }
+
+    #[test]
+    fn research_summary_mode_keeps_groups_and_adds_normalized_full_evidence() {
+        let report = repeated_finding_report(4);
+
+        let summary = render_summary_with_mode(&report, ReportMode::Research);
+
+        assert!(summary.contains("Agent Skill Auditor research scan summary"));
+        assert!(summary.contains("Finding groups:"));
+        assert!(summary.contains("normalized_key=SEC009|medium|security|"));
+        assert!(summary.contains("evidence_key="));
+        assert!(summary.contains("Full findings:"));
+        assert!(summary.contains(
+            "normalized_key: skills/repeated-3/scripts/install.sh|2|SEC009|medium|security|"
+        ));
+    }
+
+    #[test]
+    fn ci_summary_mode_is_compact_and_reports_top_groups() {
+        let report = repeated_finding_report(4);
+
+        let summary = render_summary_with_mode(&report, ReportMode::Ci);
+
+        assert!(summary.contains("Agent Skill Auditor CI scan summary"));
+        assert!(summary.contains("Severity totals: critical=0 high=0 medium=4 low=0 info=0"));
+        assert!(summary.contains("Category totals: spec=0 compatibility=0 security=4 quality=0 portability=0 reproducibility=0"));
+        assert!(summary.contains("Top finding groups:"));
+        assert!(summary.contains("SEC009 [medium/security] x4 packages=4"));
+        assert!(!summary.contains("sample:"));
+        assert!(!summary.contains("Full findings:"));
+        assert!(!summary.contains("Supply chain:"));
+    }
+
+    #[test]
     fn json_output_uses_report_renderer() {
         let report = review_skill_report(
             "SKILL002",
@@ -3012,6 +3638,48 @@ mod tests {
         assert!(html.contains("<td>command_pattern=javascript package install</td>"));
         assert!(html.contains("skills/alpha/scripts/install.sh:2: The artifact runs a JavaScript package install without nearby lockfile evidence."));
         assert!(html.contains("skills/beta/scripts/install.sh:3: The artifact runs a JavaScript package install without nearby lockfile evidence."));
+    }
+
+    #[test]
+    fn html_verbose_mode_renders_expanded_full_findings() {
+        let report = repeated_finding_report(4);
+
+        let html = render_html_with_mode(&report, ReportMode::Verbose);
+
+        assert!(html.contains("<h2 id=\"findings\">Findings</h2>"));
+        assert!(!html.contains("<h2 id=\"findings\">Finding Groups</h2>"));
+        assert!(html.contains("skills/repeated-0/scripts/install.sh:2"));
+        assert!(html.contains("skills/repeated-1/scripts/install.sh:2"));
+        assert!(html.contains("skills/repeated-2/scripts/install.sh:2"));
+        assert!(html.contains("skills/repeated-3/scripts/install.sh:2"));
+        assert!(html.contains("Package install without lockfile rationale."));
+        assert!(html.contains("Package install without lockfile remediation."));
+    }
+
+    #[test]
+    fn html_research_mode_renders_groups_and_full_normalized_evidence() {
+        let report = repeated_finding_report(4);
+
+        let html = render_html_with_mode(&report, ReportMode::Research);
+
+        assert!(html.contains("<h2 id=\"findings\">Finding Groups</h2>"));
+        assert!(html.contains("<h2 id=\"full-finding-evidence\">Full Finding Evidence</h2>"));
+        assert!(html.contains("<th>Normalized key</th>"));
+        assert!(html.contains("skills/repeated-3/scripts/install.sh|2|SEC009|medium|security|"));
+    }
+
+    #[test]
+    fn html_ci_mode_renders_log_sized_report() {
+        let report = repeated_finding_report(4);
+
+        let html = render_html_with_mode(&report, ReportMode::Ci);
+
+        assert!(html.contains("<h2 id=\"summary\">Executive Summary</h2>"));
+        assert!(html.contains("<h2 id=\"ci-summary\">CI Summary</h2>"));
+        assert!(html.contains("Top Finding Groups"));
+        assert!(html.contains("SEC009"));
+        assert!(!html.contains("<h2 id=\"packages\">Packages</h2>"));
+        assert!(!html.contains("<h2 id=\"skill-details\">Skill Details</h2>"));
     }
 
     #[test]
@@ -4579,6 +5247,34 @@ mod tests {
 
     fn report_with_findings(findings: Vec<SkillFinding>) -> ScanReport {
         report_with_packages_and_findings(Vec::new(), findings)
+    }
+
+    fn repeated_finding_report(count: usize) -> ScanReport {
+        let packages = (0..count)
+            .map(|index| {
+                package(
+                    &format!("skills/repeated-{index}"),
+                    &format!("skills/repeated-{index}/SKILL.md"),
+                    Some(&format!("repeated-{index}")),
+                    None,
+                )
+            })
+            .collect::<Vec<_>>();
+        let findings = (0..count)
+            .map(|index| {
+                finding(
+                    "SEC009",
+                    Severity::Medium,
+                    FindingCategory::Security,
+                    "Package install without lockfile",
+                    "The artifact runs a JavaScript package install without nearby lockfile evidence.",
+                    &format!("skills/repeated-{index}/scripts/install.sh"),
+                    Some(2),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        report_with_packages_and_findings(packages, findings)
     }
 
     fn report_with_summary(
