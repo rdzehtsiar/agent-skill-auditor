@@ -134,6 +134,54 @@ mod tests {
     }
 
     #[test]
+    fn github_action_examples_document_ci_gate_and_sarif_upload() {
+        let examples_root = workspace_root().join("examples").join("github-action");
+        let readme_path = examples_root.join("README.md");
+        let gate_path = examples_root.join("security-gate.yml");
+        let sarif_path = examples_root.join("sarif-code-scanning.yml");
+
+        let readme = fs::read_to_string(&readme_path).expect("read GitHub Action README");
+        let gate = fs::read_to_string(&gate_path).expect("read security gate workflow");
+        let sarif = fs::read_to_string(&sarif_path).expect("read SARIF workflow");
+
+        assert!(!readme.to_lowercase().contains("planned example"));
+        assert!(!readme.to_lowercase().contains("placeholder"));
+        for required in [
+            "publication credentials are not required",
+            "format: sarif",
+            "output: results.sarif",
+            "github/codeql-action/upload-sarif@v3",
+            "security-events: write",
+            "fail-on:",
+            "high",
+            "critical",
+            "offline",
+        ] {
+            assert!(readme.contains(required), "README missing {required:?}");
+        }
+
+        for workflow in [&gate, &sarif] {
+            let metadata: serde_yaml::Value =
+                serde_yaml::from_str(workflow).expect("parse workflow YAML");
+            assert_eq!(metadata["permissions"]["contents"], "read");
+            assert!(workflow.contains("uses: ./"));
+            assert!(workflow.contains("actions/checkout@v4"));
+        }
+
+        assert!(gate.contains("fail-on:"));
+        assert!(gate.contains("high"));
+        assert!(gate.contains("critical"));
+        assert!(!gate.contains("security-events: write"));
+
+        assert!(sarif.contains("format: sarif"));
+        assert!(sarif.contains("output: results.sarif"));
+        assert!(sarif.contains("github/codeql-action/upload-sarif@v3"));
+        assert!(sarif.contains("sarif_file: results.sarif"));
+        assert!(sarif.contains("security-events: write"));
+        assert!(!sarif.contains("fail-on:"));
+    }
+
+    #[test]
     fn milestone5_supply_chain_fixture_corpus_has_expected_projections() {
         let root = supply_chain_root();
         let expected_root = root.join("expected");
