@@ -9,7 +9,7 @@ use agent_audit_core::{
     parse_audit_config, parse_severity, report_matches_fail_on, scan_path, AuditConfig, AuditError,
     ScanOptions, ScanReport, Severity, SupplyChainPolicy,
 };
-use agent_audit_hosts::HOST_PROFILES;
+use agent_audit_hosts::{canonical_host_profile, HOST_PROFILES};
 use agent_audit_report::{
     render_report, ReportFormat, UnsupportedReportFormat, SUPPORTED_REPORT_FORMATS_HELP,
 };
@@ -35,6 +35,7 @@ struct ScanCommand {
     path: PathBuf,
     #[arg(
         long,
+        visible_alias = "report",
         value_parser = parse_report_format,
         default_value = "summary",
         value_name = "FORMAT",
@@ -351,14 +352,21 @@ fn parse_fail_on_severity(value: &str) -> Result<Severity, String> {
 fn parse_scan_profile(value: &str) -> Result<String, String> {
     let profile = value.trim();
 
-    if profile == "all" || HOST_PROFILES.contains(&profile) {
-        return Ok(profile.to_owned());
+    if let Some(canonical_profile) = canonical_scan_profile(profile) {
+        return Ok(canonical_profile.to_owned());
     }
 
     Err(format!(
         "unknown profile `{profile}`; expected one of: all, {}",
         HOST_PROFILES.join(", ")
     ))
+}
+
+fn canonical_scan_profile(profile: &str) -> Option<&'static str> {
+    match profile {
+        "all" => Some("all"),
+        profile => canonical_host_profile(profile),
+    }
 }
 
 #[cfg(test)]
@@ -389,6 +397,19 @@ mod tests {
         assert!(help.contains("json"));
         assert!(help.contains("sarif"));
         assert!(help.contains("html"));
+    }
+
+    #[test]
+    fn scan_help_lists_report_alias_for_format() {
+        let mut command = Cli::command();
+        let help = command
+            .find_subcommand_mut("scan")
+            .expect("scan subcommand should be registered")
+            .render_long_help()
+            .to_string();
+
+        assert!(help.contains("--format <FORMAT>"));
+        assert!(help.contains("[aliases: --report]"));
     }
 
     #[test]
@@ -546,6 +567,24 @@ mod tests {
     }
 
     #[test]
+    fn parses_report_alias_for_scan_format() {
+        let cli = Cli::parse_from([
+            "agent-audit",
+            "scan",
+            "fixtures/spec/basic",
+            "--report",
+            "html",
+        ]);
+
+        match cli.command {
+            Command::Scan(command) => {
+                assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
+                assert_eq!(command.format, ReportFormat::Html);
+            }
+        }
+    }
+
+    #[test]
     fn parses_repeatable_scan_fail_on() {
         let cli = Cli::parse_from([
             "agent-audit",
@@ -620,6 +659,26 @@ mod tests {
     }
 
     #[test]
+    fn parses_comma_separated_scan_profile_aliases_as_canonical_profiles() {
+        let cli = Cli::parse_from([
+            "agent-audit",
+            "scan",
+            "fixtures/spec/basic",
+            "--profile",
+            "claude,codex,copilot",
+        ]);
+
+        match cli.command {
+            Command::Scan(command) => {
+                assert_eq!(
+                    command.profiles,
+                    vec!["claude-code", "codex", "github-copilot"]
+                );
+            }
+        }
+    }
+
+    #[test]
     fn parses_all_scan_profile_marker() {
         let cli = Cli::parse_from([
             "agent-audit",
@@ -649,6 +708,23 @@ mod tests {
         let message = error.to_string();
 
         assert!(message.contains("unknown profile `unknown-host`"));
+        assert!(message.contains("all, agent-skills-spec, claude-code, codex"));
+        assert!(message.contains("github-copilot, vscode-copilot, generic"));
+    }
+
+    #[test]
+    fn rejects_invalid_scan_profile_alias_with_supported_names() {
+        let error = Cli::try_parse_from([
+            "agent-audit",
+            "scan",
+            "fixtures/spec/basic",
+            "--profile",
+            "github",
+        ])
+        .expect_err("invalid profile alias should fail");
+        let message = error.to_string();
+
+        assert!(message.contains("unknown profile `github`"));
         assert!(message.contains("all, agent-skills-spec, claude-code, codex"));
         assert!(message.contains("github-copilot, vscode-copilot, generic"));
     }
@@ -1627,6 +1703,68 @@ profiles:
     }
 
     #[test]
+    fn run_scan_profile_aliases_emit_canonical_json_profiles() {
+        let workspace = CliTestWorkspace::new("cli-profile-aliases-json");
+        workspace.write_file("SKILL.md", valid_skill("cli-profile-aliases-json"));
+        let command = parsed_scan_command([
+            "agent-audit",
+            "scan",
+            workspace
+                .root
+                .to_str()
+                .expect("workspace path should be UTF-8"),
+            "--format",
+            "json",
+            "--profile",
+            "spec,claude,copilot",
+        ]);
+
+        let output = run_scan_output(command).expect("profile aliases should render JSON scan");
+        let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
+
+        assert_eq!(
+            value["compatibility"]["profiles"],
+            serde_json::json!(["agent-skills-spec", "claude-code", "github-copilot"])
+        );
+        assert_eq!(
+            profile_names(&value["compatibility"]["matrix"][0]["profiles"]),
+            vec!["agent-skills-spec", "claude-code", "github-copilot"]
+        );
+    }
+
+    #[test]
+    fn run_scan_config_profile_aliases_emit_canonical_json_profiles() {
+        let workspace = CliTestWorkspace::new("config-profile-aliases-json");
+        workspace.write_file("SKILL.md", valid_skill("config-profile-aliases-json"));
+        workspace.write_file(
+            "agent-audit.yaml",
+            r#"
+profiles:
+  - spec
+  - claude
+  - copilot
+"#,
+        );
+
+        let output = run_scan_output(configured_scan_command(
+            &workspace,
+            ReportFormat::Json,
+            "agent-audit.yaml",
+        ))
+        .expect("config profile aliases should render JSON scan");
+        let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
+
+        assert_eq!(
+            value["compatibility"]["profiles"],
+            serde_json::json!(["agent-skills-spec", "claude-code", "github-copilot"])
+        );
+        assert_eq!(
+            profile_names(&value["compatibility"]["matrix"][0]["profiles"]),
+            vec!["agent-skills-spec", "claude-code", "github-copilot"]
+        );
+    }
+
+    #[test]
     fn run_scan_without_cli_profiles_leaves_config_profiles() {
         let workspace = CliTestWorkspace::new("cli-profiles-leave-config");
         workspace.write_file("SKILL.md", valid_skill("cli-profiles-leave-config"));
@@ -1998,6 +2136,12 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
             profiles: Vec::new(),
             supply_chain: false,
             strict_supply_chain: false,
+        }
+    }
+
+    fn parsed_scan_command<const N: usize>(args: [&str; N]) -> ScanCommand {
+        match Cli::parse_from(args).command {
+            Command::Scan(command) => command,
         }
     }
 

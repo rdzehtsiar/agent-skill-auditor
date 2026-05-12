@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use agent_audit_hosts::HOST_PROFILES;
+use agent_audit_hosts::{canonical_host_profile, HOST_PROFILES};
 use agent_audit_rules::{rule_metadata, RuleStatus};
 use serde::Deserialize;
 
@@ -101,8 +101,8 @@ fn validate_profiles(profiles: Vec<String>) -> AuditResult<Vec<String>> {
         .enumerate()
         .map(|(index, profile)| {
             let profile = profile.trim();
-            if HOST_PROFILES.contains(&profile) {
-                Ok(profile.to_owned())
+            if let Some(canonical_profile) = canonical_host_profile(profile) {
+                Ok(canonical_profile.to_owned())
             } else {
                 Err(validation_error(format!(
                     "profiles[{index}] uses unknown host profile `{profile}`; expected one of: {}",
@@ -330,6 +330,39 @@ ignore:
                 reason: "Accepted compatibility fixture.".to_owned(),
             }]
         );
+    }
+
+    #[test]
+    fn parses_profile_aliases_as_canonical_profiles() {
+        let config = parse(
+            r#"
+profiles:
+  - spec
+  - claude
+  - copilot
+  - codex
+"#,
+        );
+
+        assert_eq!(
+            config.profiles,
+            vec![
+                "agent-skills-spec",
+                "claude-code",
+                "github-copilot",
+                "codex"
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_profile_alias_with_supported_names() {
+        let error = parse_error("profiles:\n  - github\n");
+        let message = error.to_string();
+
+        assert!(message.contains("profiles[0] uses unknown host profile `github`"));
+        assert!(message.contains("agent-skills-spec, claude-code, codex"));
+        assert!(message.contains("github-copilot, vscode-copilot, generic"));
     }
 
     #[test]

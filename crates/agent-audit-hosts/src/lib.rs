@@ -11,6 +11,18 @@ pub const HOST_PROFILES: &[&str] = &[
     "generic",
 ];
 
+pub fn canonical_host_profile(profile: &str) -> Option<&'static str> {
+    match profile {
+        "spec" => Some("agent-skills-spec"),
+        "claude" => Some("claude-code"),
+        "copilot" => Some("github-copilot"),
+        profile => HOST_PROFILES
+            .iter()
+            .copied()
+            .find(|supported_profile| *supported_profile == profile),
+    }
+}
+
 macro_rules! host_profile {
     (
         $id:expr,
