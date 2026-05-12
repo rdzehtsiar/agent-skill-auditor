@@ -32,6 +32,15 @@ function platformBinaryName(platform = process.platform) {
 }
 
 function platformTarget(platform = process.platform, arch = process.arch) {
+  const target = supportedPlatformTarget(platform, arch);
+  if (!target) {
+    throw new Error(`Unsupported platform for agent-audit binary: ${platform}/${arch}`);
+  }
+
+  return target;
+}
+
+function supportedPlatformTarget(platform = process.platform, arch = process.arch) {
   const targets = {
     "darwin:arm64": "aarch64-apple-darwin",
     "darwin:x64": "x86_64-apple-darwin",
@@ -40,13 +49,8 @@ function platformTarget(platform = process.platform, arch = process.arch) {
     "win32:x64": "x86_64-pc-windows-msvc",
     "win32:arm64": "aarch64-pc-windows-msvc"
   };
-  const target = targets[`${platform}:${arch}`];
 
-  if (!target) {
-    throw new Error(`Unsupported platform for agent-audit binary: ${platform}/${arch}`);
-  }
-
-  return target;
+  return targets[`${platform}:${arch}`];
 }
 
 function releaseDownloadUrl(version, platform = process.platform, arch = process.arch) {
@@ -59,8 +63,8 @@ function resolveBinary(env = process.env, options = {}) {
   const arch = options.arch || process.arch;
   const currentScript = options.currentScript;
   const packageRoot = options.packageRoot || path.join(__dirname, "..");
-  const pathValue = Object.prototype.hasOwnProperty.call(env, "PATH") ? env.PATH : process.env.PATH;
-  const pathExt = Object.prototype.hasOwnProperty.call(env, "PATHEXT")
+  const pathValue = Object.hasOwn(env, "PATH") ? env.PATH : process.env.PATH;
+  const pathExt = Object.hasOwn(env, "PATHEXT")
     ? env.PATHEXT
     : process.env.PATHEXT;
 
@@ -82,12 +86,9 @@ function resolveBinary(env = process.env, options = {}) {
 }
 
 function missingBinaryError(version, platform = process.platform, arch = process.arch) {
-  let download;
-  try {
-    download = releaseDownloadUrl(version, platform, arch);
-  } catch (error) {
-    download = `unsupported platform ${platform}/${arch}`;
-  }
+  const download = supportedPlatformTarget(platform, arch)
+    ? releaseDownloadUrl(version, platform, arch)
+    : `unsupported platform ${platform}/${arch}`;
 
   return [
     "agent-audit npm wrapper could not find the native agent-audit binary.",
@@ -207,9 +208,9 @@ function commandNames(command, pathExt, platform) {
 
 function isExecutableFile(candidate) {
   try {
-    return fs.statSync(candidate).isFile();
+    return fs.statSync(candidate, { throwIfNoEntry: false })?.isFile() || false;
   } catch (error) {
-    return false;
+    return optionalFilesystemFallback(error, false);
   }
 }
 
@@ -217,16 +218,35 @@ function realpathOrNull(candidate) {
   try {
     return fs.realpathSync(candidate);
   } catch (error) {
-    return null;
+    return optionalFilesystemFallback(error, null);
   }
 }
 
-function packageVersion(packageRoot) {
-  try {
-    const root = packageRoot || path.join(__dirname, "..");
-    return JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).version;
-  } catch (error) {
+function optionalFilesystemFallback(error, fallback) {
+  if (error && typeof error === "object" && "code" in error) {
+    return fallback;
+  }
+
+  throw error;
+}
+
+function packageVersionFallback(error) {
+  if (error instanceof SyntaxError) {
     return "0.0.0";
+  }
+
+  return optionalFilesystemFallback(error, "0.0.0");
+}
+
+function packageVersion(packageRoot) {
+  const root = packageRoot || path.join(__dirname, "..");
+  const packageJson = path.join(root, "package.json");
+
+  try {
+    const version = fs.readFileSync(packageJson, "utf8").match(/"version"\s*:\s*"([^"]+)"/);
+    return version ? version[1] : "0.0.0";
+  } catch (error) {
+    return packageVersionFallback(error);
   }
 }
 

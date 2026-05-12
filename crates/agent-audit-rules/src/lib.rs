@@ -1589,13 +1589,17 @@ impl<'a> SupplyPackageScope<'a> {
         packages: &'a [RuleSupplyChainPackageFact],
     ) -> Self {
         let root = package.root.trim_matches('/');
-        let mut nested_roots = packages
-            .iter()
-            .filter(|candidate| candidate.manifest_path != package.manifest_path)
-            .map(|candidate| candidate.root.trim_matches('/'))
-            .filter(|candidate_root| !candidate_root.is_empty())
-            .filter(|candidate_root| supply_path_is_inside_root(candidate_root, root))
-            .collect::<Vec<_>>();
+        let mut nested_roots = Vec::new();
+        for candidate in packages {
+            if candidate.manifest_path == package.manifest_path {
+                continue;
+            }
+
+            let candidate_root = candidate.root.trim_matches('/');
+            if !candidate_root.is_empty() && is_path_within_supply_root(candidate_root, root) {
+                nested_roots.push(candidate_root);
+            }
+        }
         nested_roots.sort();
         nested_roots.dedup();
 
@@ -1616,11 +1620,11 @@ impl<'a> SupplyPackageScope<'a> {
             && !self
                 .nested_roots
                 .iter()
-                .any(|nested_root| supply_path_is_inside_root(path, nested_root))
+                .any(|nested_root| is_path_within_supply_root(path, nested_root))
     }
 }
 
-fn supply_path_is_inside_root(path: &str, root: &str) -> bool {
+fn is_path_within_supply_root(path: &str, root: &str) -> bool {
     root.is_empty()
         || path == root
         || path

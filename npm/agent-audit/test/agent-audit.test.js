@@ -88,6 +88,29 @@ test("resolveBinary finds PATH binary and skips current wrapper", () => {
   );
 });
 
+test("resolveBinary tolerates realpath failures while searching PATH", () => {
+  const workspace = temporaryDirectory("path-realpath-error");
+  const realBinary = writeExecutable(workspace, "agent-audit");
+  const originalRealpathSync = fs.realpathSync;
+  fs.realpathSync = () => {
+    const error = new Error("access denied");
+    error.code = "EACCES";
+    throw error;
+  };
+
+  try {
+    assert.equal(
+      resolveBinary(
+        { PATH: workspace },
+        { currentScript: path.join(workspace, "agent-audit-wrapper") }
+      ),
+      realBinary
+    );
+  } finally {
+    fs.realpathSync = originalRealpathSync;
+  }
+});
+
 test("resolveBinary returns null when no binary exists", () => {
   const workspace = temporaryDirectory("missing-bin");
 
@@ -143,6 +166,21 @@ test("run reports invalid AGENT_AUDIT_BIN with recovery guidance", () => {
   assert.match(result.error, /Set AGENT_AUDIT_BIN to an existing agent-audit executable/);
 });
 
+test("run keeps missing binary guidance when package metadata is unreadable", () => {
+  const workspace = temporaryDirectory("run-unreadable-package-version");
+  fs.mkdirSync(path.join(workspace, "package.json"));
+  const result = run(["scan", "."], { PATH: workspace }, {
+    currentScript: path.join(workspace, "agent-audit"),
+    packageRoot: workspace,
+    platform: "linux",
+    arch: "x64"
+  });
+
+  assert.equal(result.status, 127);
+  assert.match(result.error, /could not find the native agent-audit binary/);
+  assert.match(result.error, /releases\/download\/v0\.0\.0/);
+});
+
 test("bin entrypoint returns missing binary guidance instead of wiring errors", () => {
   const workspace = temporaryDirectory("bin-entrypoint");
   const bin = path.join(__dirname, "..", "bin", "agent-audit.js");
@@ -168,6 +206,10 @@ function temporaryDirectory(name) {
 function writeExecutable(directory, name) {
   const file = path.join(directory, name);
   fs.writeFileSync(file, "#!/bin/sh\nexit 0\n", "utf8");
-  fs.chmodSync(file, 0o755);
+  fs.chmodSync(file, ownerExecutableMode());
   return file;
+}
+
+function ownerExecutableMode() {
+  return fs.constants.S_IRUSR | fs.constants.S_IWUSR | fs.constants.S_IXUSR;
 }

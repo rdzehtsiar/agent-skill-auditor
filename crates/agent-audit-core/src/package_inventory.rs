@@ -711,55 +711,60 @@ fn pip_command_packages(tokens: &[String]) -> Vec<CommandPackage> {
 }
 
 fn cargo_command_packages(tokens: &[String]) -> Vec<CommandPackage> {
-    let mut packages = Vec::new();
-    let mut version = None;
-    for (index, token) in tokens.iter().enumerate() {
-        if token == "--version" {
-            version = tokens.get(index + 1).cloned();
-        }
-    }
-    for token in tokens {
-        if token.starts_with('-') || token == version.as_deref().unwrap_or_default() {
-            continue;
-        }
-        packages.push(CommandPackage {
-            name: strip_quotes(token).to_owned(),
-            version: version.clone(),
-            raw: match version.as_deref() {
-                Some(version) => format!("{} --version {version}", strip_quotes(token)),
-                None => strip_quotes(token).to_owned(),
-            },
-            pinned: version.as_deref().is_some_and(version_is_pinned),
-        });
-        break;
-    }
-    packages
+    single_package_with_version_flag(tokens, "--version", "--version")
+        .unwrap_or_else(|| single_package_without_version_flag(tokens))
 }
 
 fn gem_command_packages(tokens: &[String]) -> Vec<CommandPackage> {
-    let mut packages = Vec::new();
-    let mut version = None;
-    for window in tokens.windows(2) {
-        if matches!(window[0].as_str(), "-v" | "--version") {
-            version = Some(window[1].clone());
-        }
+    single_package_with_version_flag(tokens, "-v", "-v")
+        .or_else(|| single_package_with_version_flag(tokens, "--version", "-v"))
+        .unwrap_or_else(|| single_package_without_version_flag(tokens))
+}
+
+fn single_package_with_version_flag(
+    tokens: &[String],
+    version_flag: &str,
+    raw_version_flag: &str,
+) -> Option<Vec<CommandPackage>> {
+    let version = tokens
+        .windows(2)
+        .find(|window| window[0] == version_flag)
+        .map(|window| window[1].clone())?;
+    let package = first_command_package_token(tokens, Some(&version))?;
+    Some(vec![versioned_command_package(
+        package,
+        Some(version),
+        raw_version_flag,
+    )])
+}
+
+fn single_package_without_version_flag(tokens: &[String]) -> Vec<CommandPackage> {
+    first_command_package_token(tokens, None)
+        .map(|package| vec![versioned_command_package(package, None, "")])
+        .unwrap_or_default()
+}
+
+fn first_command_package_token<'a>(tokens: &'a [String], version: Option<&str>) -> Option<&'a str> {
+    tokens
+        .iter()
+        .find(|token| !token.starts_with('-') && version != Some(token.as_str()))
+        .map(|token| strip_quotes(token))
+}
+
+fn versioned_command_package(
+    package: &str,
+    version: Option<String>,
+    raw_version_flag: &str,
+) -> CommandPackage {
+    CommandPackage {
+        name: package.to_owned(),
+        version: version.clone(),
+        raw: match version.as_deref() {
+            Some(version) => format!("{package} {raw_version_flag} {version}"),
+            None => package.to_owned(),
+        },
+        pinned: version.as_deref().is_some_and(version_is_pinned),
     }
-    for token in tokens {
-        if token.starts_with('-') || token == version.as_deref().unwrap_or_default() {
-            continue;
-        }
-        packages.push(CommandPackage {
-            name: strip_quotes(token).to_owned(),
-            version: version.clone(),
-            raw: match version.as_deref() {
-                Some(version) => format!("{} -v {version}", strip_quotes(token)),
-                None => strip_quotes(token).to_owned(),
-            },
-            pinned: version.as_deref().is_some_and(version_is_pinned),
-        });
-        break;
-    }
-    packages
 }
 
 fn go_command_packages(tokens: &[String]) -> Vec<CommandPackage> {

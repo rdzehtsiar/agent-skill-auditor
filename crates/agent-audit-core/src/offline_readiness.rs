@@ -396,13 +396,7 @@ struct PackageScope<'a> {
 impl<'a> PackageScope<'a> {
     fn new(package: &'a SkillPackage, packages: &'a [SkillPackage]) -> Self {
         let root = package.root.trim_matches('/');
-        let mut nested_roots = packages
-            .iter()
-            .filter(|candidate| candidate.manifest_path != package.manifest_path)
-            .map(|candidate| candidate.root.trim_matches('/'))
-            .filter(|candidate_root| !candidate_root.is_empty())
-            .filter(|candidate_root| path_is_inside_root(candidate_root, root))
-            .collect::<Vec<_>>();
+        let mut nested_roots = nested_package_roots(package, packages, root);
         nested_roots.sort();
         nested_roots.dedup();
 
@@ -425,6 +419,31 @@ impl<'a> PackageScope<'a> {
                 .iter()
                 .any(|nested_root| path_is_inside_root(path, nested_root))
     }
+}
+
+fn nested_package_roots<'a>(
+    package: &'a SkillPackage,
+    packages: &'a [SkillPackage],
+    root: &str,
+) -> Vec<&'a str> {
+    packages
+        .iter()
+        .filter_map(|candidate| nested_package_root(package, candidate, root))
+        .collect()
+}
+
+fn nested_package_root<'a>(
+    package: &SkillPackage,
+    candidate: &'a SkillPackage,
+    root: &str,
+) -> Option<&'a str> {
+    if candidate.manifest_path == package.manifest_path {
+        return None;
+    }
+
+    let candidate_root = candidate.root.trim_matches('/');
+    (!candidate_root.is_empty() && path_is_inside_root(candidate_root, root))
+        .then_some(candidate_root)
 }
 
 fn path_is_inside_root(path: &str, root: &str) -> bool {
