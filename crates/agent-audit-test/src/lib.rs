@@ -182,6 +182,52 @@ mod tests {
     }
 
     #[test]
+    fn tests_workflow_contains_required_ci_gates() {
+        let workflow_path = workspace_root()
+            .join(".github")
+            .join("workflows")
+            .join("tests.yml");
+        let workflow = fs::read_to_string(&workflow_path).expect("read tests workflow");
+        let metadata: serde_yaml::Value =
+            serde_yaml::from_str(&workflow).expect("parse tests workflow YAML");
+
+        assert!(workflow.starts_with("# SPDX-License-Identifier: Apache-2.0"));
+        assert_eq!(metadata["permissions"]["contents"], "read");
+        assert!(workflow.contains("codecov/codecov-action@v5"));
+        assert!(workflow.contains("cargo llvm-cov --workspace --locked"));
+        assert!(!workflow.to_lowercase().contains("docker build"));
+        assert!(!workflow.contains("docker/login-action"));
+        assert!(!workflow.contains("ghcr.io"));
+        assert!(!workflow.contains("crates.io"));
+        assert!(!workflow.contains("npm publish"));
+
+        let steps = metadata["jobs"]["test"]["steps"]
+            .as_sequence()
+            .expect("test job steps");
+        let run_commands = steps
+            .iter()
+            .filter_map(|step| step["run"].as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        for required_gate in [
+            "cargo fmt --all --check",
+            "cargo clippy --workspace --all-targets --locked -- -D warnings",
+            "cargo build --workspace --locked",
+            "npm test --prefix npm/agent-audit",
+            "./target/debug/agent-audit scan fixtures/spec/phase1/representative-corpus --format summary",
+            "./target/debug/agent-audit scan fixtures/spec/phase1/representative-corpus --format sarif --output target/ci-agent-audit/representative.sarif",
+            "./target/debug/agent-audit scan fixtures/spec/phase1/representative-corpus --format html --output target/ci-agent-audit/representative.html",
+            "./target/debug/agent-audit scan fixtures/compatibility/valid/spec-basic --profile agent-skills-spec --profile generic --fail-on high --fail-on critical",
+        ] {
+            assert!(
+                run_commands.contains(required_gate),
+                "tests workflow missing CI gate {required_gate:?}"
+            );
+        }
+    }
+
+    #[test]
     fn docker_packaging_builds_cli_and_documents_local_workspace_scans() {
         let root = workspace_root();
         let dockerfile_path = root.join("Dockerfile");

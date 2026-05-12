@@ -28,6 +28,45 @@ jobs:
       - name: Install Rust
         run: rustup toolchain install
 
+      - name: Install Rust quality components
+        run: rustup component add rustfmt clippy
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Build workspace
+        run: cargo build --workspace --locked
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run npm wrapper tests
+        run: npm test --prefix npm/agent-audit
+
+      - name: Run representative summary scan
+        run: ./target/debug/agent-audit scan fixtures/spec/phase1/representative-corpus --format summary
+
+      - name: Run representative SARIF scan
+        run: ./target/debug/agent-audit scan fixtures/spec/phase1/representative-corpus --format sarif --output target/ci-agent-audit/representative.sarif
+
+      - name: Run representative HTML scan
+        run: ./target/debug/agent-audit scan fixtures/spec/phase1/representative-corpus --format html --output target/ci-agent-audit/representative.html
+
+      - name: Run passing fail-on scan
+        run: ./target/debug/agent-audit scan fixtures/compatibility/valid/spec-basic --profile agent-skills-spec --profile generic --fail-on high --fail-on critical
+
+      - name: Upload representative scan artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: representative-agent-audit-reports
+          path: target/ci-agent-audit
+          if-no-files-found: error
+
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
