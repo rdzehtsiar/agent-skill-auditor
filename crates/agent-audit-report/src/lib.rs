@@ -6,6 +6,7 @@ use std::error::Error;
 use std::fmt;
 use std::str::FromStr;
 
+use agent_audit_core::model::FINDING_GROUP_EVIDENCE_SAMPLE_LIMIT;
 use agent_audit_core::{
     build_finding_groups, CompatibilityMatrix, ExternalUrl, FindingCategory, FindingConfidence,
     FindingGroup, OfflineReadinessStatus, PermissionEvidence, PermissionKind, ScanReport, Severity,
@@ -20,6 +21,9 @@ pub const SUPPORTED_REPORT_MODES: &[&str] = &["default", "verbose", "research", 
 pub const SUPPORTED_REPORT_MODES_HELP: &str = "supported: default, verbose, research, ci";
 const SUMMARY_COMPATIBILITY_ROW_LIMIT: usize = 5;
 const CI_TOP_GROUP_LIMIT: usize = 5;
+const DEPENDENCY_REPRODUCIBILITY_RULES: &[&str] = &["SEC009", "SUPPLY003", "SUPPLY004"];
+const DEPENDENCY_REPRODUCIBILITY_CLUSTER_RULE_ID: &str = "SEC009/SUPPLY003/SUPPLY004";
+const DEPENDENCY_REPRODUCIBILITY_CLUSTER_KEY: &str = "cluster=dependency-reproducibility";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReportFormat {
@@ -191,7 +195,7 @@ fn render_default_summary(report: &ScanReport) -> String {
     extend_supply_chain_summary(&mut lines, report);
     extend_compatibility_summary(&mut lines, &report.compatibility);
 
-    let finding_groups = effective_finding_groups(report);
+    let finding_groups = default_display_finding_groups(report);
     if finding_groups.is_empty() {
         lines.push(String::new());
         lines.push("No findings.".to_owned());
@@ -732,6 +736,101 @@ fn effective_finding_groups(report: &ScanReport) -> Cow<'_, [FindingGroup]> {
     }
 }
 
+fn default_display_finding_groups(report: &ScanReport) -> Vec<FindingGroup> {
+    let finding_groups = effective_finding_groups(report);
+    dependency_reproducibility_clustered_groups(finding_groups.as_ref())
+}
+
+fn dependency_reproducibility_clustered_groups(groups: &[FindingGroup]) -> Vec<FindingGroup> {
+    let dependency_groups = groups
+        .iter()
+        .filter(|group| is_dependency_reproducibility_rule(&group.rule_id))
+        .collect::<Vec<_>>();
+
+    if dependency_groups.len() <= 1 {
+        return groups.to_vec();
+    }
+
+    let cluster = dependency_reproducibility_cluster(&dependency_groups);
+    let mut clustered = Vec::with_capacity(groups.len() - dependency_groups.len() + 1);
+    let mut inserted_cluster = false;
+
+    for group in groups {
+        if is_dependency_reproducibility_rule(&group.rule_id) {
+            if !inserted_cluster {
+                clustered.push(cluster.clone());
+                inserted_cluster = true;
+            }
+        } else {
+            clustered.push(group.clone());
+        }
+    }
+
+    clustered
+}
+
+fn dependency_reproducibility_cluster(groups: &[&FindingGroup]) -> FindingGroup {
+    let severity = groups
+        .iter()
+        .map(|group| group.severity)
+        .max_by_key(|severity| severity_weight(*severity))
+        .unwrap_or(Severity::Medium);
+    let confidence = groups
+        .iter()
+        .map(|group| group.confidence)
+        .max()
+        .unwrap_or(FindingConfidence::Medium);
+    let finding_count = groups.iter().map(|group| group.finding_count).sum();
+    let affected_packages = groups
+        .iter()
+        .flat_map(|group| group.affected_packages.iter().cloned())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let evidence_samples = groups
+        .iter()
+        .flat_map(|group| {
+            group.evidence_samples.iter().map(|sample| {
+                let mut sample = sample.clone();
+                sample.message = format!("[{}] {}", group.rule_id, sample.message);
+                sample
+            })
+        })
+        .take(FINDING_GROUP_EVIDENCE_SAMPLE_LIMIT)
+        .collect::<Vec<_>>();
+    let mut dimensions = BTreeMap::new();
+    dimensions.insert(
+        "rules".to_owned(),
+        DEPENDENCY_REPRODUCIBILITY_RULES.join(","),
+    );
+
+    FindingGroup {
+        rule_id: DEPENDENCY_REPRODUCIBILITY_CLUSTER_RULE_ID.to_owned(),
+        severity,
+        confidence,
+        category: FindingCategory::Reproducibility,
+        title: "Dependency install reproducibility risks".to_owned(),
+        rationale:
+            "Install commands and dependency declarations show the same reproducibility pattern."
+                .to_owned(),
+        remediation: "Use lockfile-backed installs or exact dependency pins for the affected package managers."
+            .to_owned(),
+        suppression:
+            "Suppress the underlying SEC009, SUPPLY003, or SUPPLY004 finding only with a reviewed reproducibility control."
+                .to_owned(),
+        evidence_key: DEPENDENCY_REPRODUCIBILITY_CLUSTER_KEY.to_owned(),
+        dimensions,
+        finding_count,
+        affected_package_count: affected_packages.len(),
+        affected_packages,
+        evidence_samples,
+    }
+}
+
+fn is_dependency_reproducibility_rule(rule_id: &str) -> bool {
+    DEPENDENCY_REPRODUCIBILITY_RULES.contains(&rule_id)
+}
+
 fn ci_top_finding_groups(groups: &[FindingGroup]) -> Vec<&FindingGroup> {
     let mut groups = groups.iter().collect::<Vec<_>>();
     groups.sort_by(|left, right| {
@@ -1198,7 +1297,7 @@ fn extend_html_package_inventory(html: &mut String, report: &ScanReport) {
 }
 
 fn extend_html_findings(html: &mut String, report: &ScanReport) {
-    let finding_groups = effective_finding_groups(report);
+    let finding_groups = default_display_finding_groups(report);
 
     html.push_str(
         "<section aria-labelledby=\"findings\"><h2 id=\"findings\">Finding Groups</h2><table><thead><tr><th>Rule</th><th>Severity</th><th>Confidence</th><th>Category</th><th>Findings</th><th>Affected packages</th><th>Evidence</th><th>Dimensions</th><th>Samples</th><th>Title</th><th>Why it matters</th><th>How to fix</th><th>Suppression</th></tr></thead><tbody>",
@@ -4089,6 +4188,112 @@ mod tests {
     }
 
     #[test]
+    fn default_summary_clusters_dependency_reproducibility_findings() {
+        let report = dependency_reproducibility_report();
+
+        let summary = render_summary(&report);
+
+        assert!(summary.contains(
+            "SEC009/SUPPLY003/SUPPLY004 [medium/medium/reproducibility] x3 packages=1 rules=SEC009,SUPPLY003,SUPPLY004: Dependency install reproducibility risks"
+        ));
+        assert!(summary.contains("  sample: skills/deps/scripts/install.sh:3: [SEC009]"));
+        assert!(summary.contains("  sample: skills/deps/scripts/install.sh:3: [SUPPLY003]"));
+        assert!(summary.contains("  sample: skills/deps/package.json:7: [SUPPLY004]"));
+        let headline_lines = summary
+            .lines()
+            .filter(|line| {
+                line.starts_with("SEC009")
+                    || line.starts_with("SUPPLY003")
+                    || line.starts_with("SUPPLY004")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            headline_lines,
+            vec![
+                "SEC009/SUPPLY003/SUPPLY004 [medium/medium/reproducibility] x3 packages=1 rules=SEC009,SUPPLY003,SUPPLY004: Dependency install reproducibility risks"
+            ]
+        );
+    }
+
+    #[test]
+    fn verbose_summary_preserves_expanded_dependency_reproducibility_findings() {
+        let report = dependency_reproducibility_report();
+
+        let summary = render_summary_with_mode(&report, ReportMode::Verbose);
+
+        assert!(summary.contains("SEC009 [low/medium/security] skills/deps/scripts/install.sh:3"));
+        assert!(summary.contains(
+            "SUPPLY003 [medium/medium/reproducibility] skills/deps/scripts/install.sh:3"
+        ));
+        assert!(summary
+            .contains("SUPPLY004 [medium/medium/reproducibility] skills/deps/package.json:7"));
+        assert!(!summary.contains("Dependency install reproducibility risks"));
+    }
+
+    #[test]
+    fn default_html_clusters_dependency_reproducibility_finding_groups() {
+        let report = dependency_reproducibility_report();
+
+        let html = render_html(&report);
+        let finding_groups = html_section(&html, "findings");
+
+        assert!(finding_groups.contains("<td>SEC009/SUPPLY003/SUPPLY004</td>"));
+        assert!(finding_groups.contains(
+            "<td>3</td><td>1<br><span class=\"finding-ids\">skills/deps/SKILL.md</span>"
+        ));
+        assert!(finding_groups.contains("[SEC009]"));
+        assert!(finding_groups.contains("[SUPPLY003]"));
+        assert!(finding_groups.contains("[SUPPLY004]"));
+        assert!(!finding_groups.contains("<td>SEC009</td>"));
+        assert!(!finding_groups.contains("<td>SUPPLY003</td>"));
+        assert!(!finding_groups.contains("<td>SUPPLY004</td>"));
+    }
+
+    #[test]
+    fn research_html_preserves_expanded_dependency_reproducibility_findings() {
+        let report = dependency_reproducibility_report();
+
+        let html = render_html_with_mode(&report, ReportMode::Research);
+        let full_evidence = html_section(&html, "full-finding-evidence");
+
+        assert!(full_evidence.contains("<td>SEC009</td>"));
+        assert!(full_evidence.contains("<td>SUPPLY003</td>"));
+        assert!(full_evidence.contains("<td>SUPPLY004</td>"));
+    }
+
+    #[test]
+    fn json_and_sarif_preserve_dependency_reproducibility_findings() {
+        let report = dependency_reproducibility_report();
+
+        let json: Value =
+            serde_json::from_str(&render_json(&report).expect("render JSON")).expect("parse JSON");
+        assert_eq!(
+            json["findings"]
+                .as_array()
+                .expect("findings array")
+                .iter()
+                .map(|finding| finding["rule_id"].as_str().expect("finding rule"))
+                .collect::<Vec<_>>(),
+            vec!["SEC009", "SUPPLY003", "SUPPLY004"]
+        );
+        assert_eq!(
+            json["finding_groups"]
+                .as_array()
+                .expect("finding groups array")
+                .iter()
+                .map(|group| group["rule_id"].as_str().expect("group rule"))
+                .collect::<Vec<_>>(),
+            vec!["SEC009", "SUPPLY003", "SUPPLY004"]
+        );
+
+        let sarif = render_sarif_value(&report);
+        assert_eq!(
+            sarif_result_rule_ids(&sarif),
+            vec!["SUPPLY004", "SEC009", "SUPPLY003"]
+        );
+    }
+
+    #[test]
     fn html_output_orders_finding_groups_by_rule_and_evidence() {
         let report = report_with_findings(vec![
             finding(
@@ -5314,6 +5519,46 @@ mod tests {
         report_with_packages_and_findings(Vec::new(), findings)
     }
 
+    fn dependency_reproducibility_report() -> ScanReport {
+        report_with_packages_and_findings(
+            vec![package(
+                "skills/deps",
+                "skills/deps/SKILL.md",
+                Some("deps"),
+                Some("Installs dependencies."),
+            )],
+            vec![
+                finding(
+                    "SEC009",
+                    Severity::Low,
+                    FindingCategory::Security,
+                    "Package install without lockfile",
+                    "The script runs `npm install left-pad` without nearby lockfile evidence.",
+                    "skills/deps/scripts/install.sh",
+                    Some(3),
+                ),
+                finding(
+                    "SUPPLY003",
+                    Severity::Medium,
+                    FindingCategory::Reproducibility,
+                    "Install command without matching lockfile",
+                    "The npm install command does not have a matching lockfile.",
+                    "skills/deps/scripts/install.sh",
+                    Some(3),
+                ),
+                finding(
+                    "SUPPLY004",
+                    Severity::Medium,
+                    FindingCategory::Reproducibility,
+                    "Unpinned package dependency",
+                    "The npm dependency `left-pad` uses an unpinned version range.",
+                    "skills/deps/package.json",
+                    Some(7),
+                ),
+            ],
+        )
+    }
+
     fn repeated_finding_report(count: usize) -> ScanReport {
         let packages = (0..count)
             .map(|index| {
@@ -5516,6 +5761,15 @@ mod tests {
             .collect()
     }
 
+    fn sarif_result_rule_ids(value: &Value) -> Vec<&str> {
+        value["runs"][0]["results"]
+            .as_array()
+            .expect("results array")
+            .iter()
+            .map(|result| result["ruleId"].as_str().expect("result rule id"))
+            .collect()
+    }
+
     fn sarif_result_paths(value: &Value) -> Vec<&str> {
         value["runs"][0]["results"]
             .as_array()
@@ -5621,5 +5875,21 @@ mod tests {
                 .unwrap_or_else(|| panic!("missing {needle:?} after byte {previous}"));
             previous += offset + needle.len();
         }
+    }
+
+    fn html_section(html: &str, section_id: &str) -> String {
+        let heading = format!("<h2 id=\"{section_id}\">");
+        let heading_start = html
+            .find(&heading)
+            .unwrap_or_else(|| panic!("missing section heading {section_id}"));
+        let section_start = html[..heading_start]
+            .rfind("<section")
+            .unwrap_or(heading_start);
+        let section_end = html[heading_start..]
+            .find("</section>")
+            .map(|offset| heading_start + offset + "</section>".len())
+            .unwrap_or(html.len());
+
+        html[section_start..section_end].to_owned()
     }
 }
