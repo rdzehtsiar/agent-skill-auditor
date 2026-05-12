@@ -137,9 +137,9 @@ Summary output includes a compact compatibility section:
 ```text
 Compatibility:
 Profiles: agent-skills-spec, claude-code, codex, github-copilot, vscode-copilot, generic
-Status totals: pass=2 warn=4 fail=0 unknown=0
+Status totals: pass=2 warn=0 fail=0 unknown=4 untested=0
 Rows:
-- SKILL.md (spec-basic): agent-skills-spec=pass, claude-code=warn, codex=warn, github-copilot=warn, vscode-copilot=warn, generic=pass
+- SKILL.md (spec-basic): agent-skills-spec=pass, claude-code=unknown, codex=unknown, github-copilot=unknown, vscode-copilot=unknown, generic=pass
 ```
 
 JSON output is intended for deterministic machine processing:
@@ -168,7 +168,7 @@ JSON reports include stable compatibility matrix data:
         },
         {
           "profile": "github-copilot",
-          "status": "warn",
+          "status": "unknown",
           "finding_ids": []
         }
       ]
@@ -286,7 +286,7 @@ Future support may expand to other agent-related metadata and behavior fixtures.
 
 ## Host Compatibility
 
-Host compatibility profiles produce an offline deterministic matrix from local scan facts. The scanner does not contact hosts, execute scripts, or prove that a host will accept a package at runtime. A `pass` means the implemented checks did not find a profile-specific issue.
+Host compatibility profiles produce an offline deterministic matrix from local scan facts. The scanner does not contact hosts, execute scripts, or prove that a host will accept a package at runtime. A `pass` means implemented checks verified the currently modeled requirements for that profile.
 
 Supported profiles are:
 
@@ -297,7 +297,7 @@ Supported profiles are:
 - `vscode-copilot`
 - `generic`
 
-Matrix cells use `pass`, `warn`, `fail`, or `unknown`. Compatibility findings explain what happened, where it happened, why it matters, how to fix it, and how to suppress it safely. See [Host Profiles](./docs/host-profiles.md) for profile assumptions, selected-path conventions, known limitations, and status meanings.
+Matrix cells use `pass`, `warn`, `fail`, `unknown`, or `untested`. Matrix-only caveats such as non-preferred paths, scripts, or permission metadata are `unknown` unless backed by a finding or explicit profile rule. Compatibility findings explain what happened, where it happened, why it matters, how to fix it, and how to suppress it safely. See [Host Profiles](./docs/host-profiles.md) for profile assumptions, selected-path conventions, known limitations, and status meanings.
 
 ## Roadmap
 

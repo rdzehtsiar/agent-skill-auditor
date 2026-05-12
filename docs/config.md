@@ -199,7 +199,7 @@ Suppression paths are exact. Globs such as `skills/*/SKILL.md` do not match find
 
 Suppression reasons should be specific enough for audit review. Prefer reasons that explain what was checked, who owns the exception, and when it should be revisited.
 
-Suppressions apply to compatibility findings before the compatibility matrix is rendered. A suppressed compatibility finding is removed from active findings and from matrix `finding_ids`; if it was the only reason for a profile warning, the profile status can change. Matrix-only warnings that do not emit a rule ID cannot currently be suppressed with `ignore`.
+Suppressions apply to compatibility findings before the compatibility matrix is rendered. A suppressed compatibility finding is removed from active findings and from matrix `finding_ids`; if it was the only reason for a profile warning, the profile status can change. Matrix-only `unknown` states that do not emit a rule ID cannot currently be suppressed with `ignore`.
 
 ## Compatibility Example
 

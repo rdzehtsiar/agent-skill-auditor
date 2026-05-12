@@ -43,8 +43,9 @@ Expected behavior:
 - Evaluates only the selected profiles.
 - Preserves the CLI order in `compatibility.profiles` and in each matrix row.
 - Keeps report-relative paths in JSON.
-- Shows `github-copilot` before `codex` for this command, with both profiles in
-  `warn` status for the fixture.
+- Shows `github-copilot` before `codex` for this command; `codex` reports a
+  finding-backed `warn`, while `github-copilot` reports `unknown` for the
+  matrix-only host-fit caveat.
 
 The same ordering behavior applies when profiles are repeated instead of
 comma-separated:
@@ -97,8 +98,8 @@ Expected behavior:
   metadata, rationale, remediation, and suppression guidance.
 
 For the mixed metadata fixture, Codex warns with `SKILL050` because
-`allowed-tools` is Claude-oriented metadata. GitHub Copilot warns for path or
-host-fit reasons without a finding ID in the current matrix.
+`allowed-tools` is Claude-oriented metadata. GitHub Copilot reports `unknown`
+for path or host-fit reasons without a finding ID in the current matrix.
 
 ## SARIF And HTML Rendering
 

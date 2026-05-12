@@ -1197,7 +1197,8 @@
         "pass",
         "warn",
         "fail",
-        "unknown"
+        "unknown",
+        "untested"
       ]
     }
   }

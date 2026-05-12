@@ -273,11 +273,12 @@ fn render_ci_summary(report: &ScanReport) -> String {
     ));
     if !report.compatibility.is_empty() {
         lines.push(format!(
-            "Compatibility totals: pass={} warn={} fail={} unknown={}",
+            "Compatibility totals: pass={} warn={} fail={} unknown={} untested={}",
             compatibility_counts.pass,
             compatibility_counts.warn,
             compatibility_counts.fail,
-            compatibility_counts.unknown
+            compatibility_counts.unknown,
+            compatibility_counts.untested
         ));
     }
     lines.push(format!(
@@ -537,15 +538,15 @@ fn extend_compatibility_summary(lines: &mut Vec<String>, compatibility: &Compati
     lines.push("Compatibility:".to_owned());
     lines.push(format!("Profiles: {}", compatibility.profiles.join(", ")));
     lines.push(format!(
-        "Status totals: pass={} warn={} fail={} unknown={}",
-        counts.pass, counts.warn, counts.fail, counts.unknown
+        "Status totals: pass={} warn={} fail={} unknown={} untested={}",
+        counts.pass, counts.warn, counts.fail, counts.unknown, counts.untested
     ));
     lines.push("Profile totals:".to_owned());
     for profile in &compatibility.profiles {
         let counts = compatibility_status_counts_for_profile(compatibility, profile);
         lines.push(format!(
-            "- {}: pass={} warn={} fail={} unknown={}",
-            profile, counts.pass, counts.warn, counts.fail, counts.unknown
+            "- {}: pass={} warn={} fail={} unknown={} untested={}",
+            profile, counts.pass, counts.warn, counts.fail, counts.unknown, counts.untested
         ));
     }
 
@@ -592,6 +593,7 @@ struct CompatibilityStatusCounts {
     warn: usize,
     fail: usize,
     unknown: usize,
+    untested: usize,
 }
 
 fn compatibility_status_counts(compatibility: &CompatibilityMatrix) -> CompatibilityStatusCounts {
@@ -629,6 +631,7 @@ fn add_compatibility_status_count(counts: &mut CompatibilityStatusCounts, status
         "warn" => counts.warn += 1,
         "fail" => counts.fail += 1,
         "unknown" => counts.unknown += 1,
+        "untested" => counts.untested += 1,
         _ => counts.unknown += 1,
     }
 }
@@ -913,11 +916,12 @@ fn extend_html_ci_summary(
     if !report.compatibility.is_empty() {
         html.push_str("<tr><td>Compatibility totals</td><td>");
         html.push_str(&escape_html(&format!(
-            "pass={} warn={} fail={} unknown={}",
+            "pass={} warn={} fail={} unknown={} untested={}",
             view_model.compatibility_totals.pass,
             view_model.compatibility_totals.warn,
             view_model.compatibility_totals.fail,
-            view_model.compatibility_totals.unknown
+            view_model.compatibility_totals.unknown,
+            view_model.compatibility_totals.untested
         )));
         html.push_str("</td></tr>");
     }
@@ -1512,11 +1516,15 @@ fn extend_html_compatibility(
         "Unknown",
         view_model.compatibility_totals.unknown,
     ));
+    html.push_str(&summary_count(
+        "Untested",
+        view_model.compatibility_totals.untested,
+    ));
     html.push_str("</div>");
 
-    html.push_str("<h3>Host Support Totals</h3><table><thead><tr><th>Host</th><th>Pass</th><th>Warn</th><th>Fail</th><th>Unknown</th></tr></thead><tbody>");
+    html.push_str("<h3>Host Support Totals</h3><table><thead><tr><th>Host</th><th>Pass</th><th>Warn</th><th>Fail</th><th>Unknown</th><th>Untested</th></tr></thead><tbody>");
     if view_model.compatibility_host_totals.is_empty() {
-        html.push_str("<tr><td colspan=\"5\">No host profiles evaluated.</td></tr>");
+        html.push_str("<tr><td colspan=\"6\">No host profiles evaluated.</td></tr>");
     }
     for totals in &view_model.compatibility_host_totals {
         html.push_str("<tr><td>");
@@ -1529,6 +1537,8 @@ fn extend_html_compatibility(
         html.push_str(&totals.counts.fail.to_string());
         html.push_str("</td><td>");
         html.push_str(&totals.counts.unknown.to_string());
+        html.push_str("</td><td>");
+        html.push_str(&totals.counts.untested.to_string());
         html.push_str("</td></tr>");
     }
     html.push_str("</tbody></table><h3>Compatibility Matrix</h3>");
@@ -1585,6 +1595,7 @@ fn html_compatibility_status(status: &str) -> String {
         "pass" => "status-pass",
         "warn" => "status-warn",
         "fail" => "status-fail",
+        "untested" => "status-unknown",
         _ => "status-unknown",
     };
 
@@ -2077,8 +2088,17 @@ fn sarif_run_properties(compatibility: &CompatibilityMatrix) -> Option<Value> {
 }
 
 fn sarif_compatibility_matrix(compatibility: &CompatibilityMatrix) -> Value {
+    let totals = compatibility_status_counts(compatibility);
+
     json!({
         "profiles": compatibility.profiles,
+        "statusTotals": {
+            "pass": totals.pass,
+            "warn": totals.warn,
+            "fail": totals.fail,
+            "unknown": totals.unknown,
+            "untested": totals.untested
+        },
         "matrix": compatibility
             .matrix
             .iter()
@@ -2616,6 +2636,7 @@ mod tests {
                 warn: 1,
                 fail: 1,
                 unknown: 1,
+                untested: 0,
             }
         );
         assert_eq!(
@@ -2632,6 +2653,7 @@ mod tests {
                         warn: 0,
                         fail: 1,
                         unknown: 0,
+                        untested: 0,
                     }
                 ),
                 (
@@ -2641,6 +2663,7 @@ mod tests {
                         warn: 1,
                         fail: 0,
                         unknown: 1,
+                        untested: 0,
                     }
                 ),
             ]
@@ -3291,7 +3314,7 @@ mod tests {
     fn summary_output_includes_compatibility_totals_and_rows() {
         let mut report = report_with_summary(2, 1, 0, 0, 0);
         report.compatibility = serde_json::from_value(json!({
-            "profiles": ["agent-skills-spec", "codex", "generic"],
+            "profiles": ["agent-skills-spec", "codex", "generic", "future-host"],
             "matrix": [
                 {
                     "path": "alpha/SKILL.md",
@@ -3310,6 +3333,11 @@ mod tests {
                         {
                             "profile": "generic",
                             "status": "pass",
+                            "finding_ids": []
+                        },
+                        {
+                            "profile": "future-host",
+                            "status": "untested",
                             "finding_ids": []
                         }
                     ]
@@ -3332,6 +3360,11 @@ mod tests {
                             "profile": "generic",
                             "status": "warn",
                             "finding_ids": ["SKILL040"]
+                        },
+                        {
+                            "profile": "future-host",
+                            "status": "untested",
+                            "finding_ids": []
                         }
                     ]
                 }
@@ -3346,15 +3379,16 @@ mod tests {
             &[
                 "Broken references: 0",
                 "Compatibility:",
-                "Profiles: agent-skills-spec, codex, generic",
-                "Status totals: pass=2 warn=2 fail=1 unknown=1",
+                "Profiles: agent-skills-spec, codex, generic, future-host",
+                "Status totals: pass=2 warn=2 fail=1 unknown=1 untested=2",
                 "Profile totals:",
-                "- agent-skills-spec: pass=1 warn=0 fail=1 unknown=0",
-                "- codex: pass=0 warn=1 fail=0 unknown=1",
-                "- generic: pass=1 warn=1 fail=0 unknown=0",
+                "- agent-skills-spec: pass=1 warn=0 fail=1 unknown=0 untested=0",
+                "- codex: pass=0 warn=1 fail=0 unknown=1 untested=0",
+                "- generic: pass=1 warn=1 fail=0 unknown=0 untested=0",
+                "- future-host: pass=0 warn=0 fail=0 unknown=0 untested=2",
                 "Rows:",
-                "- alpha/SKILL.md (alpha): agent-skills-spec=pass, codex=warn(SKILL050), generic=pass",
-                "- beta/SKILL.md: agent-skills-spec=fail(SKILL002), codex=unknown, generic=warn(SKILL040)",
+                "- alpha/SKILL.md (alpha): agent-skills-spec=pass, codex=warn(SKILL050), generic=pass, future-host=untested",
+                "- beta/SKILL.md: agent-skills-spec=fail(SKILL002), codex=unknown, generic=warn(SKILL040), future-host=untested",
                 "No findings.",
             ],
         );
@@ -3371,7 +3405,7 @@ mod tests {
         let summary = render_summary(&report);
 
         assert!(summary.contains("Profiles: codex, generic"));
-        assert!(summary.contains("Status totals: pass=0 warn=0 fail=0 unknown=0"));
+        assert!(summary.contains("Status totals: pass=0 warn=0 fail=0 unknown=0 untested=0"));
         assert!(!summary.contains("Rows:\n"));
     }
 
@@ -3401,7 +3435,7 @@ mod tests {
 
         let summary = render_summary(&report);
 
-        assert!(summary.contains("- codex: pass=0 warn=6 fail=0 unknown=0"));
+        assert!(summary.contains("- codex: pass=0 warn=6 fail=0 unknown=0 untested=0"));
         assert!(summary.contains("Rows: 6 packages omitted from summary"));
         assert!(!summary.contains("skill-0/SKILL.md"));
     }
@@ -4561,6 +4595,13 @@ mod tests {
             value["runs"][0]["properties"]["compatibility"],
             json!({
                 "profiles": ["agent-skills-spec", "codex"],
+                "statusTotals": {
+                    "pass": 1,
+                    "warn": 1,
+                    "fail": 0,
+                    "unknown": 0,
+                    "untested": 0
+                },
                 "matrix": [
                     {
                         "path": "skills/portable/SKILL.md",

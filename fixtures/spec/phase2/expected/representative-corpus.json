@@ -1823,22 +1823,22 @@
           },
           {
             "profile": "claude-code",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "codex",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "github-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "vscode-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
@@ -1955,7 +1955,7 @@
           },
           {
             "profile": "claude-code",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
@@ -1965,12 +1965,12 @@
           },
           {
             "profile": "github-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "vscode-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
@@ -2092,17 +2092,17 @@
           },
           {
             "profile": "codex",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "github-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "vscode-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
@@ -2171,12 +2171,12 @@
           },
           {
             "profile": "claude-code",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "codex",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
@@ -2303,12 +2303,12 @@
           },
           {
             "profile": "claude-code",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "codex",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
@@ -2339,22 +2339,22 @@
           },
           {
             "profile": "claude-code",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "codex",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "github-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "vscode-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
@@ -2375,22 +2375,22 @@
           },
           {
             "profile": "claude-code",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "codex",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "github-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "vscode-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
@@ -2411,22 +2411,22 @@
           },
           {
             "profile": "claude-code",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "codex",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "github-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "vscode-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
@@ -2447,22 +2447,22 @@
           },
           {
             "profile": "claude-code",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "codex",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "github-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "vscode-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
@@ -2723,22 +2723,22 @@
           },
           {
             "profile": "claude-code",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "codex",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "github-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "vscode-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
@@ -2759,22 +2759,22 @@
           },
           {
             "profile": "claude-code",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "codex",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "github-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "vscode-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
@@ -2843,22 +2843,22 @@
           },
           {
             "profile": "claude-code",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "codex",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "github-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "vscode-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
@@ -2879,22 +2879,22 @@
           },
           {
             "profile": "claude-code",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "codex",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "github-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "vscode-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
@@ -2915,22 +2915,22 @@
           },
           {
             "profile": "claude-code",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "codex",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "github-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "vscode-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
@@ -2999,22 +2999,22 @@
           },
           {
             "profile": "claude-code",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "codex",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "github-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "vscode-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {

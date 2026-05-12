@@ -628,6 +628,7 @@ pub enum CompatibilityStatus {
     Warn,
     Fail,
     Unknown,
+    Untested,
 }
 
 impl CompatibilityStatus {
@@ -637,6 +638,7 @@ impl CompatibilityStatus {
             Self::Warn => "warn",
             Self::Fail => "fail",
             Self::Unknown => "unknown",
+            Self::Untested => "untested",
         }
     }
 }
@@ -930,6 +932,7 @@ mod tests {
         assert_eq!(CompatibilityStatus::Warn.as_str(), "warn");
         assert_eq!(CompatibilityStatus::Fail.as_str(), "fail");
         assert_eq!(CompatibilityStatus::Unknown.as_str(), "unknown");
+        assert_eq!(CompatibilityStatus::Untested.as_str(), "untested");
     }
 
     #[test]
@@ -940,9 +943,10 @@ mod tests {
                 CompatibilityStatus::Warn,
                 CompatibilityStatus::Fail,
                 CompatibilityStatus::Unknown,
+                CompatibilityStatus::Untested,
             ])
             .expect("serialize statuses"),
-            serde_json::json!(["pass", "warn", "fail", "unknown"])
+            serde_json::json!(["pass", "warn", "fail", "unknown", "untested"])
         );
     }
 

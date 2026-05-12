@@ -19,15 +19,15 @@ Offline readiness: ready=1 partial=0 not-ready=0 unknown=0
 
 Compatibility:
 Profiles: agent-skills-spec, claude-code, codex, github-copilot, vscode-copilot, generic
-Status totals: pass=2 warn=4 fail=0 unknown=0
+Status totals: pass=2 warn=0 fail=0 unknown=4 untested=0
 Profile totals:
-- agent-skills-spec: pass=1 warn=0 fail=0 unknown=0
-- claude-code: pass=0 warn=1 fail=0 unknown=0
-- codex: pass=0 warn=1 fail=0 unknown=0
-- github-copilot: pass=0 warn=1 fail=0 unknown=0
-- vscode-copilot: pass=0 warn=1 fail=0 unknown=0
-- generic: pass=1 warn=0 fail=0 unknown=0
+- agent-skills-spec: pass=1 warn=0 fail=0 unknown=0 untested=0
+- claude-code: pass=0 warn=0 fail=0 unknown=1 untested=0
+- codex: pass=0 warn=0 fail=0 unknown=1 untested=0
+- github-copilot: pass=0 warn=0 fail=0 unknown=1 untested=0
+- vscode-copilot: pass=0 warn=0 fail=0 unknown=1 untested=0
+- generic: pass=1 warn=0 fail=0 unknown=0 untested=0
 Rows:
-- SKILL.md (e2e-representative): agent-skills-spec=pass, claude-code=warn, codex=warn, github-copilot=warn, vscode-copilot=warn, generic=pass
+- SKILL.md (e2e-representative): agent-skills-spec=pass, claude-code=unknown, codex=unknown, github-copilot=unknown, vscode-copilot=unknown, generic=pass
 
 No findings.

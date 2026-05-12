@@ -28,10 +28,10 @@ mod tests {
     const EMPTY_FINDING_IDS: &[&str] = &[];
     const DEFAULT_COMPATIBILITY_PROJECTION: &[(&str, &str, &[&str])] = &[
         ("agent-skills-spec", "pass", EMPTY_FINDING_IDS),
-        ("claude-code", "warn", EMPTY_FINDING_IDS),
-        ("codex", "warn", EMPTY_FINDING_IDS),
-        ("github-copilot", "warn", EMPTY_FINDING_IDS),
-        ("vscode-copilot", "warn", EMPTY_FINDING_IDS),
+        ("claude-code", "unknown", EMPTY_FINDING_IDS),
+        ("codex", "unknown", EMPTY_FINDING_IDS),
+        ("github-copilot", "unknown", EMPTY_FINDING_IDS),
+        ("vscode-copilot", "unknown", EMPTY_FINDING_IDS),
         ("generic", "pass", EMPTY_FINDING_IDS),
     ];
     const SUPPLY_CHAIN_FIXTURES: &[&str] = &[
@@ -860,9 +860,9 @@ mod tests {
             &[
                 ("agent-skills-spec", "pass", &[]),
                 ("claude-code", "warn", &["SKILL050"]),
-                ("codex", "warn", &[]),
-                ("github-copilot", "warn", &[]),
-                ("vscode-copilot", "warn", &[]),
+                ("codex", "unknown", &[]),
+                ("github-copilot", "unknown", &[]),
+                ("vscode-copilot", "unknown", &[]),
                 ("generic", "pass", &[]),
             ],
         );
@@ -893,8 +893,8 @@ mod tests {
             ".github/skills/vscode-ignored-metadata/SKILL.md",
             &[
                 ("agent-skills-spec", "pass", &[]),
-                ("claude-code", "warn", &[]),
-                ("codex", "warn", &[]),
+                ("claude-code", "unknown", &[]),
+                ("codex", "unknown", &[]),
                 ("github-copilot", "warn", &["SKILL050"]),
                 ("vscode-copilot", "warn", &["SKILL050"]),
                 ("generic", "pass", &[]),
@@ -1169,7 +1169,7 @@ mod tests {
         );
         assert_eq!(
             string_array(&schema["$defs"]["compatibilityStatus"]["enum"]),
-            vec!["pass", "warn", "fail", "unknown"]
+            vec!["pass", "warn", "fail", "unknown", "untested"]
         );
         assert_eq!(
             string_array(&schema["$defs"]["findingGroup"]["required"]),
@@ -1568,7 +1568,7 @@ Bootstrap with scripts/install.sh.
             .iter()
             .all(serde_json::Value::is_string));
 
-        let allowed_statuses = ["pass", "warn", "fail", "unknown"];
+        let allowed_statuses = ["pass", "warn", "fail", "unknown", "untested"];
         for row in compatibility["matrix"]
             .as_array()
             .expect("compatibility matrix")

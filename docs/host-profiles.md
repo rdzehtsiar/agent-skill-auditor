@@ -2,7 +2,7 @@
 
 Agent Skill Auditor uses host profiles to turn general `SKILL.md` scan facts into a deterministic compatibility matrix. Profiles are local, versioned data and evaluator logic. The scanner does not contact hosts, execute scripts, or prove that a host will accept a package at runtime.
 
-Compatibility output is conservative. A `pass` means the implemented checks did not find a profile-specific issue; it is not a live host validation.
+Compatibility output is conservative. A `pass` means implemented checks verified the currently modeled requirements for that profile; it is not a live host validation.
 
 For representative CLI commands and expected report behavior, see
 [Compatibility Command Checks](./compatibility-commands.md).
@@ -51,10 +51,11 @@ Selection behavior is:
 
 Matrix cells use these stable statuses:
 
-- `pass`: No implemented compatibility check found an issue for that profile.
-- `warn`: The skill may work, but the profile found a portability risk, ignored metadata, non-preferred path layout, script artifact, broken reference, oversized manifest, duplicate name, or other warning-level condition.
+- `pass`: Implemented checks verified the currently modeled requirements for that profile.
+- `warn`: The profile found a concrete portability risk backed by an active finding or explicit profile rule, such as ignored metadata, broken reference, oversized manifest, duplicate name, or unknown frontmatter.
 - `fail`: The skill violates implemented baseline requirements for that profile, currently missing `name`, missing `description`, or malformed frontmatter.
-- `unknown`: The auditor lacks enough profile knowledge to make a useful claim. Current supported profile evaluators mostly prefer `pass`, `warn`, or `fail`; `unknown` remains part of the report contract for future or unrecognized profile evaluation.
+- `unknown`: The auditor lacks enough profile evidence to make a useful claim. Matrix-only caveats such as non-preferred path layout, script references or artifacts, and unsupported `permissions` metadata use `unknown` when they are not backed by a finding or explicit profile rule.
+- `untested`: The profile was not evaluated by an implemented compatibility evaluator. This is part of the stable report contract for future profile coverage.
 
 Finding severity and matrix status are related but not identical. For example, `SKILL050` is a low-severity compatibility finding, but it can still make a profile cell `warn`.
 
@@ -87,7 +88,7 @@ Suppressed findings are removed from active findings before the compatibility ma
 - A suppression can change a profile status when the suppressed finding was the only reason for that status.
 - Suppressed findings do not trigger `fail_on`.
 - JSON keeps suppressed finding details under `suppressed_findings`; SARIF includes active findings only.
-- Matrix-only warnings, such as a non-preferred path or script artifact warning that does not emit a finding ID, cannot currently be suppressed with `ignore`.
+- Matrix-only unknown states, such as a non-preferred path or script artifact caveat that does not emit a finding ID, cannot currently be suppressed with `ignore`.
 
 ## Profile Reference
 
@@ -137,7 +138,7 @@ Profile for Claude Code-oriented skill packages.
 - Tools: prefer `allowed-tools` when declaring Claude-specific tool allowlists.
 - Scripts: packaged scripts are treated as references; execution is host-mediated and not assumed by the scanner.
 - Failures: missing `name`, missing `description`, malformed frontmatter.
-- Warnings: non-preferred path layout, script references or script artifacts, broken references, oversized manifests, duplicate names, unknown frontmatter, and `SKILL050` for ignored Claude metadata. `tools` comes from static profile data; `permissions` is handled as an evaluator-specific Claude warning.
+- Warnings: broken references, oversized manifests, duplicate names, unknown frontmatter, and `SKILL050` for ignored Claude metadata. Matrix-only caveats such as non-preferred path layout, script references or script artifacts, and `permissions` metadata report `unknown` when no finding is emitted.
 - Limitation: the profile models conservative Claude Code packaging expectations and does not guarantee host execution or permission behavior.
 
 ### `codex`
@@ -154,7 +155,7 @@ Profile for Codex-compatible offline skill package review.
 - Tools: document tool needs explicitly; declarations do not imply automatic access.
 - Scripts: scripts can be included as artifacts, but execution is host-mediated and should be reviewed.
 - Failures: missing `name`, missing `description`, malformed frontmatter.
-- Warnings: non-preferred path layout, script references or script artifacts, `permissions` metadata, broken references, oversized manifests, duplicate names, unknown Codex frontmatter, and `SKILL050` for Claude-style `allowed-tools`.
+- Warnings: broken references, oversized manifests, duplicate names, unknown Codex frontmatter, and `SKILL050` for Claude-style `allowed-tools`. Matrix-only caveats such as non-preferred path layout, script references or script artifacts, and `permissions` metadata report `unknown` when no finding is emitted.
 - Limitation: this profile preserves the auditor's offline, no-script-execution behavior and does not claim live Codex validation.
 
 ### `github-copilot`
@@ -171,7 +172,7 @@ Profile for GitHub-hosted Copilot-oriented skill or instruction packages.
 - Tools: tool expectations are documentation because available tools vary by Copilot surface.
 - Scripts: scripts are reviewable artifacts, not automatically supported actions.
 - Failures: missing `name`, missing `description`, malformed frontmatter.
-- Warnings: non-preferred path layout, script references or script artifacts, `permissions` metadata, broken references, oversized manifests, duplicate names, unknown frontmatter, and `SKILL050` for ignored `allowed-tools`.
+- Warnings: broken references, oversized manifests, duplicate names, unknown frontmatter, and `SKILL050` for ignored `allowed-tools`. Matrix-only caveats such as non-preferred path layout, script references or script artifacts, and `permissions` metadata report `unknown` when no finding is emitted.
 - Limitation: this profile does not overclaim GitHub Copilot support for local scripts, assets, or explicit host permission metadata.
 
 ### `vscode-copilot`
@@ -188,7 +189,7 @@ Profile for VS Code-local Copilot-oriented skill packages.
 - Tools: local tool expectations should be described rather than assumed.
 - Scripts: scripts are local artifacts and should require explicit user or host action.
 - Failures: missing `name`, missing `description`, malformed frontmatter.
-- Warnings: non-preferred path layout, script references or script artifacts, `permissions` metadata, broken references, oversized manifests, duplicate names, unknown frontmatter, and `SKILL050` for ignored `allowed-tools`.
+- Warnings: broken references, oversized manifests, duplicate names, unknown frontmatter, and `SKILL050` for ignored `allowed-tools`. Matrix-only caveats such as non-preferred path layout, script references or script artifacts, and `permissions` metadata report `unknown` when no finding is emitted.
 - Limitation: workspace trust, installed extensions, shell availability, and user configuration can change behavior outside what this offline profile can know.
 
 ## Compatibility Findings
@@ -205,4 +206,4 @@ Baseline structural rules also influence compatibility status:
 - `SKILL001`, `SKILL002`, and `SKILL041` map to profile `fail`.
 - `SKILL010`, `SKILL020`, `SKILL030`, and applicable `SKILL040` or `SKILL050` findings map to profile `warn`.
 
-Some profile warnings are matrix-only today and do not emit a finding ID. Examples include non-preferred host path layout, script references or artifacts, and unsupported `permissions` metadata for some profiles. Treat these as conservative portability warnings until narrower rules are added.
+Some profile caveats are matrix-only today and do not emit a finding ID. Examples include non-preferred host path layout, script references or artifacts, and unsupported `permissions` metadata for some profiles. These report `unknown` until narrower finding-backed rules are added.

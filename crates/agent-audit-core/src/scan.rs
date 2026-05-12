@@ -615,7 +615,7 @@ fn compatibility_for_profile(
         "generic" => evaluate_baseline_structural_profile(profile, package, findings),
         _ => ProfileCompatibilityResult {
             profile: profile.to_owned(),
-            status: CompatibilityStatus::Unknown,
+            status: CompatibilityStatus::Untested,
             finding_ids: Vec::new(),
         },
     }
@@ -769,10 +769,12 @@ fn host_profile_rule_order(include_unknown_frontmatter_rule: bool) -> Vec<&'stat
 fn compatibility_status(finding_ids: &[String], has_matrix_warning: bool) -> CompatibilityStatus {
     if has_compatibility_failure(finding_ids) {
         CompatibilityStatus::Fail
-    } else if finding_ids.is_empty() && !has_matrix_warning {
-        CompatibilityStatus::Pass
-    } else {
+    } else if !finding_ids.is_empty() {
         CompatibilityStatus::Warn
+    } else if has_matrix_warning {
+        CompatibilityStatus::Unknown
+    } else {
+        CompatibilityStatus::Pass
     }
 }
 
@@ -1758,16 +1760,20 @@ description: Default compatibility fixture.
                     CompatibilityStatus::Pass,
                     Vec::<&str>::new()
                 ),
-                ("claude-code", CompatibilityStatus::Warn, Vec::<&str>::new()),
-                ("codex", CompatibilityStatus::Warn, Vec::<&str>::new()),
+                (
+                    "claude-code",
+                    CompatibilityStatus::Unknown,
+                    Vec::<&str>::new()
+                ),
+                ("codex", CompatibilityStatus::Unknown, Vec::<&str>::new()),
                 (
                     "github-copilot",
-                    CompatibilityStatus::Warn,
+                    CompatibilityStatus::Unknown,
                     Vec::<&str>::new()
                 ),
                 (
                     "vscode-copilot",
-                    CompatibilityStatus::Warn,
+                    CompatibilityStatus::Unknown,
                     Vec::<&str>::new()
                 ),
                 ("generic", CompatibilityStatus::Pass, Vec::<&str>::new()),
@@ -1817,15 +1823,15 @@ tools:
                     Vec::<&str>::new()
                 ),
                 ("claude-code", CompatibilityStatus::Warn, vec!["SKILL050"]),
-                ("codex", CompatibilityStatus::Warn, Vec::<&str>::new()),
+                ("codex", CompatibilityStatus::Unknown, Vec::<&str>::new()),
                 (
                     "github-copilot",
-                    CompatibilityStatus::Warn,
+                    CompatibilityStatus::Unknown,
                     Vec::<&str>::new()
                 ),
                 (
                     "vscode-copilot",
-                    CompatibilityStatus::Warn,
+                    CompatibilityStatus::Unknown,
                     Vec::<&str>::new()
                 ),
                 ("generic", CompatibilityStatus::Pass, Vec::<&str>::new()),
@@ -2008,7 +2014,7 @@ profiles:
     }
 
     #[test]
-    fn scan_claude_code_allowed_tools_on_root_skill_warns_only_for_path() {
+    fn scan_claude_code_allowed_tools_on_root_skill_is_unknown_for_path_only() {
         let workspace = TestWorkspace::new("scan-claude-root-allowed-tools-path-warn");
         workspace.write_file(
             "SKILL.md",
@@ -2042,12 +2048,16 @@ profiles:
         assert!(report.findings.is_empty());
         assert_eq!(
             compatibility_projection(&report.compatibility.matrix[0].profiles),
-            vec![("claude-code", CompatibilityStatus::Warn, Vec::<&str>::new())]
+            vec![(
+                "claude-code",
+                CompatibilityStatus::Unknown,
+                Vec::<&str>::new()
+            )]
         );
     }
 
     #[test]
-    fn scan_claude_code_warns_for_non_claude_path_without_finding_id() {
+    fn scan_claude_code_is_unknown_for_non_claude_path_without_finding_id() {
         let workspace = TestWorkspace::new("scan-claude-path-warn");
         workspace.write_file(
             "SKILL.md",
@@ -2079,7 +2089,11 @@ profiles:
         assert!(report.findings.is_empty());
         assert_eq!(
             compatibility_projection(&report.compatibility.matrix[0].profiles),
-            vec![("claude-code", CompatibilityStatus::Warn, Vec::<&str>::new())]
+            vec![(
+                "claude-code",
+                CompatibilityStatus::Unknown,
+                Vec::<&str>::new()
+            )]
         );
     }
 
@@ -2130,7 +2144,7 @@ profiles:
     }
 
     #[test]
-    fn scan_claude_code_warns_for_script_references_without_finding_id() {
+    fn scan_claude_code_is_unknown_for_script_references_without_finding_id() {
         let workspace = TestWorkspace::new("scan-claude-script-warn");
         workspace.write_file(
             ".claude/skills/reviewer/SKILL.md",
@@ -2165,7 +2179,11 @@ profiles:
         assert!(report.findings.is_empty());
         assert_eq!(
             compatibility_projection(&report.compatibility.matrix[0].profiles),
-            vec![("claude-code", CompatibilityStatus::Warn, Vec::<&str>::new())]
+            vec![(
+                "claude-code",
+                CompatibilityStatus::Unknown,
+                Vec::<&str>::new()
+            )]
         );
     }
 
@@ -2333,7 +2351,7 @@ profiles:
     }
 
     #[test]
-    fn scan_codex_warns_for_non_codex_path_without_finding_id() {
+    fn scan_codex_is_unknown_for_non_codex_path_without_finding_id() {
         let workspace = TestWorkspace::new("scan-codex-path-warn");
         workspace.write_file(
             "SKILL.md",
@@ -2365,7 +2383,7 @@ profiles:
         assert!(report.findings.is_empty());
         assert_eq!(
             compatibility_projection(&report.compatibility.matrix[0].profiles),
-            vec![("codex", CompatibilityStatus::Warn, Vec::<&str>::new())]
+            vec![("codex", CompatibilityStatus::Unknown, Vec::<&str>::new())]
         );
     }
 
@@ -2483,7 +2501,7 @@ profiles:
     }
 
     #[test]
-    fn scan_codex_warns_for_permissions_without_finding_id() {
+    fn scan_codex_is_unknown_for_permissions_without_finding_id() {
         let workspace = TestWorkspace::new("scan-codex-permissions-warn");
         workspace.write_file(
             ".agents/skills/reviewer/SKILL.md",
@@ -2517,12 +2535,12 @@ profiles:
         assert!(report.findings.is_empty());
         assert_eq!(
             compatibility_projection(&report.compatibility.matrix[0].profiles),
-            vec![("codex", CompatibilityStatus::Warn, Vec::<&str>::new())]
+            vec![("codex", CompatibilityStatus::Unknown, Vec::<&str>::new())]
         );
     }
 
     #[test]
-    fn scan_codex_warns_for_script_references_without_finding_id() {
+    fn scan_codex_is_unknown_for_script_references_without_finding_id() {
         let workspace = TestWorkspace::new("scan-codex-script-warn");
         workspace.write_file(
             ".agents/skills/reviewer/SKILL.md",
@@ -2557,7 +2575,7 @@ profiles:
         assert!(report.findings.is_empty());
         assert_eq!(
             compatibility_projection(&report.compatibility.matrix[0].profiles),
-            vec![("codex", CompatibilityStatus::Warn, Vec::<&str>::new())]
+            vec![("codex", CompatibilityStatus::Unknown, Vec::<&str>::new())]
         );
     }
 
@@ -2688,7 +2706,7 @@ profiles:
     }
 
     #[test]
-    fn scan_github_copilot_warns_for_permissions_without_finding_id() {
+    fn scan_github_copilot_is_unknown_for_permissions_without_finding_id() {
         let workspace = TestWorkspace::new("scan-github-copilot-permissions-warn");
         workspace.write_file(
             ".github/skills/reviewer/SKILL.md",
@@ -2724,14 +2742,14 @@ profiles:
             compatibility_projection(&report.compatibility.matrix[0].profiles),
             vec![(
                 "github-copilot",
-                CompatibilityStatus::Warn,
+                CompatibilityStatus::Unknown,
                 Vec::<&str>::new()
             )]
         );
     }
 
     #[test]
-    fn scan_github_copilot_warns_for_non_github_path_without_finding_id() {
+    fn scan_github_copilot_is_unknown_for_non_github_path_without_finding_id() {
         let workspace = TestWorkspace::new("scan-github-copilot-path-warn");
         workspace.write_file(
             "SKILL.md",
@@ -2765,7 +2783,7 @@ profiles:
             compatibility_projection(&report.compatibility.matrix[0].profiles),
             vec![(
                 "github-copilot",
-                CompatibilityStatus::Warn,
+                CompatibilityStatus::Unknown,
                 Vec::<&str>::new()
             )]
         );
@@ -2896,7 +2914,7 @@ profiles:
     }
 
     #[test]
-    fn scan_github_copilot_warns_for_script_references_without_finding_id() {
+    fn scan_github_copilot_is_unknown_for_script_references_without_finding_id() {
         let workspace = TestWorkspace::new("scan-github-copilot-script-warn");
         workspace.write_file(
             ".github/skills/reviewer/SKILL.md",
@@ -2933,7 +2951,7 @@ profiles:
             compatibility_projection(&report.compatibility.matrix[0].profiles),
             vec![(
                 "github-copilot",
-                CompatibilityStatus::Warn,
+                CompatibilityStatus::Unknown,
                 Vec::<&str>::new()
             )]
         );
@@ -3074,7 +3092,7 @@ profiles:
     }
 
     #[test]
-    fn scan_vscode_copilot_warns_for_permissions_without_finding_id() {
+    fn scan_vscode_copilot_is_unknown_for_permissions_without_finding_id() {
         let workspace = TestWorkspace::new("scan-vscode-copilot-permissions-warn");
         workspace.write_file(
             ".github/skills/editor/SKILL.md",
@@ -3110,14 +3128,14 @@ profiles:
             compatibility_projection(&report.compatibility.matrix[0].profiles),
             vec![(
                 "vscode-copilot",
-                CompatibilityStatus::Warn,
+                CompatibilityStatus::Unknown,
                 Vec::<&str>::new()
             )]
         );
     }
 
     #[test]
-    fn scan_vscode_copilot_warns_for_non_vscode_path_without_finding_id() {
+    fn scan_vscode_copilot_is_unknown_for_non_vscode_path_without_finding_id() {
         let workspace = TestWorkspace::new("scan-vscode-copilot-path-warn");
         workspace.write_file(
             "SKILL.md",
@@ -3151,7 +3169,7 @@ profiles:
             compatibility_projection(&report.compatibility.matrix[0].profiles),
             vec![(
                 "vscode-copilot",
-                CompatibilityStatus::Warn,
+                CompatibilityStatus::Unknown,
                 Vec::<&str>::new()
             )]
         );
@@ -3282,7 +3300,7 @@ profiles:
     }
 
     #[test]
-    fn scan_vscode_copilot_warns_for_script_references_without_finding_id() {
+    fn scan_vscode_copilot_is_unknown_for_script_references_without_finding_id() {
         let workspace = TestWorkspace::new("scan-vscode-copilot-script-warn");
         workspace.write_file(
             ".github/skills/editor/SKILL.md",
@@ -3319,7 +3337,7 @@ profiles:
             compatibility_projection(&report.compatibility.matrix[0].profiles),
             vec![(
                 "vscode-copilot",
-                CompatibilityStatus::Warn,
+                CompatibilityStatus::Unknown,
                 Vec::<&str>::new()
             )]
         );
@@ -3750,7 +3768,7 @@ ignore:
     }
 
     #[test]
-    fn scan_copilot_profiles_warn_for_permissions_without_findings() {
+    fn scan_copilot_profiles_are_unknown_for_permissions_without_findings() {
         let workspace = TestWorkspace::new("scan-copilot-permissions-matrix-only");
         workspace.write_file(
             ".github/skills/editor/SKILL.md",
@@ -3786,12 +3804,12 @@ profiles:
             vec![
                 (
                     "github-copilot",
-                    CompatibilityStatus::Warn,
+                    CompatibilityStatus::Unknown,
                     Vec::<&str>::new()
                 ),
                 (
                     "vscode-copilot",
-                    CompatibilityStatus::Warn,
+                    CompatibilityStatus::Unknown,
                     Vec::<&str>::new()
                 ),
             ]
@@ -3982,7 +4000,7 @@ profiles:
                 compatibility_projection(&row.profiles),
                 vec![
                     ("generic", CompatibilityStatus::Pass, Vec::<&str>::new()),
-                    ("codex", CompatibilityStatus::Warn, Vec::<&str>::new()),
+                    ("codex", CompatibilityStatus::Unknown, Vec::<&str>::new()),
                 ]
             );
         }
@@ -6340,10 +6358,10 @@ description: JSON stability fixture.
                 .collect::<Vec<_>>(),
             vec![
                 ("agent-skills-spec", "pass", 0),
-                ("claude-code", "warn", 0),
-                ("codex", "warn", 0),
-                ("github-copilot", "warn", 0),
-                ("vscode-copilot", "warn", 0),
+                ("claude-code", "unknown", 0),
+                ("codex", "unknown", 0),
+                ("github-copilot", "unknown", 0),
+                ("vscode-copilot", "unknown", 0),
                 ("generic", "pass", 0),
             ]
         );
@@ -6439,22 +6457,22 @@ description: JSON stability fixture.
           },
           {
             "profile": "claude-code",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "codex",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "github-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
             "profile": "vscode-copilot",
-            "status": "warn",
+            "status": "unknown",
             "finding_ids": []
           },
           {
