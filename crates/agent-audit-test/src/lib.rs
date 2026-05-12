@@ -91,6 +91,49 @@ mod tests {
     }
 
     #[test]
+    fn github_action_metadata_runs_checked_in_cli_with_expected_inputs() {
+        let action_path = workspace_root().join("action.yml");
+        let content = fs::read_to_string(&action_path).expect("read action metadata");
+        let metadata: serde_yaml::Value =
+            serde_yaml::from_str(&content).expect("parse action metadata");
+
+        assert_eq!(metadata["runs"]["using"], "composite");
+        let inputs = metadata["inputs"].as_mapping().expect("inputs mapping");
+        for input in [
+            "path",
+            "profiles",
+            "fail-on",
+            "format",
+            "report",
+            "output",
+            "config",
+            "strict-supply-chain",
+        ] {
+            assert!(
+                inputs.contains_key(serde_yaml::Value::from(input)),
+                "missing action input {input}"
+            );
+        }
+
+        let steps = metadata["runs"]["steps"]
+            .as_sequence()
+            .expect("action steps");
+        assert_eq!(steps.len(), 1);
+        let step = &steps[0];
+        assert_eq!(step["shell"], "bash");
+        let run = step["run"].as_str().expect("run script");
+
+        assert!(run.contains("$GITHUB_ACTION_PATH/Cargo.toml"));
+        assert!(run.contains("-p agent-audit-cli"));
+        assert!(run.contains("args=(scan"));
+        assert!(run.contains("args+=(--profile \"$profile\")"));
+        assert!(run.contains("args+=(--fail-on \"$severity\")"));
+        assert!(run.contains("--strict-supply-chain"));
+        assert!(!run.contains("curl"));
+        assert!(!run.contains("wget"));
+    }
+
+    #[test]
     fn milestone5_supply_chain_fixture_corpus_has_expected_projections() {
         let root = supply_chain_root();
         let expected_root = root.join("expected");

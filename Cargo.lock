@@ -69,6 +69,7 @@ dependencies = [
  "agent-audit-core",
  "agent-audit-report",
  "serde_json",
+ "serde_yaml",
 ]
 
 [[package]]

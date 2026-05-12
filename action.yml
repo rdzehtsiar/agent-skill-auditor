@@ -1,0 +1,79 @@
+# SPDX-License-Identifier: Apache-2.0
+name: Agent Skill Auditor
+description: Offline security and compatibility audit for AI agent skill packages.
+inputs:
+  path:
+    description: Path to the skill package or repository tree to audit.
+    required: false
+    default: "."
+  profiles:
+    description: Compatibility profiles to evaluate; accepts comma-separated or newline-separated values.
+    required: false
+    default: ""
+  fail-on:
+    description: Finding severities that should fail the action; accepts comma-separated or newline-separated values.
+    required: false
+    default: ""
+  format:
+    description: Report format to render.
+    required: false
+    default: "summary"
+  report:
+    description: Alias for format. When set, this overrides the format input.
+    required: false
+    default: ""
+  output:
+    description: Optional output file path for the rendered report.
+    required: false
+    default: ""
+  config:
+    description: Optional explicit agent-audit configuration file.
+    required: false
+    default: ""
+  strict-supply-chain:
+    description: Require local trust manifest and license evidence.
+    required: false
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Run agent-audit
+      shell: bash
+      env:
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_PROFILES: ${{ inputs.profiles }}
+        INPUT_FAIL_ON: ${{ inputs['fail-on'] }}
+        INPUT_FORMAT: ${{ inputs.format }}
+        INPUT_REPORT: ${{ inputs.report }}
+        INPUT_OUTPUT: ${{ inputs.output }}
+        INPUT_CONFIG: ${{ inputs.config }}
+        INPUT_STRICT_SUPPLY_CHAIN: ${{ inputs['strict-supply-chain'] }}
+        CARGO_TERM_COLOR: always
+      run: |
+        set -euo pipefail
+
+        action_manifest="$GITHUB_ACTION_PATH/Cargo.toml"
+        report_format="${INPUT_REPORT:-$INPUT_FORMAT}"
+        args=(scan "${INPUT_PATH:-.}" --format "$report_format")
+
+        if [[ -n "$INPUT_CONFIG" ]]; then
+          args+=(--config "$INPUT_CONFIG")
+        fi
+
+        if [[ -n "$INPUT_OUTPUT" ]]; then
+          args+=(--output "$INPUT_OUTPUT")
+        fi
+
+        if [[ "$INPUT_STRICT_SUPPLY_CHAIN" == "true" ]]; then
+          args+=(--strict-supply-chain)
+        fi
+
+        while IFS= read -r profile; do
+          [[ -n "$profile" ]] && args+=(--profile "$profile")
+        done < <(printf '%s\n' "$INPUT_PROFILES" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+
+        while IFS= read -r severity; do
+          [[ -n "$severity" ]] && args+=(--fail-on "$severity")
+        done < <(printf '%s\n' "$INPUT_FAIL_ON" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+
+        cargo run --locked --manifest-path "$action_manifest" -p agent-audit-cli -- "${args[@]}"
