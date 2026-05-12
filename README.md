@@ -65,7 +65,7 @@ agent-audit scan [PATH] [--format FORMAT] [--mode MODE] [--output PATH] [--open]
 - `--format` defaults to `summary`.
 - Supported formats are `summary`, `json`, `sarif`, and `html`.
 - `--mode` defaults to `default`. Supported modes are `default`, `verbose`, `research`, and `ci`.
-- Human-readable summary and HTML output use `--mode` to control density: grouped default output, expanded verbose findings, grouped research evidence with normalized keys, or compact CI logs. JSON and SARIF preserve the full finding set.
+- Human-readable summary and HTML output use `--mode` to control density: grouped default output, expanded verbose findings, grouped research evidence with normalized keys, or compact CI logs. JSON and SARIF preserve the full finding set, including finding confidence.
 - `--output PATH` writes the selected report format to a file instead of standard output.
 - `--open` opens an HTML report after it is written. It applies only with `--format html --output PATH`, and only after `fail_on` checks pass.
 - `--config PATH` explicitly reads and validates a YAML audit config before scanning.
@@ -120,7 +120,7 @@ ignore:
     reason: False positive: references/api.md is generated and packaged by the release process.
 ```
 
-JSON output includes suppressed findings, while SARIF reports active findings only. Suppressed findings do not trigger `fail_on` in either format.
+JSON output includes suppressed findings, while SARIF reports active findings only. Suppressed findings do not trigger `fail_on` in either format. Each finding includes additive `confidence` metadata (`low`, `medium`, or `high`) to separate evidence certainty from severity.
 
 Config `profiles` and compatibility suppressions are documented in [Config](./docs/config.md).
 
@@ -148,6 +148,8 @@ JSON output is intended for deterministic machine processing:
 cargo run -q -p agent-audit-cli -- scan fixtures/compatibility/host/mixed-profile-metadata --profile codex,github-copilot --format json
 cargo run -q -p agent-audit-cli -- scan fixtures/compatibility/host/mixed-profile-metadata --profile codex,github-copilot --format json > report.json
 ```
+
+Finding objects include `severity`, `confidence`, `category`, location, rationale, remediation, and suppression guidance. Legacy reports that omit `confidence` deserialize as `medium`.
 
 JSON reports include stable compatibility matrix data:
 
@@ -210,7 +212,7 @@ cargo run -q -p agent-audit-cli -- scan fixtures/compatibility/host/mixed-profil
 cargo run -q -p agent-audit-cli -- scan fixtures/compatibility/host/mixed-profile-metadata --profile codex --format html --output report.html --open
 ```
 
-SARIF stores compatibility matrix data under run properties and adds profile context to compatibility findings. HTML reports are single files that use no hosted assets and can be reviewed offline. External URLs are rendered as text for review rather than fetched or embedded.
+SARIF stores compatibility matrix data under run properties, adds profile context to compatibility findings, and includes finding confidence as a result property. HTML reports are single files that use no hosted assets and can be reviewed offline. External URLs are rendered as text for review rather than fetched or embedded.
 
 The HTML report renders an executive summary, risk distribution, host support, top risky skills, broken references, external URLs, secret usage, offline readiness, packages, findings, and per-skill detail sections. `--open` is limited to explicit HTML file output: the CLI writes the report first, evaluates `fail_on`, and opens the file only when the scan result passes.
 

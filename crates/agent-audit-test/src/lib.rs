@@ -14,8 +14,8 @@ mod tests {
     use agent_audit_core::model::ScanSummary;
     use agent_audit_core::{
         build_finding_groups, parse_audit_config, scan_path, CompatibilityMatrix, FindingCategory,
-        FindingLocation, ScanOptions, ScanReport, Severity, SkillFinding, SkillGraph,
-        SkillManifest, SkillPackage,
+        FindingConfidence, FindingLocation, ScanOptions, ScanReport, Severity, SkillFinding,
+        SkillGraph, SkillManifest, SkillPackage,
     };
     use agent_audit_report::{
         render_html, render_json, render_report, render_sarif, render_summary, ReportFormat,
@@ -684,7 +684,7 @@ mod tests {
         assert!(summary.contains("Packages: 30"));
         assert!(summary.contains("Findings: 16"));
         assert!(summary.contains("Suppressed findings: 0"));
-        assert!(summary.contains("SKILL010 [low/spec]"));
+        assert!(summary.contains("SKILL010 [low/high/spec]"));
 
         let sarif = render_sarif(&report).expect("render SARIF");
         let sarif_value: serde_json::Value = serde_json::from_str(&sarif).expect("parse SARIF");
@@ -1091,6 +1091,10 @@ mod tests {
             schema["properties"]["finding_groups"]["items"]["$ref"],
             "#/$defs/findingGroup"
         );
+        assert_eq!(
+            schema["properties"]["findings"]["items"]["$ref"],
+            "#/$defs/skillFinding"
+        );
         assert!(!string_array(&schema["required"]).contains(&"compatibility".to_owned()));
         assert_eq!(
             schema["properties"]["compatibility"]["$ref"],
@@ -1185,6 +1189,32 @@ mod tests {
                 "evidence_samples"
             ]
         );
+        assert_eq!(
+            string_array(&schema["$defs"]["findingConfidence"]["enum"]),
+            vec!["low", "medium", "high"]
+        );
+        assert_eq!(
+            schema["$defs"]["findingGroup"]["properties"]["confidence"]["$ref"],
+            "#/$defs/findingConfidence"
+        );
+        assert_eq!(
+            string_array(&schema["$defs"]["skillFinding"]["required"]),
+            vec![
+                "rule_id",
+                "severity",
+                "category",
+                "title",
+                "message",
+                "location",
+                "rationale",
+                "remediation",
+                "suppression"
+            ]
+        );
+        assert_eq!(
+            schema["$defs"]["skillFinding"]["properties"]["confidence"]["$ref"],
+            "#/$defs/findingConfidence"
+        );
 
         let report = scan_compatibility_fixture("matrix", ScanOptions::default());
         let json = render_json(&report).expect("render compatibility report JSON");
@@ -1202,6 +1232,31 @@ mod tests {
         let legacy_report: ScanReport = serde_json::from_value(serde_json::json!({
             "packages": [],
             "findings": [],
+            "finding_groups": [
+                {
+                    "rule_id": "SKILL001",
+                    "severity": "low",
+                    "category": "spec",
+                    "title": "Missing skill name",
+                    "rationale": "Skills without stable names are hard to inventory.",
+                    "remediation": "Add a non-empty name.",
+                    "suppression": "Suppress only with a documented reason.",
+                    "evidence_key": "SKILL.md",
+                    "dimensions": {},
+                    "finding_count": 1,
+                    "affected_package_count": 0,
+                    "affected_packages": [],
+                    "evidence_samples": [
+                        {
+                            "location": {
+                                "path": "SKILL.md",
+                                "line": 1
+                            },
+                            "message": "The skill manifest does not declare a name."
+                        }
+                    ]
+                }
+            ],
             "suppressed_findings": [],
             "summary": {
                 "package_count": 0,
@@ -1213,7 +1268,11 @@ mod tests {
         }))
         .expect("deserialize legacy report without compatibility");
         assert!(legacy_report.compatibility.is_empty());
-        assert!(legacy_report.finding_groups.is_empty());
+        assert_eq!(legacy_report.finding_groups.len(), 1);
+        assert_eq!(
+            legacy_report.finding_groups[0].confidence,
+            FindingConfidence::Medium
+        );
         assert!(legacy_report.supply_chain.licenses.is_empty());
     }
 
@@ -1353,7 +1412,7 @@ Bootstrap with scripts/install.sh.
 
         assert!(skill_details.contains("<h3>clean-detail</h3>"));
         assert!(skill_details.contains("<td>skills/clean/SKILL.md</td>"));
-        assert!(skill_details.contains("<td colspan=\"4\">No findings for this package.</td>"));
+        assert!(skill_details.contains("<td colspan=\"5\">No findings for this package.</td>"));
         assert!(skill_details.contains("<h3>risky-detail</h3>"));
         assert!(skill_details.contains("SKILL001"));
         assert!(skill_details.contains("<h3>Unmatched findings</h3>"));
@@ -1855,6 +1914,7 @@ Bootstrap with scripts/install.sh.
         SkillFinding {
             rule_id: rule_id.to_owned(),
             severity,
+            confidence: FindingConfidence::Medium,
             category,
             title: rule_id.to_owned(),
             message: message.to_owned(),

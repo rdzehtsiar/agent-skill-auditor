@@ -14,8 +14,8 @@ pub fn report_matches_fail_on(report: &ScanReport, fail_on: &[Severity]) -> bool
 mod tests {
     use super::*;
     use crate::model::{
-        CompatibilityMatrix, FindingCategory, FindingLocation, ScanSummary, SkillFinding,
-        SupplyChainInventory, SuppressedFinding, SuppressionMatch,
+        CompatibilityMatrix, FindingCategory, FindingConfidence, FindingLocation, ScanSummary,
+        SkillFinding, SupplyChainInventory, SuppressedFinding, SuppressionMatch,
     };
 
     #[test]
@@ -129,6 +129,7 @@ mod tests {
         SkillFinding {
             rule_id: rule_id.to_owned(),
             severity,
+            confidence: FindingConfidence::Medium,
             category: FindingCategory::Spec,
             title: "Fixture finding".to_owned(),
             message: "Fixture finding message.".to_owned(),

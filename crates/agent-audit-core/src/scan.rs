@@ -9,12 +9,12 @@ use crate::discovery::discover_skill_manifests;
 use crate::error::{AuditError, AuditResult};
 use crate::license_inventory::{inventory_license_files, inventory_manifest_license};
 use crate::model::{
-    build_finding_groups, BinaryArtifactKind, CompatibilityMatrix, ExternalUrlKind, LicenseScope,
-    PackageManagerKind, PermissionEvidenceKind, PermissionKind, RemoteDependencyKind, ScanReport,
-    ScanSummary, SkillArtifactKind, SkillCompatibilityRow, SkillFile, SkillFileKind, SkillFinding,
-    SkillGraph, SkillManifest, SkillPackage, SkillReference, SupplyChainInventory,
-    SupplyChainSourceKind, SuppressedFinding, SuppressionMatch, TrustManifest,
-    TrustManifestDiagnostic, TrustManifestDiagnosticKind,
+    build_finding_groups, BinaryArtifactKind, CompatibilityMatrix, ExternalUrlKind,
+    FindingConfidence, LicenseScope, PackageManagerKind, PermissionEvidenceKind, PermissionKind,
+    RemoteDependencyKind, ScanReport, ScanSummary, SkillArtifactKind, SkillCompatibilityRow,
+    SkillFile, SkillFileKind, SkillFinding, SkillGraph, SkillManifest, SkillPackage,
+    SkillReference, SupplyChainInventory, SupplyChainSourceKind, SuppressedFinding,
+    SuppressionMatch, TrustManifest, TrustManifestDiagnostic, TrustManifestDiagnosticKind,
 };
 use crate::offline_readiness::populate_offline_readiness;
 use crate::package_inventory::{
@@ -35,18 +35,18 @@ use agent_audit_rules::{
     active_rule_metadata, evaluate_package_install_rules, evaluate_security_signal_rules,
     evaluate_structural_rules, evaluate_supply_chain_rules, rule_counts_as_broken_reference,
     rule_counts_as_invalid_manifest, EvaluatedRuleFinding, RuleCategory as RegistryCategory,
-    RuleFrontmatterFieldFact, RuleMalformedFrontmatterFact, RuleManifestFacts, RulePackageFacts,
-    RulePackageFileFact, RulePackageInstallContext, RuleParsedManifestFacts, RuleReferenceFact,
-    RuleSeverity as RegistrySeverity, RuleSupplyChainBinaryFact, RuleSupplyChainBinaryKind,
-    RuleSupplyChainChecksumFact, RuleSupplyChainFacts, RuleSupplyChainLicenseFact,
-    RuleSupplyChainLicenseScope, RuleSupplyChainLockfileFact, RuleSupplyChainPackageFact,
-    RuleSupplyChainPackageManagerFact, RuleSupplyChainPackageManagerKind,
-    RuleSupplyChainPermissionEvidenceKind, RuleSupplyChainPermissionFact,
-    RuleSupplyChainPermissionKind, RuleSupplyChainPolicy as RulePolicy,
-    RuleSupplyChainRemoteDependencyFact, RuleSupplyChainRemoteDependencyKind,
-    RuleSupplyChainSourceKind, RuleSupplyChainTrustManifestDiagnosticFact,
-    RuleSupplyChainTrustManifestDiagnosticKind, RuleSupplyChainTrustManifestFact,
-    RuleSupplyChainUrlFact, RuleSupplyChainUrlKind,
+    RuleFrontmatterFieldFact, RuleId, RuleMalformedFrontmatterFact, RuleManifestFacts,
+    RulePackageFacts, RulePackageFileFact, RulePackageInstallContext, RuleParsedManifestFacts,
+    RuleReferenceFact, RuleSeverity as RegistrySeverity, RuleSupplyChainBinaryFact,
+    RuleSupplyChainBinaryKind, RuleSupplyChainChecksumFact, RuleSupplyChainFacts,
+    RuleSupplyChainLicenseFact, RuleSupplyChainLicenseScope, RuleSupplyChainLockfileFact,
+    RuleSupplyChainPackageFact, RuleSupplyChainPackageManagerFact,
+    RuleSupplyChainPackageManagerKind, RuleSupplyChainPermissionEvidenceKind,
+    RuleSupplyChainPermissionFact, RuleSupplyChainPermissionKind,
+    RuleSupplyChainPolicy as RulePolicy, RuleSupplyChainRemoteDependencyFact,
+    RuleSupplyChainRemoteDependencyKind, RuleSupplyChainSourceKind,
+    RuleSupplyChainTrustManifestDiagnosticFact, RuleSupplyChainTrustManifestDiagnosticKind,
+    RuleSupplyChainTrustManifestFact, RuleSupplyChainUrlFact, RuleSupplyChainUrlKind,
 };
 use agent_audit_security::{
     analyze_instruction_security_text, classify_security_artifact, javascript_security_analyzer,
@@ -946,6 +946,7 @@ fn compatibility_finding(
     SkillFinding {
         rule_id: metadata.id.as_str().to_owned(),
         severity: severity_from_metadata(metadata.severity),
+        confidence: FindingConfidence::Medium,
         category: category_from_metadata(metadata.category),
         title: metadata.title.to_owned(),
         message,
@@ -1090,6 +1091,7 @@ fn skill_finding_from_evaluated_rule(finding: EvaluatedRuleFinding) -> SkillFind
     SkillFinding {
         rule_id: metadata.id.as_str().to_owned(),
         severity: severity_from_metadata(metadata.severity),
+        confidence: finding_confidence_from_rule_id(finding.rule_id),
         category: category_from_metadata(metadata.category),
         title: metadata.title.to_owned(),
         message: finding.message,
@@ -1100,6 +1102,38 @@ fn skill_finding_from_evaluated_rule(finding: EvaluatedRuleFinding) -> SkillFind
         rationale: metadata.rationale.to_owned(),
         remediation: metadata.remediation.to_owned(),
         suppression: metadata.suppression_guidance.to_owned(),
+    }
+}
+
+fn finding_confidence_from_rule_id(rule_id: RuleId) -> FindingConfidence {
+    match rule_id {
+        RuleId::Sec001
+        | RuleId::Skill001
+        | RuleId::Skill002
+        | RuleId::Skill010
+        | RuleId::Skill020
+        | RuleId::Skill030
+        | RuleId::Skill040
+        | RuleId::Skill041
+        | RuleId::Supply012 => FindingConfidence::High,
+        RuleId::Sec011 | RuleId::Sec012 => FindingConfidence::Medium,
+        RuleId::Sec002
+        | RuleId::Sec003
+        | RuleId::Sec007
+        | RuleId::Sec009
+        | RuleId::Skill050
+        | RuleId::Supply001
+        | RuleId::Supply002
+        | RuleId::Supply003
+        | RuleId::Supply004
+        | RuleId::Supply005
+        | RuleId::Supply006
+        | RuleId::Supply007
+        | RuleId::Supply009
+        | RuleId::Supply011 => FindingConfidence::Medium,
+        RuleId::Sec004 | RuleId::Sec005 | RuleId::Sec006 | RuleId::Sec008 | RuleId::Sec010 => {
+            FindingConfidence::Medium
+        }
     }
 }
 
@@ -1634,7 +1668,7 @@ mod tests {
     use crate::test_support::TestWorkspace;
     use agent_audit_hosts::{CompatibilityStatus, HOST_PROFILES};
     use agent_audit_rules::{
-        rule_metadata, RuleCategory as RegistryCategory, RuleSeverity as RegistrySeverity,
+        rule_metadata, RuleCategory as RegistryCategory, RuleId, RuleSeverity as RegistrySeverity,
         ACTIVE_RULE_IDS,
     };
     use std::io::ErrorKind;
@@ -4147,7 +4181,8 @@ Read [parent](../outside.md), [absolute](/outside.md), and [windows](C:/outside.
     fn scan_security_prompt_injection_fixture_emits_sec011() {
         let report = scan_security_fixture("prompt-injection");
 
-        assert_security_finding(&report, "SEC011", "SKILL.md", Some(8));
+        let finding = assert_security_finding(&report, "SEC011", "SKILL.md", Some(8));
+        assert_eq!(finding.confidence, FindingConfidence::Medium);
     }
 
     #[test]
@@ -4159,8 +4194,37 @@ Read [parent](../outside.md), [absolute](/outside.md), and [windows](C:/outside.
         ] {
             let report = scan_security_fixture(fixture);
 
-            assert_security_finding(&report, "SEC012", "SKILL.md", None);
+            let finding = assert_security_finding(&report, "SEC012", "SKILL.md", None);
+            assert_eq!(finding.confidence, FindingConfidence::Medium);
         }
+    }
+
+    #[test]
+    fn scan_maps_representative_finding_confidence_conservatively() {
+        assert_eq!(
+            finding_confidence_from_rule_id(RuleId::Sec001),
+            FindingConfidence::High
+        );
+        assert_eq!(
+            finding_confidence_from_rule_id(RuleId::Skill041),
+            FindingConfidence::High
+        );
+        assert_eq!(
+            finding_confidence_from_rule_id(RuleId::Sec011),
+            FindingConfidence::Medium
+        );
+        assert_eq!(
+            finding_confidence_from_rule_id(RuleId::Sec012),
+            FindingConfidence::Medium
+        );
+        assert_eq!(
+            finding_confidence_from_rule_id(RuleId::Supply005),
+            FindingConfidence::Medium
+        );
+        assert_eq!(
+            finding_confidence_from_rule_id(RuleId::Supply012),
+            FindingConfidence::High
+        );
     }
 
     #[test]
@@ -6895,21 +6959,26 @@ Run scripts/install.sh during setup.
             .unwrap_or_else(|error| panic!("scan security fixture {relative_path}: {error}"))
     }
 
-    fn assert_security_finding(
-        report: &ScanReport,
+    fn assert_security_finding<'a>(
+        report: &'a ScanReport,
         rule_id: &str,
         path: &str,
         line: Option<usize>,
-    ) {
-        assert!(
-            report.findings.iter().any(|finding| {
+    ) -> &'a SkillFinding {
+        report
+            .findings
+            .iter()
+            .find(|finding| {
                 finding.rule_id == rule_id
                     && finding.category == FindingCategory::Security
                     && finding.location.path == path
                     && line.is_none_or(|expected| finding.location.line == Some(expected))
-            }),
-            "missing {rule_id} finding in report: {:#?}",
-            report.findings
-        );
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "missing {rule_id} finding in report: {:#?}",
+                    report.findings
+                )
+            })
     }
 }

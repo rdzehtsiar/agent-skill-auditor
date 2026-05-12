@@ -43,6 +43,7 @@
     {
       "rule_id": "SUPPLY003",
       "severity": "medium",
+      "confidence": "medium",
       "category": "reproducibility",
       "title": "Install command without matching lockfile",
       "message": "The skill runs a npm install command without matching lockfile evidence, so dependency resolution may change between audits.",
@@ -57,6 +58,7 @@
     {
       "rule_id": "SUPPLY004",
       "severity": "medium",
+      "confidence": "medium",
       "category": "reproducibility",
       "title": "Unpinned package dependency",
       "message": "The package dependency `npm:left-pad` is not pinned to an exact version, so future installs may resolve different code.",
@@ -73,6 +75,7 @@
     {
       "rule_id": "SUPPLY003",
       "severity": "medium",
+      "confidence": "medium",
       "category": "reproducibility",
       "title": "Install command without matching lockfile",
       "rationale": "Package installation without a matching lockfile can resolve different dependency graphs over time and weakens reproducible offline review.",
@@ -101,6 +104,7 @@
     {
       "rule_id": "SUPPLY004",
       "severity": "medium",
+      "confidence": "medium",
       "category": "reproducibility",
       "title": "Unpinned package dependency",
       "rationale": "Unpinned package versions can change without a skill package change, making audits less reproducible and increasing supply-chain risk.",
@@ -129,6 +133,7 @@
       "finding": {
         "rule_id": "SEC009",
         "severity": "low",
+        "confidence": "medium",
         "category": "security",
         "title": "Package install without lockfile",
         "message": "The artifact runs a JavaScript package install without nearby lockfile or exact version pinning evidence. This can make installs resolve different packages over time and increases reproducibility and supply-chain risk.",

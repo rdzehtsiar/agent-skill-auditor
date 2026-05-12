@@ -995,6 +995,7 @@
     {
       "rule_id": "SKILL010",
       "severity": "low",
+      "confidence": "high",
       "category": "spec",
       "title": "Broken relative reference",
       "message": "The manifest references `references/playbook.md`, but the file was not found.",
@@ -1009,6 +1010,7 @@
     {
       "rule_id": "SKILL002",
       "severity": "low",
+      "confidence": "high",
       "category": "spec",
       "title": "Missing skill description",
       "message": "The skill manifest does not declare a description.",
@@ -1023,6 +1025,7 @@
     {
       "rule_id": "SKILL030",
       "severity": "low",
+      "confidence": "high",
       "category": "compatibility",
       "title": "Duplicate skill name",
       "message": "The skill name `corpus-host-duplicate` is also declared by other manifest path(s): `.claude/skills/duplicate-b/SKILL.md`.",
@@ -1037,6 +1040,7 @@
     {
       "rule_id": "SKILL030",
       "severity": "low",
+      "confidence": "high",
       "category": "compatibility",
       "title": "Duplicate skill name",
       "message": "The skill name `corpus-host-duplicate` is also declared by other manifest path(s): `.claude/skills/duplicate-a/SKILL.md`.",
@@ -1051,6 +1055,7 @@
     {
       "rule_id": "SKILL040",
       "severity": "low",
+      "confidence": "high",
       "category": "compatibility",
       "title": "Unknown frontmatter field",
       "message": "The manifest declares unsupported frontmatter field `host`.",
@@ -1065,6 +1070,7 @@
     {
       "rule_id": "SKILL010",
       "severity": "low",
+      "confidence": "high",
       "category": "spec",
       "title": "Broken relative reference",
       "message": "The manifest references `references/release.md`, but the file was not found.",
@@ -1079,6 +1085,7 @@
     {
       "rule_id": "SKILL001",
       "severity": "low",
+      "confidence": "high",
       "category": "spec",
       "title": "Missing skill name",
       "message": "The skill manifest does not declare a name.",
@@ -1093,6 +1100,7 @@
     {
       "rule_id": "SKILL010",
       "severity": "low",
+      "confidence": "high",
       "category": "spec",
       "title": "Broken relative reference",
       "message": "The manifest references `references/missing-guide.md`, but the file was not found.",
@@ -1107,6 +1115,7 @@
     {
       "rule_id": "SKILL030",
       "severity": "low",
+      "confidence": "high",
       "category": "compatibility",
       "title": "Duplicate skill name",
       "message": "The skill name `corpus-duplicate` is also declared by other manifest path(s): `generic/duplicate-b/SKILL.md`.",
@@ -1121,6 +1130,7 @@
     {
       "rule_id": "SKILL030",
       "severity": "low",
+      "confidence": "high",
       "category": "compatibility",
       "title": "Duplicate skill name",
       "message": "The skill name `corpus-duplicate` is also declared by other manifest path(s): `generic/duplicate-a/SKILL.md`.",
@@ -1135,6 +1145,7 @@
     {
       "rule_id": "SKILL002",
       "severity": "low",
+      "confidence": "high",
       "category": "spec",
       "title": "Missing skill description",
       "message": "The skill manifest does not declare a description.",
@@ -1149,6 +1160,7 @@
     {
       "rule_id": "SKILL001",
       "severity": "low",
+      "confidence": "high",
       "category": "spec",
       "title": "Missing skill name",
       "message": "The skill manifest does not declare a name.",
@@ -1163,6 +1175,7 @@
     {
       "rule_id": "SKILL040",
       "severity": "low",
+      "confidence": "high",
       "category": "compatibility",
       "title": "Unknown frontmatter field",
       "message": "The manifest declares unsupported frontmatter field `x-owner`.",
@@ -1177,6 +1190,7 @@
     {
       "rule_id": "SKILL001",
       "severity": "low",
+      "confidence": "high",
       "category": "spec",
       "title": "Missing skill name",
       "message": "The skill manifest does not declare a name.",
@@ -1191,6 +1205,7 @@
     {
       "rule_id": "SKILL040",
       "severity": "low",
+      "confidence": "high",
       "category": "compatibility",
       "title": "Unknown frontmatter field",
       "message": "The manifest declares unsupported frontmatter field `owner`.",
@@ -1205,6 +1220,7 @@
     {
       "rule_id": "SKILL010",
       "severity": "low",
+      "confidence": "high",
       "category": "spec",
       "title": "Broken relative reference",
       "message": "The manifest references `references/checklist.md`, but the file was not found.",
@@ -1221,6 +1237,7 @@
     {
       "rule_id": "SKILL001",
       "severity": "low",
+      "confidence": "high",
       "category": "spec",
       "title": "Missing skill name",
       "rationale": "Skills without stable names are hard to inventory and compare across hosts.",
@@ -1264,6 +1281,7 @@
     {
       "rule_id": "SKILL002",
       "severity": "low",
+      "confidence": "high",
       "category": "spec",
       "title": "Missing skill description",
       "rationale": "Reviewers and host profiles need a concise behavior statement for the skill.",
@@ -1299,6 +1317,7 @@
     {
       "rule_id": "SKILL010",
       "severity": "low",
+      "confidence": "high",
       "category": "spec",
       "title": "Broken relative reference",
       "rationale": "Broken references can make a skill behave differently than documented or fail at runtime.",
@@ -1343,6 +1362,7 @@
     {
       "rule_id": "SKILL030",
       "severity": "low",
+      "confidence": "high",
       "category": "compatibility",
       "title": "Duplicate skill name",
       "rationale": "Duplicate names make inventory, policy, host routing, and review ambiguous.",
@@ -1387,6 +1407,7 @@
     {
       "rule_id": "SKILL040",
       "severity": "low",
+      "confidence": "high",
       "category": "compatibility",
       "title": "Unknown frontmatter field",
       "rationale": "Unknown fields may be ignored, rejected, or interpreted differently by hosts, reducing portability and reviewability.",
@@ -1415,6 +1436,7 @@
     {
       "rule_id": "SKILL040",
       "severity": "low",
+      "confidence": "high",
       "category": "compatibility",
       "title": "Unknown frontmatter field",
       "rationale": "Unknown fields may be ignored, rejected, or interpreted differently by hosts, reducing portability and reviewability.",
@@ -1443,6 +1465,7 @@
     {
       "rule_id": "SKILL040",
       "severity": "low",
+      "confidence": "high",
       "category": "compatibility",
       "title": "Unknown frontmatter field",
       "rationale": "Unknown fields may be ignored, rejected, or interpreted differently by hosts, reducing portability and reviewability.",

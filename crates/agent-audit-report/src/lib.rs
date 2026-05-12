@@ -7,8 +7,8 @@ use std::fmt;
 use std::str::FromStr;
 
 use agent_audit_core::{
-    build_finding_groups, CompatibilityMatrix, ExternalUrl, FindingCategory, FindingGroup,
-    OfflineReadinessStatus, PermissionEvidence, PermissionKind, ScanReport, Severity,
+    build_finding_groups, CompatibilityMatrix, ExternalUrl, FindingCategory, FindingConfidence,
+    FindingGroup, OfflineReadinessStatus, PermissionEvidence, PermissionKind, ScanReport, Severity,
     SkillCompatibilityRow, SkillFinding, SkillPackage, SupplyChainInventory,
 };
 use agent_audit_rules::{active_rule_metadata, RuleMetadata, RuleSeverity};
@@ -201,9 +201,10 @@ fn render_default_summary(report: &ScanReport) -> String {
 
         for group in finding_groups.iter() {
             lines.push(format!(
-                "{} [{}/{}] x{} packages={}{}: {}",
+                "{} [{}/{}/{}] x{} packages={}{}: {}",
                 group.rule_id,
                 severity_name(group.severity),
+                confidence_name(group.confidence),
                 category_name(group.category),
                 group.finding_count,
                 group.affected_package_count,
@@ -293,9 +294,10 @@ fn render_ci_summary(report: &ScanReport) -> String {
         lines.push("Top finding groups:".to_owned());
         for group in top_groups {
             lines.push(format!(
-                "{} [{}/{}] x{} packages={}: {}",
+                "{} [{}/{}/{}] x{} packages={}: {}",
                 group.rule_id,
                 severity_name(group.severity),
+                confidence_name(group.confidence),
                 category_name(group.category),
                 group.finding_count,
                 group.affected_package_count,
@@ -340,8 +342,9 @@ fn extend_research_finding_groups_summary(lines: &mut Vec<String>, report: &Scan
     lines.push("Finding groups:".to_owned());
     for group in finding_groups.iter() {
         lines.push(format!(
-            "{} normalized_key={} evidence_key={} dimensions={} count={} affected_packages={}: {}",
+            "{} confidence={} normalized_key={} evidence_key={} dimensions={} count={} affected_packages={}: {}",
             group.rule_id,
+            confidence_name(group.confidence),
             finding_group_normalized_key(group),
             group.evidence_key,
             summary_group_dimensions(group),
@@ -375,9 +378,10 @@ fn extend_full_findings_summary(
     lines.push("Full findings:".to_owned());
     for finding in findings {
         lines.push(format!(
-            "{} [{}/{}] {}: {}",
+            "{} [{}/{}/{}] {}: {}",
             finding.rule_id,
             severity_name(finding.severity),
+            confidence_name(finding.confidence),
             category_name(finding.category),
             location_display(&finding.location.path, finding.location.line),
             finding.title
@@ -919,15 +923,17 @@ fn extend_html_ci_summary(
     }
     html.push_str("</tbody></table>");
 
-    html.push_str("<h3>Top Finding Groups</h3><table><thead><tr><th>Rule</th><th>Severity</th><th>Category</th><th>Findings</th><th>Affected packages</th><th>Title</th></tr></thead><tbody>");
+    html.push_str("<h3>Top Finding Groups</h3><table><thead><tr><th>Rule</th><th>Severity</th><th>Confidence</th><th>Category</th><th>Findings</th><th>Affected packages</th><th>Title</th></tr></thead><tbody>");
     if top_groups.is_empty() {
-        html.push_str("<tr><td colspan=\"6\">No findings.</td></tr>");
+        html.push_str("<tr><td colspan=\"7\">No findings.</td></tr>");
     }
     for group in top_groups {
         html.push_str("<tr><td>");
         html.push_str(&escape_html(&group.rule_id));
         html.push_str("</td><td>");
         html.push_str(&html_severity(severity_name(group.severity)));
+        html.push_str("</td><td>");
+        html.push_str(confidence_name(group.confidence));
         html.push_str("</td><td>");
         html.push_str(category_name(group.category));
         html.push_str("</td><td>");
@@ -1191,10 +1197,10 @@ fn extend_html_findings(html: &mut String, report: &ScanReport) {
     let finding_groups = effective_finding_groups(report);
 
     html.push_str(
-        "<section aria-labelledby=\"findings\"><h2 id=\"findings\">Finding Groups</h2><table><thead><tr><th>Rule</th><th>Severity</th><th>Category</th><th>Findings</th><th>Affected packages</th><th>Evidence</th><th>Dimensions</th><th>Samples</th><th>Title</th><th>Why it matters</th><th>How to fix</th><th>Suppression</th></tr></thead><tbody>",
+        "<section aria-labelledby=\"findings\"><h2 id=\"findings\">Finding Groups</h2><table><thead><tr><th>Rule</th><th>Severity</th><th>Confidence</th><th>Category</th><th>Findings</th><th>Affected packages</th><th>Evidence</th><th>Dimensions</th><th>Samples</th><th>Title</th><th>Why it matters</th><th>How to fix</th><th>Suppression</th></tr></thead><tbody>",
     );
     if finding_groups.is_empty() {
-        html.push_str("<tr><td colspan=\"12\">No findings.</td></tr>");
+        html.push_str("<tr><td colspan=\"13\">No findings.</td></tr>");
     }
     for group in finding_groups.iter() {
         extend_html_finding_group_row(html, group);
@@ -1219,7 +1225,7 @@ fn extend_html_full_findings(html: &mut String, report: &ScanReport, include_res
     } else {
         ""
     };
-    let colspan = if include_research_keys { 10 } else { 9 };
+    let colspan = if include_research_keys { 11 } else { 10 };
 
     html.push_str("<section aria-labelledby=\"");
     html.push_str(heading_id);
@@ -1229,7 +1235,7 @@ fn extend_html_full_findings(html: &mut String, report: &ScanReport, include_res
     html.push_str(heading);
     html.push_str("</h2><table><thead><tr>");
     html.push_str(key_header);
-    html.push_str("<th>Rule</th><th>Severity</th><th>Category</th><th>Location</th><th>Title</th><th>Message</th><th>Why it matters</th><th>How to fix</th><th>Suppression</th></tr></thead><tbody>");
+    html.push_str("<th>Rule</th><th>Severity</th><th>Confidence</th><th>Category</th><th>Location</th><th>Title</th><th>Message</th><th>Why it matters</th><th>How to fix</th><th>Suppression</th></tr></thead><tbody>");
     if findings.is_empty() {
         html.push_str(&format!(
             "<tr><td colspan=\"{colspan}\">No findings.</td></tr>"
@@ -1246,6 +1252,8 @@ fn extend_html_full_findings(html: &mut String, report: &ScanReport, include_res
         html.push_str(&escape_html(&finding.rule_id));
         html.push_str("</td><td>");
         html.push_str(&html_severity(severity_name(finding.severity)));
+        html.push_str("</td><td>");
+        html.push_str(confidence_name(finding.confidence));
         html.push_str("</td><td>");
         html.push_str(category_name(finding.category));
         html.push_str("</td><td>");
@@ -1273,6 +1281,8 @@ fn extend_html_finding_group_row(html: &mut String, group: &FindingGroup) {
     html.push_str(&escape_html(&group.rule_id));
     html.push_str("</td><td>");
     html.push_str(&html_severity(severity_name(group.severity)));
+    html.push_str("</td><td>");
+    html.push_str(confidence_name(group.confidence));
     html.push_str("</td><td>");
     html.push_str(category_name(group.category));
     html.push_str("</td><td>");
@@ -1365,12 +1375,12 @@ fn extend_html_skill_details(
 
         let include_details = matches!(mode, ReportMode::Verbose | ReportMode::Research);
         if include_details {
-            html.push_str("<table><thead><tr><th>Rule</th><th>Severity</th><th>Location</th><th>Message</th><th>Why it matters</th><th>How to fix</th><th>Suppression</th></tr></thead><tbody>");
+            html.push_str("<table><thead><tr><th>Rule</th><th>Severity</th><th>Confidence</th><th>Location</th><th>Message</th><th>Why it matters</th><th>How to fix</th><th>Suppression</th></tr></thead><tbody>");
         } else {
-            html.push_str("<table><thead><tr><th>Rule</th><th>Severity</th><th>Location</th><th>Message</th></tr></thead><tbody>");
+            html.push_str("<table><thead><tr><th>Rule</th><th>Severity</th><th>Confidence</th><th>Location</th><th>Message</th></tr></thead><tbody>");
         }
         if group.findings.is_empty() {
-            let colspan = if include_details { 7 } else { 4 };
+            let colspan = if include_details { 8 } else { 5 };
             html.push_str(&format!(
                 "<tr><td colspan=\"{colspan}\">No findings for this package.</td></tr>"
             ));
@@ -1380,6 +1390,8 @@ fn extend_html_skill_details(
             html.push_str(&escape_html(&finding.rule_id));
             html.push_str("</td><td>");
             html.push_str(&html_severity(severity_name(finding.severity)));
+            html.push_str("</td><td>");
+            html.push_str(confidence_name(finding.confidence));
             html.push_str("</td><td>");
             html.push_str(&escape_html(&location_display(
                 &finding.location.path,
@@ -2222,6 +2234,7 @@ fn sarif_results(
             };
             let mut properties = json!({
                 "agentAuditSeverity": severity_name(finding.severity),
+                "agentAuditConfidence": confidence_name(finding.confidence),
                 "category": category_name(finding.category)
             });
 
@@ -2319,6 +2332,14 @@ fn severity_name(severity: Severity) -> &'static str {
     }
 }
 
+fn confidence_name(confidence: FindingConfidence) -> &'static str {
+    match confidence {
+        FindingConfidence::Low => "low",
+        FindingConfidence::Medium => "medium",
+        FindingConfidence::High => "high",
+    }
+}
+
 fn category_name(category: FindingCategory) -> &'static str {
     match category {
         FindingCategory::Spec => "spec",
@@ -2335,8 +2356,9 @@ mod tests {
     use super::*;
     use agent_audit_core::model::ScanSummary;
     use agent_audit_core::{
-        build_finding_groups, FindingLocation, SkillFinding, SkillGraph, SkillManifest,
-        SkillPackage, SkillReference, SupplyChainInventory, SuppressedFinding, SuppressionMatch,
+        build_finding_groups, FindingConfidence, FindingLocation, SkillFinding, SkillGraph,
+        SkillManifest, SkillPackage, SkillReference, SupplyChainInventory, SuppressedFinding,
+        SuppressionMatch,
     };
     use std::collections::BTreeMap;
     use std::path::Path;
@@ -2967,7 +2989,7 @@ mod tests {
 
         assert!(summary.contains("Findings: 1"));
         assert!(summary.contains("Finding groups:\n"));
-        assert!(summary.contains("SKILL001 [low/spec] x1 packages=1"));
+        assert!(summary.contains("SKILL001 [low/medium/spec] x1 packages=1"));
         assert!(summary.contains("sample: skills/review/SKILL.md:1"));
         assert!(!summary.contains("\nNo findings."));
     }
@@ -3257,9 +3279,9 @@ mod tests {
                 "Permissions: 1 evidence, 1 conflicts",
                 "Offline readiness: ready=0 partial=1 not-ready=1 unknown=0",
                 "Finding groups:",
-                "SUPPLY003 [medium/reproducibility] x1 packages=0 command_pattern=npm install package_manager=npm: Install command without matching lockfile",
+                "SUPPLY003 [medium/medium/reproducibility] x1 packages=0 command_pattern=npm install package_manager=npm: Install command without matching lockfile",
                 "sample: scripts/install.sh:2: npm install is not paired with a lockfile.",
-                "SUPPLY009 [medium/security] x1 packages=0 evidence=network access conflicts with declared permissions: Observed permission conflicts with trust manifest",
+                "SUPPLY009 [medium/medium/security] x1 packages=0 evidence=network access conflicts with declared permissions: Observed permission conflicts with trust manifest",
                 "sample: scripts/upload.sh:4: Network access conflicts with declared permissions.",
             ],
         );
@@ -3436,13 +3458,13 @@ mod tests {
             &summary,
             &[
                 "Finding groups:",
-                "SEC005 [high/security] x1 packages=0 evidence=line two: Use of sudo",
+                "SEC005 [high/medium/security] x1 packages=0 evidence=line two: Use of sudo",
                 "sample: alpha/SKILL.md:2: Line two.",
-                "SKILL001 [info/quality] x1 packages=0 evidence=line one: Missing skill name",
+                "SKILL001 [info/medium/quality] x1 packages=0 evidence=line one: Missing skill name",
                 "sample: alpha/SKILL.md:1: Line one.",
-                "SKILL010 [low/compatibility] x1 packages=0 evidence=no line sorts before line: Broken relative reference",
+                "SKILL010 [low/medium/compatibility] x1 packages=0 evidence=no line sorts before line: Broken relative reference",
                 "sample: alpha/SKILL.md: No line sorts before line.",
-                "SKILL020 [medium/spec] x1 packages=0 evidence=later path: Oversized skill manifest",
+                "SKILL020 [medium/medium/spec] x1 packages=0 evidence=later path: Oversized skill manifest",
                 "sample: zeta/SKILL.md:1: Later path.",
             ],
         );
@@ -3505,7 +3527,7 @@ mod tests {
         assert!(summary.contains("Severity totals: critical=0 high=0 medium=4 low=0 info=0"));
         assert!(summary.contains("Category totals: spec=0 compatibility=0 security=4 quality=0 portability=0 reproducibility=0"));
         assert!(summary.contains("Top finding groups:"));
-        assert!(summary.contains("SEC009 [medium/security] x4 packages=4"));
+        assert!(summary.contains("SEC009 [medium/medium/security] x4 packages=4"));
         assert!(!summary.contains("sample:"));
         assert!(!summary.contains("Full findings:"));
         assert!(!summary.contains("Supply chain:"));
@@ -3721,7 +3743,7 @@ mod tests {
         let html = render_html(&report);
 
         assert!(html.contains("<tr><td colspan=\"4\">No packages discovered.</td></tr>"));
-        assert!(html.contains("<tr><td colspan=\"12\">No findings.</td></tr>"));
+        assert!(html.contains("<tr><td colspan=\"13\">No findings.</td></tr>"));
         assert!(!html.contains("<h2 id=\"compatibility\">Compatibility</h2>"));
     }
 
@@ -4297,7 +4319,7 @@ mod tests {
         assert!(html.contains("<section class=\"skill-detail\" id=\"skill-detail-1\">"));
         assert!(html.contains("<h3>clean</h3>"));
         assert!(html.contains("<tr><th>Anchor</th><td>skill-detail-1</td></tr>"));
-        assert!(html.contains("<td colspan=\"4\">No findings for this package.</td>"));
+        assert!(html.contains("<td colspan=\"5\">No findings for this package.</td>"));
         assert!(html.contains("<section class=\"skill-detail\" id=\"skill-detail-2\">"));
         assert!(html.contains("<h3>review</h3>"));
         assert!(html.contains("<tr><th>Anchor</th><td>skill-detail-2</td></tr>"));
@@ -4327,7 +4349,7 @@ mod tests {
         assert!(
             html.contains("skills/review/SKILL.md:1: The skill manifest does not declare a name.")
         );
-        assert!(!html.contains("<td colspan=\"12\">No findings.</td>"));
+        assert!(!html.contains("<td colspan=\"13\">No findings.</td>"));
     }
 
     #[test]
@@ -4653,6 +4675,7 @@ mod tests {
         );
         assert_eq!(result["level"], "error");
         assert_eq!(result["properties"]["agentAuditSeverity"], "high");
+        assert_eq!(result["properties"]["agentAuditConfidence"], "medium");
         assert_eq!(result["properties"]["category"], "security");
     }
 
@@ -4696,6 +4719,7 @@ mod tests {
             12
         );
         assert_eq!(result["properties"]["agentAuditSeverity"], "high");
+        assert_eq!(result["properties"]["agentAuditConfidence"], "medium");
         assert_eq!(result["properties"]["category"], "security");
     }
 
@@ -5411,6 +5435,7 @@ mod tests {
         SkillFinding {
             rule_id: rule_id.to_owned(),
             severity,
+            confidence: FindingConfidence::Medium,
             category,
             title: title.to_owned(),
             message: message.to_owned(),

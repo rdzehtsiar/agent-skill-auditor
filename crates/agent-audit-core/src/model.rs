@@ -577,6 +577,8 @@ pub struct MarkdownCodeBlock {
 pub struct SkillFinding {
     pub rule_id: String,
     pub severity: Severity,
+    #[serde(default)]
+    pub confidence: FindingConfidence,
     pub category: FindingCategory,
     pub title: String,
     pub message: String,
@@ -596,6 +598,8 @@ pub struct FindingLocation {
 pub struct FindingGroup {
     pub rule_id: String,
     pub severity: Severity,
+    #[serde(default)]
+    pub confidence: FindingConfidence,
     pub category: FindingCategory,
     pub title: String,
     pub rationale: String,
@@ -638,6 +642,15 @@ pub enum Severity {
     Critical,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FindingConfidence {
+    Low,
+    #[default]
+    Medium,
+    High,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum FindingCategory {
@@ -667,6 +680,7 @@ pub fn build_finding_groups(
             rule_id: finding.rule_id.clone(),
             evidence_key: evidence_key.clone(),
             severity: finding.severity,
+            confidence: finding.confidence,
             category: finding.category,
             dimensions: dimensions.clone(),
         };
@@ -675,6 +689,7 @@ pub fn build_finding_groups(
             .or_insert_with(|| FindingGroupAccumulator {
                 rule_id: finding.rule_id.clone(),
                 severity: finding.severity,
+                confidence: finding.confidence,
                 category: finding.category,
                 title: finding.title.clone(),
                 rationale: finding.rationale.clone(),
@@ -713,6 +728,7 @@ struct FindingGroupKey {
     rule_id: String,
     evidence_key: String,
     severity: Severity,
+    confidence: FindingConfidence,
     category: FindingCategory,
     dimensions: BTreeMap<String, String>,
 }
@@ -721,6 +737,7 @@ struct FindingGroupKey {
 struct FindingGroupAccumulator {
     rule_id: String,
     severity: Severity,
+    confidence: FindingConfidence,
     category: FindingCategory,
     title: String,
     rationale: String,
@@ -740,6 +757,7 @@ impl FindingGroupAccumulator {
         FindingGroup {
             rule_id: self.rule_id,
             severity: self.severity,
+            confidence: self.confidence,
             category: self.category,
             title: self.title,
             rationale: self.rationale,
@@ -1374,6 +1392,40 @@ mod tests {
     }
 
     #[test]
+    fn finding_confidence_serializes_and_legacy_findings_default_to_medium() {
+        let finding = test_finding(
+            "SEC001",
+            Severity::High,
+            FindingCategory::Security,
+            "Remote content piped into shell",
+            "Remote content is piped directly into a shell.",
+            "scripts/install.sh",
+            Some(3),
+        );
+
+        let value = serde_json::to_value(&finding).expect("serialize finding");
+        assert_eq!(value["confidence"], "medium");
+
+        let legacy: SkillFinding = serde_json::from_value(serde_json::json!({
+            "rule_id": "SKILL001",
+            "severity": "low",
+            "category": "spec",
+            "title": "Missing skill name",
+            "message": "The skill manifest does not declare a name.",
+            "location": {
+                "path": "SKILL.md",
+                "line": 1
+            },
+            "rationale": "Skills without stable names are hard to inventory.",
+            "remediation": "Add a non-empty name.",
+            "suppression": "Suppress only with a documented reason."
+        }))
+        .expect("deserialize legacy finding");
+
+        assert_eq!(legacy.confidence, FindingConfidence::Medium);
+    }
+
+    #[test]
     fn finding_groups_order_deterministically_and_capture_inferable_dimensions() {
         let packages = vec![
             test_package("skills/beta", "skills/beta/SKILL.md", "beta"),
@@ -1407,6 +1459,7 @@ mod tests {
                 .iter()
                 .map(|group| (
                     group.rule_id.as_str(),
+                    group.confidence,
                     group.evidence_key.as_str(),
                     group.affected_package_count,
                     group.dimensions.clone()
@@ -1415,6 +1468,7 @@ mod tests {
             vec![
                 (
                     "SKILL050",
+                    FindingConfidence::Medium,
                     "frontmatter_field=permissions|host_profile=codex",
                     1,
                     BTreeMap::from([
@@ -1424,6 +1478,7 @@ mod tests {
                 ),
                 (
                     "SUPPLY003",
+                    FindingConfidence::Medium,
                     "command_pattern=npm install|package_manager=npm",
                     1,
                     BTreeMap::from([
@@ -1558,6 +1613,7 @@ mod tests {
         SkillFinding {
             rule_id: rule_id.to_owned(),
             severity,
+            confidence: FindingConfidence::Medium,
             category,
             title: title.to_owned(),
             message: message.to_owned(),

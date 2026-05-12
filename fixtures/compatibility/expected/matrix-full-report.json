@@ -201,6 +201,7 @@
     {
       "rule_id": "SKILL002",
       "severity": "low",
+      "confidence": "high",
       "category": "spec",
       "title": "Missing skill description",
       "message": "The skill manifest does not declare a description.",
@@ -215,6 +216,7 @@
     {
       "rule_id": "SKILL040",
       "severity": "low",
+      "confidence": "high",
       "category": "compatibility",
       "title": "Unknown frontmatter field",
       "message": "The manifest declares unsupported frontmatter field `owner`.",
@@ -231,6 +233,7 @@
     {
       "rule_id": "SKILL002",
       "severity": "low",
+      "confidence": "high",
       "category": "spec",
       "title": "Missing skill description",
       "rationale": "Reviewers and host profiles need a concise behavior statement for the skill.",
@@ -258,6 +261,7 @@
     {
       "rule_id": "SKILL040",
       "severity": "low",
+      "confidence": "high",
       "category": "compatibility",
       "title": "Unknown frontmatter field",
       "rationale": "Unknown fields may be ignored, rejected, or interpreted differently by hosts, reducing portability and reviewability.",

@@ -19,7 +19,7 @@
     "findings": {
       "type": "array",
       "items": {
-        "type": "object"
+        "$ref": "#/$defs/skillFinding"
       }
     },
     "finding_groups": {
@@ -962,6 +962,9 @@
         "severity": {
           "$ref": "#/$defs/severity"
         },
+        "confidence": {
+          "$ref": "#/$defs/findingConfidence"
+        },
         "category": {
           "$ref": "#/$defs/findingCategory"
         },
@@ -1009,6 +1012,53 @@
       },
       "additionalProperties": false
     },
+    "skillFinding": {
+      "type": "object",
+      "required": [
+        "rule_id",
+        "severity",
+        "category",
+        "title",
+        "message",
+        "location",
+        "rationale",
+        "remediation",
+        "suppression"
+      ],
+      "properties": {
+        "rule_id": {
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/severity"
+        },
+        "confidence": {
+          "$ref": "#/$defs/findingConfidence"
+        },
+        "category": {
+          "$ref": "#/$defs/findingCategory"
+        },
+        "title": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "location": {
+          "$ref": "#/$defs/findingLocation"
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "remediation": {
+          "type": "string"
+        },
+        "suppression": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "findingEvidenceSample": {
       "type": "object",
       "required": [
@@ -1049,6 +1099,14 @@
         "medium",
         "high",
         "critical"
+      ]
+    },
+    "findingConfidence": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high"
       ]
     },
     "findingCategory": {
