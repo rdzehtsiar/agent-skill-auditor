@@ -24,12 +24,12 @@ The same hook is also published as root hook metadata in this repository, so a r
 ```yaml
 repos:
   - repo: https://github.com/rdzehtsiar/agent-skill-auditor
-    rev: v0.6.0
+    rev: v0.7.0
     hooks:
       - id: agent-audit
 ```
 
-Pin `rev` to a release tag or commit that your project has reviewed. The hook still expects `agent-audit` to be available on `PATH`; it does not install the binary for you.
+Pin `rev` to a release tag or commit that your project has reviewed. Use `v0.7.0` only after that tag exists; until then, pin a reviewed commit or fork. The hook still expects `agent-audit` to be available on `PATH`; it does not install the binary for you.
 
 ## Policy
 

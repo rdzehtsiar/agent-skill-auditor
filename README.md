@@ -20,6 +20,8 @@ The v0.6.0 CLI can discover `SKILL.md` manifests, parse frontmatter and Markdown
 
 The v0.5.0 supply-chain capability reports local evidence for licenses, trust manifests, external URLs, remote dependencies, package manager files, lockfiles, executable and binary artifacts, checksums, observed permissions, and offline readiness. It does not contact repositories or registries, verify repository ownership, or prove that a remote source is trustworthy.
 
+The v0.7.0 integration work documents CI-ready install and workflow paths for local Cargo builds, the checked-in GitHub Action, local Docker images, the npm wrapper, a Homebrew tap formula template, and mise/asdf guidance. External publication channels are not live unless the corresponding release tags, assets, registries, taps, plugin repositories, and credentials exist.
+
 Policy packs and broader ecosystem reporting are planned work.
 
 ## Quick Start
@@ -31,11 +33,27 @@ cargo build
 cargo test
 ```
 
+Install the local checkout onto `PATH`:
+
+```bash
+cargo install --locked --path crates/agent-audit-cli
+agent-audit scan .
+```
+
+Or build a release binary without installing it:
+
+```bash
+cargo build --locked --release -p agent-audit-cli --bin agent-audit
+./target/release/agent-audit scan .
+```
+
 Run a summary scan against the basic fixture:
 
 ```bash
 cargo run -q -p agent-audit-cli -- scan fixtures/spec/basic
 ```
+
+See [Install And Workflow Paths](./docs/release/install.md) for v0.7.0 release-channel guidance covering Cargo, GitHub Actions, Docker, npm, Homebrew, mise, and asdf. The Docker image, npm package, Homebrew tap, mise plugin, asdf plugin, and crates.io install paths are release templates until those external channels are actually published.
 
 ## CLI Usage
 
@@ -291,6 +309,7 @@ Matrix cells use `pass`, `warn`, `fail`, or `unknown`. Compatibility findings ex
 | Supply-chain inventory and rules | Implemented initial v0.5.0 local evidence pipeline. |
 | Rule documentation generation | Implemented from rule metadata. |
 | Policy and suppression configuration | Implemented for explicit config loading, exact fail-on severity matching, strict supply-chain policy, and path-scoped suppressions. |
+| CI-ready install and workflow docs | Documented for v0.7.0 local Cargo, checked-in GitHub Action, local Docker image, npm wrapper, Homebrew tap formula template, and mise/asdf guidance. External publication remains deferred until real release channels exist. |
 
 ## License
 

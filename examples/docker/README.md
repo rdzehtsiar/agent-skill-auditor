@@ -2,6 +2,8 @@
 
 This example builds a local container image for Agent Skill Auditor and scans a mounted workspace. The commands use the local tag `agent-skill-auditor:local`; they do not require or imply a published image.
 
+Registry images are deferred until release tags, image publishing credentials, and checksum or signing policy exist. See [Install And Workflow Paths](../../docs/release/install.md) for the v0.7.0 release-channel guidance.
+
 Build the image from the repository root:
 
 ```bash

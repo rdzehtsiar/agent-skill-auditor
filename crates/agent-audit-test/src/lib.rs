@@ -226,6 +226,65 @@ mod tests {
     }
 
     #[test]
+    fn release_install_docs_cover_v07_paths_without_live_publication_claims() {
+        let root = workspace_root();
+        let readme_path = root.join("README.md");
+        let install_doc_path = root.join("docs").join("release").join("install.md");
+        let github_action_readme_path = root
+            .join("examples")
+            .join("github-action")
+            .join("README.md");
+        let docker_readme_path = root.join("examples").join("docker").join("README.md");
+        let pre_commit_readme_path = root.join("examples").join("pre-commit").join("README.md");
+        let npm_package_path = root.join("npm").join("agent-audit").join("package.json");
+
+        let readme = fs::read_to_string(&readme_path).expect("read README");
+        let install_doc = fs::read_to_string(&install_doc_path).expect("read install doc");
+        let github_action_readme =
+            fs::read_to_string(&github_action_readme_path).expect("read GitHub Action README");
+        let docker_readme = fs::read_to_string(&docker_readme_path).expect("read Docker README");
+        let pre_commit_readme =
+            fs::read_to_string(&pre_commit_readme_path).expect("read pre-commit README");
+        let npm_package = fs::read_to_string(&npm_package_path).expect("read npm package");
+
+        assert!(readme.contains("v0.7.0 integration work"));
+        assert!(readme.contains("[Install And Workflow Paths](./docs/release/install.md)"));
+        assert!(readme.contains("External publication remains deferred"));
+        assert!(pre_commit_readme.contains("rev: v0.7.0"));
+        assert!(pre_commit_readme.contains("Use `v0.7.0` only after that tag exists"));
+        assert!(github_action_readme.contains("rdzehtsiar/agent-skill-auditor@v0.7.0"));
+        assert!(github_action_readme.contains("only after that tag exists"));
+        assert!(docker_readme.contains("Registry images are deferred"));
+        assert!(npm_package.contains("\"name\": \"agent-audit\""));
+
+        for required in [
+            "cargo install --locked --path crates/agent-audit-cli",
+            "cargo build --locked --release -p agent-audit-cli --bin agent-audit",
+            "uses: rdzehtsiar/agent-skill-auditor@v0.7.0",
+            "docker build -t agent-skill-auditor:local .",
+            "AGENT_AUDIT_BIN=./target/release/agent-audit node npm/agent-audit/bin/agent-audit.js scan .",
+            "Homebrew",
+            "class AgentAudit < Formula",
+            "mise",
+            "asdf",
+            "External publication is deferred",
+            "not live",
+        ] {
+            assert!(install_doc.contains(required), "install doc missing {required:?}");
+        }
+
+        for (name, content) in [
+            ("README", readme.as_str()),
+            ("install doc", install_doc.as_str()),
+            ("GitHub Action README", github_action_readme.as_str()),
+            ("Docker README", docker_readme.as_str()),
+            ("pre-commit README", pre_commit_readme.as_str()),
+        ] {
+            assert_release_doc_has_no_unpublished_overclaim(name, content);
+        }
+    }
+
+    #[test]
     fn pre_commit_metadata_and_examples_use_installed_binary_hook() {
         let hook_path = workspace_root().join(".pre-commit-hooks.yaml");
         let example_root = workspace_root().join("examples").join("pre-commit");
@@ -1784,6 +1843,70 @@ Bootstrap with scripts/install.sh.
             !content.to_lowercase().contains("placeholder"),
             "{name} should not contain placeholder guidance"
         );
+    }
+
+    fn assert_release_doc_has_no_unpublished_overclaim(name: &str, content: &str) {
+        let lowercase_content = content.to_lowercase();
+
+        for forbidden in [
+            "coming soon",
+            "already published",
+            "available on crates.io",
+            "available on npm",
+            "available on Homebrew",
+            "docker pull ghcr.io",
+            "docker pull docker.io",
+            "brew install agent-audit",
+        ] {
+            assert!(
+                !content.contains(forbidden),
+                "{name} should not contain unpublished release overclaim text: {forbidden}"
+            );
+        }
+
+        for forbidden_sentinel in [
+            "set-this",
+            "todo",
+            "tbd",
+            "fixme",
+            "change_me",
+            "changeme",
+            "replace_me",
+        ] {
+            assert!(
+                !lowercase_content.contains(forbidden_sentinel),
+                "{name} should not contain placeholder sentinel text: {forbidden_sentinel}"
+            );
+        }
+
+        for forbidden_sentinel in ["OWNER", "REPLACE_ME", "CHANGE_ME"] {
+            assert!(
+                !content.contains(forbidden_sentinel),
+                "{name} should not contain placeholder sentinel text: {forbidden_sentinel}"
+            );
+        }
+
+        assert!(
+            !lowercase_content.contains("placeholder"),
+            "{name} should not contain placeholder release guidance"
+        );
+
+        for (line_index, line) in content.lines().enumerate() {
+            let line_number = line_index + 1;
+            assert!(
+                !line.to_lowercase().contains("sha256"),
+                "{name} should not include SHA-256 checksum guidance before external publication, line {line_number}: {line}"
+            );
+            assert!(
+                !contains_sha256_literal(line),
+                "{name} should not include checksum-looking 64-hex literals before external publication, line {line_number}: {line}"
+            );
+        }
+    }
+
+    fn contains_sha256_literal(line: &str) -> bool {
+        line.split(|character: char| !character.is_ascii_hexdigit())
+            .any(|token| token.len() == 64)
     }
 
     fn html_contains_path(html: &str, path: &Path) -> bool {

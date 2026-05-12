@@ -39,7 +39,7 @@ jobs:
             critical
 ```
 
-If you consume the action from another repository, replace `uses: ./` with a pinned tag or commit for this action repository.
+If you consume the action from another repository, replace `uses: ./` with a pinned tag or commit for this action repository. A tag such as `rdzehtsiar/agent-skill-auditor@v0.7.0` is appropriate only after that tag exists; until then, pin a reviewed commit or fork.
 
 ## SARIF For GitHub Code Scanning
 
