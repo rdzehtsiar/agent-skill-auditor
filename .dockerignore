@@ -1,0 +1,8 @@
+.git
+.github
+target
+reports
+lcov.info
+qodana.sarif.json
+*.tmp
+*.log

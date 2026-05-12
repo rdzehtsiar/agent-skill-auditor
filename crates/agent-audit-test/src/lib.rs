@@ -182,6 +182,50 @@ mod tests {
     }
 
     #[test]
+    fn docker_packaging_builds_cli_and_documents_local_workspace_scans() {
+        let root = workspace_root();
+        let dockerfile_path = root.join("Dockerfile");
+        let dockerignore_path = root.join(".dockerignore");
+        let readme_path = root.join("examples").join("docker").join("README.md");
+
+        let dockerfile = fs::read_to_string(&dockerfile_path).expect("read Dockerfile");
+        let dockerignore = fs::read_to_string(&dockerignore_path).expect("read .dockerignore");
+        let readme = fs::read_to_string(&readme_path).expect("read Docker README");
+        let lower_dockerfile = dockerfile.to_lowercase();
+        let lower_readme = readme.to_lowercase();
+
+        assert!(dockerfile.starts_with("# SPDX-License-Identifier: Apache-2.0"));
+        assert!(dockerfile.contains("FROM rust:1-bookworm AS builder"));
+        assert!(dockerfile.contains("FROM debian:bookworm-slim AS runtime"));
+        assert!(dockerfile
+            .contains("cargo build --locked --release -p agent-audit-cli --bin agent-audit"));
+        assert!(dockerfile.contains(
+            "COPY --from=builder /workspace/target/release/agent-audit /usr/local/bin/agent-audit"
+        ));
+        assert!(dockerfile.contains("ENTRYPOINT [\"/usr/local/bin/agent-audit\"]"));
+        assert!(dockerfile.contains("CMD [\"scan\", \"/workspace\"]"));
+        assert!(!lower_dockerfile.contains("curl"));
+        assert!(!lower_dockerfile.contains("wget"));
+
+        for ignored in [".git", "target", "reports", "lcov.info"] {
+            assert!(
+                dockerignore.lines().any(|line| line == ignored),
+                ".dockerignore missing {ignored:?}"
+            );
+        }
+
+        assert!(!lower_readme.contains("placeholder"));
+        assert!(!lower_readme.contains("planned example"));
+        assert!(readme.contains("docker build -t agent-skill-auditor:local ."));
+        assert!(readme.contains(
+            "docker run --rm -v \"$PWD:/workspace\" agent-skill-auditor:local scan /workspace"
+        ));
+        assert!(readme.contains("--format sarif --output /workspace/agent-audit.sarif"));
+        assert!(readme.contains("--format html --output /workspace/agent-audit.html"));
+        assert!(readme.contains("do not require or imply a published image"));
+    }
+
+    #[test]
     fn pre_commit_metadata_and_examples_use_installed_binary_hook() {
         let hook_path = workspace_root().join(".pre-commit-hooks.yaml");
         let example_root = workspace_root().join("examples").join("pre-commit");
