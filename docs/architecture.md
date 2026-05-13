@@ -75,7 +75,7 @@ supply_chain
 compatibility
 ```
 
-The JSON schema in `docs/report.schema.json` documents the supply-chain inventory and ecosystem pattern shapes. SARIF intentionally carries supply-chain findings as normal rule results rather than embedding the full inventory.
+The JSON schema in `docs/report.schema.json` documents the supply-chain inventory and ecosystem pattern shapes. SARIF intentionally carries supply-chain findings as normal rule results rather than embedding the full inventory. SARIF includes rule help text, documentation URIs, category/profile tags, audit metadata, result confidence, and stable fingerprints; SARIF levels map `critical`/`high` to `error`, `medium` to `warning`, and `low`/`info` to `note`.
 
 The `summary` object includes separate `actual_secret_evidence_count` and `prompt_secret_exposure_count` fields. Prompt-injection findings such as `SEC011` remain visible as findings, but they do not increase the actual secret evidence count.
 

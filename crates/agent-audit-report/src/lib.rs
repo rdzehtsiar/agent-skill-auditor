@@ -2781,6 +2781,7 @@ fn sarif_rule_from_registry(metadata: &RuleMetadata) -> Value {
     json!({
         "id": metadata.id.as_str(),
         "name": metadata.title,
+        "helpUri": sarif_rule_help_uri(metadata.id.as_str(), metadata.title),
         "shortDescription": {
             "text": metadata.title
         },
@@ -2795,7 +2796,11 @@ fn sarif_rule_from_registry(metadata: &RuleMetadata) -> Value {
         },
         "properties": {
             "agentAuditSeverity": metadata.severity.as_str(),
-            "category": metadata.category.as_str()
+            "category": metadata.category.as_str(),
+            "tags": sarif_rule_tags(
+                metadata.category.as_str(),
+                metadata.applicable_profiles
+            )
         }
     })
 }
@@ -2818,7 +2823,8 @@ fn sarif_rule_from_finding(finding: &SkillFinding) -> Value {
         },
         "properties": {
             "agentAuditSeverity": severity_name(finding.severity),
-            "category": category_name(finding.category)
+            "category": category_name(finding.category),
+            "tags": sarif_result_tags(category_name(finding.category), None)
         }
     })
 }
@@ -2855,7 +2861,11 @@ fn sarif_results(
 
             if let Some(profiles) = sarif_compatibility_profiles_for_finding(finding, compatibility)
             {
+                properties["tags"] =
+                    sarif_result_tags(category_name(finding.category), Some(&profiles));
                 properties["compatibilityProfiles"] = profiles;
+            } else {
+                properties["tags"] = sarif_result_tags(category_name(finding.category), None);
             }
 
             json!({
@@ -2917,6 +2927,52 @@ fn sarif_compatibility_profiles_for_finding(
     }
 }
 
+fn sarif_rule_help_uri(rule_id: &str, title: &str) -> String {
+    format!(
+        "https://github.com/openai/agent-skill-auditor/blob/main/docs/rules/README.md#{}",
+        markdown_anchor(&format!("{rule_id}: {title}"))
+    )
+}
+
+fn markdown_anchor(text: &str) -> String {
+    text.chars()
+        .filter_map(|character| {
+            let lowercase = character.to_ascii_lowercase();
+            match lowercase {
+                'a'..='z' | '0'..='9' => Some(lowercase),
+                ' ' | '-' => Some('-'),
+                _ => None,
+            }
+        })
+        .collect::<String>()
+        .split('-')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
+fn sarif_rule_tags(category: &str, profiles: &[&str]) -> Value {
+    let mut tags = vec!["agent-audit".to_owned(), format!("category:{category}")];
+    tags.extend(profiles.iter().map(|profile| format!("profile:{profile}")));
+    Value::Array(tags.into_iter().map(Value::String).collect())
+}
+
+fn sarif_result_tags(category: &str, compatibility_profiles: Option<&Value>) -> Value {
+    let mut tags = vec!["agent-audit".to_owned(), format!("category:{category}")];
+
+    if let Some(Value::Array(profiles)) = compatibility_profiles {
+        tags.extend(profiles.iter().filter_map(|profile| {
+            profile["profile"]
+                .as_str()
+                .map(|profile_name| format!("profile:{profile_name}"))
+        }));
+    }
+
+    tags.sort();
+    tags.dedup();
+    Value::Array(tags.into_iter().map(Value::String).collect())
+}
+
 fn sarif_uri_reference(path: &str) -> String {
     let mut encoded = String::with_capacity(path.len());
 
@@ -2934,16 +2990,16 @@ fn sarif_uri_reference(path: &str) -> String {
 
 fn sarif_level(severity: Severity) -> &'static str {
     match severity {
-        Severity::Info => "note",
-        Severity::Low | Severity::Medium => "warning",
+        Severity::Info | Severity::Low => "note",
+        Severity::Medium => "warning",
         Severity::High | Severity::Critical => "error",
     }
 }
 
 fn sarif_level_for_rule_severity(severity: RuleSeverity) -> &'static str {
     match severity {
-        RuleSeverity::Info => "note",
-        RuleSeverity::Low | RuleSeverity::Medium => "warning",
+        RuleSeverity::Info | RuleSeverity::Low => "note",
+        RuleSeverity::Medium => "warning",
         RuleSeverity::High | RuleSeverity::Critical => "error",
     }
 }
@@ -5813,6 +5869,10 @@ mod tests {
 
         assert_eq!(rule["id"], "SKILL001");
         assert_eq!(rule["name"], "Missing skill name");
+        assert_eq!(
+            rule["helpUri"],
+            "https://github.com/openai/agent-skill-auditor/blob/main/docs/rules/README.md#skill001-missing-skill-name"
+        );
         assert_eq!(rule["shortDescription"]["text"], "Missing skill name");
         assert_eq!(
             rule["fullDescription"]["text"],
@@ -5822,9 +5882,22 @@ mod tests {
             rule["help"]["text"],
             "Add a non-empty `name` field to frontmatter or a clear top-level heading.\n\nSuppress `SKILL001` only with a documented reason in the project audit config."
         );
-        assert_eq!(rule["defaultConfiguration"]["level"], "warning");
+        assert_eq!(rule["defaultConfiguration"]["level"], "note");
         assert_eq!(rule["properties"]["agentAuditSeverity"], "low");
         assert_eq!(rule["properties"]["category"], "spec");
+        assert_eq!(
+            rule["properties"]["tags"],
+            json!([
+                "agent-audit",
+                "category:spec",
+                "profile:agent-skills-spec",
+                "profile:claude-code",
+                "profile:codex",
+                "profile:github-copilot",
+                "profile:vscode-copilot",
+                "profile:generic"
+            ])
+        );
 
         assert_eq!(result["ruleId"], "SKILL001");
         assert_eq!(
@@ -5835,6 +5908,10 @@ mod tests {
         assert_eq!(result["properties"]["agentAuditSeverity"], "high");
         assert_eq!(result["properties"]["agentAuditConfidence"], "medium");
         assert_eq!(result["properties"]["category"], "security");
+        assert_eq!(
+            result["properties"]["tags"],
+            json!(["agent-audit", "category:security"])
+        );
         assert!(
             result["partialFingerprints"]["agentAuditFindingFingerprint"]
                 .as_str()
@@ -5870,6 +5947,10 @@ mod tests {
         assert_eq!(rule["defaultConfiguration"]["level"], "error");
         assert_eq!(rule["properties"]["agentAuditSeverity"], "high");
         assert_eq!(rule["properties"]["category"], "security");
+        assert_eq!(
+            rule["properties"]["tags"],
+            json!(["agent-audit", "category:security"])
+        );
         assert_eq!(result["ruleId"], "SEC005");
         assert_eq!(result["ruleIndex"], 0);
         assert_eq!(result["level"], "error");
@@ -5885,6 +5966,10 @@ mod tests {
         assert_eq!(result["properties"]["agentAuditSeverity"], "high");
         assert_eq!(result["properties"]["agentAuditConfidence"], "medium");
         assert_eq!(result["properties"]["category"], "security");
+        assert_eq!(
+            result["properties"]["tags"],
+            json!(["agent-audit", "category:security"])
+        );
     }
 
     #[test]
@@ -5921,6 +6006,10 @@ mod tests {
         assert_eq!(rule["defaultConfiguration"]["level"], "error");
         assert_eq!(rule["properties"]["agentAuditSeverity"], "critical");
         assert_eq!(rule["properties"]["category"], "reproducibility");
+        assert_eq!(
+            rule["properties"]["tags"],
+            json!(["agent-audit", "category:reproducibility"])
+        );
     }
 
     #[test]
@@ -5946,6 +6035,10 @@ mod tests {
         assert_eq!(rule["id"], "SKILL050");
         assert_eq!(rule["name"], "Ignored host-specific metadata");
         assert_eq!(
+            rule["helpUri"],
+            "https://github.com/openai/agent-skill-auditor/blob/main/docs/rules/README.md#skill050-ignored-host-specific-metadata"
+        );
+        assert_eq!(
             rule["shortDescription"]["text"],
             "Ignored host-specific metadata"
         );
@@ -5957,9 +6050,13 @@ mod tests {
             rule["help"]["text"],
             "Use metadata supported by the selected profile, move advisory settings into the Markdown body, or remove fields that the profile marks as ignored.\n\nSuppress `SKILL050` only when a documented wrapper, host version, or project policy intentionally accepts the ignored metadata, and include that context in the reason."
         );
-        assert_eq!(rule["defaultConfiguration"]["level"], "warning");
+        assert_eq!(rule["defaultConfiguration"]["level"], "note");
         assert_eq!(rule["properties"]["agentAuditSeverity"], "low");
         assert_eq!(rule["properties"]["category"], "compatibility");
+        assert!(rule["properties"]["tags"]
+            .as_array()
+            .expect("rule tags")
+            .contains(&Value::String("category:compatibility".to_owned())));
     }
 
     #[test]
@@ -5986,6 +6083,19 @@ mod tests {
         assert_eq!(result["level"], "warning");
         assert_eq!(result["properties"]["category"], "security");
         assert_eq!(result["properties"]["agentAuditSeverity"], "medium");
+        assert_eq!(
+            rule["properties"]["tags"],
+            json!([
+                "agent-audit",
+                "category:security",
+                "profile:agent-skills-spec",
+                "profile:claude-code",
+                "profile:codex",
+                "profile:github-copilot",
+                "profile:vscode-copilot",
+                "profile:generic"
+            ])
+        );
         assert!(value["runs"][0].get("supply_chain").is_none());
     }
 
@@ -6079,6 +6189,14 @@ mod tests {
             ])
         );
         assert_eq!(
+            results[0]["properties"]["tags"],
+            json!([
+                "agent-audit",
+                "category:compatibility",
+                "profile:claude-code"
+            ])
+        );
+        assert_eq!(
             results[1]["properties"]["compatibilityProfiles"],
             json!([
                 {
@@ -6089,6 +6207,15 @@ mod tests {
                     "profile": "generic",
                     "status": "unknown"
                 }
+            ])
+        );
+        assert_eq!(
+            results[1]["properties"]["tags"],
+            json!([
+                "agent-audit",
+                "category:compatibility",
+                "profile:codex",
+                "profile:generic"
             ])
         );
     }
@@ -6375,7 +6502,7 @@ mod tests {
 
         assert_eq!(
             sarif_result_levels(&value),
-            vec!["note", "warning", "warning", "error", "error"]
+            vec!["note", "note", "warning", "error", "error"]
         );
         assert_eq!(
             sarif_result_agent_audit_severities(&value),

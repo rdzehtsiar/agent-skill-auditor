@@ -114,6 +114,11 @@ Expected behavior:
 - SARIF stores compatibility matrix data under run properties.
 - SARIF emits active compatibility findings as normal results with rule
   descriptors and report-relative artifact URIs.
+- SARIF rule descriptors include rule help text, documentation URIs, and
+  category/profile tags. Result properties include finding confidence,
+  category/profile tags, and stable fingerprints. Severity levels map
+  `critical`/`high` to `error`, `medium` to `warning`, and `low`/`info` to
+  `note`.
 - `--output` writes SARIF or HTML to the requested path instead of standard
   output.
 - Compatibility findings that map to selected profile cells include profile

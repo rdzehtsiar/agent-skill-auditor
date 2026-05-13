@@ -221,7 +221,7 @@ cargo run -q -p agent-audit-cli -- scan fixtures/compatibility/host/mixed-profil
 cargo run -q -p agent-audit-cli -- scan fixtures/compatibility/host/mixed-profile-metadata --profile codex --format html --output report.html --open
 ```
 
-SARIF stores compatibility matrix data under run properties, adds profile context to compatibility findings, and includes finding confidence as a result property. HTML reports are single files that use no hosted assets and can be reviewed offline. External URLs are rendered as text for review rather than fetched or embedded.
+SARIF stores compatibility matrix data under run properties, adds profile context to compatibility findings, and includes finding confidence, rule help text, rule documentation URIs, category/profile tags, audit metadata, and stable fingerprints. SARIF levels map conservatively for code scanning: `critical` and `high` findings become `error`, `medium` findings become `warning`, and `low` or `info` findings become `note`. HTML reports are single files that use no hosted assets and can be reviewed offline. External URLs are rendered as text for review rather than fetched or embedded.
 
 The HTML report renders an executive summary, observed ecosystem patterns, risk distribution, host support, top risky skills, broken references, external URLs, secret usage, offline audit readiness, packages, findings, and per-skill detail sections. Secret usage separates actual secret evidence, such as secret-like environment access, from prompt-risk text that mentions exposing secrets. `--open` is limited to explicit HTML file output: the CLI writes the report first, evaluates `fail_on`, and opens the file only when the scan result passes.
 
