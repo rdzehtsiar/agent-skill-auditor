@@ -539,6 +539,7 @@ mod tests {
 
         assert!(help.contains("summary"));
         assert!(help.contains("json"));
+        assert!(help.contains("public-json"));
         assert!(help.contains("sarif"));
         assert!(help.contains("html"));
     }
@@ -928,6 +929,11 @@ mod tests {
     }
 
     #[test]
+    fn parses_public_json_scan_format() {
+        assert_parsed_scan_format("public-json", ReportFormat::PublicJson);
+    }
+
+    #[test]
     fn parses_sarif_scan_format() {
         assert_parsed_scan_format("sarif", ReportFormat::Sarif);
     }
@@ -999,7 +1005,7 @@ mod tests {
         let message = error.to_string();
 
         assert!(message.contains("unsupported report format 'xml'"));
-        assert!(message.contains("supported: summary, json, sarif, html"));
+        assert!(message.contains("supported: summary, json, public-json, sarif, html"));
     }
 
     #[test]
@@ -1100,6 +1106,44 @@ description: JSON output fixture.
             value["audit"]["host_profiles"]["selected"],
             serde_json::json!(HOST_PROFILES)
         );
+    }
+
+    #[test]
+    fn runs_scan_with_public_json_output_without_manifest_body() {
+        let workspace = CliTestWorkspace::new("public-json-output");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: public-json-output
+description: Public JSON output fixture.
+---
+
+# Public JSON Output
+
+PUBLIC_JSON_FULL_MANIFEST_BODY_SHOULD_NOT_APPEAR
+"#,
+        );
+
+        let output = run_scan_output(scan_command(&workspace, ReportFormat::PublicJson))
+            .expect("run public JSON scan");
+
+        assert!(output.starts_with("{\n"));
+        assert!(output.ends_with('\n'));
+        assert!(!output.contains("PUBLIC_JSON_FULL_MANIFEST_BODY_SHOULD_NOT_APPEAR"));
+
+        let value: serde_json::Value =
+            serde_json::from_str(&output).expect("parse public JSON output");
+        assert_eq!(
+            value["audit"]["command"]["format"],
+            serde_json::json!("public-json")
+        );
+        assert_eq!(value["packages"][0]["name"], "public-json-output");
+        assert!(value["packages"][0]["manifest"].is_null());
+        assert!(value["packages"][0]["body"].is_null());
+        assert!(value["metrics"]["summary"]["package_count"].is_number());
+        assert!(value["findings"].is_array());
+        assert!(value["finding_groups"].is_array());
+        assert!(value["patterns"].is_array());
     }
 
     #[test]

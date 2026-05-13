@@ -63,7 +63,7 @@ agent-audit scan [PATH] [--format FORMAT] [--mode MODE] [--output PATH] [--open]
 
 - `PATH` defaults to `.`.
 - `--format` defaults to `summary`.
-- Supported formats are `summary`, `json`, `sarif`, and `html`.
+- Supported formats are `summary`, `json`, `public-json`, `sarif`, and `html`.
 - `--mode` defaults to `default`. Supported modes are `default`, `verbose`, `research`, and `ci`.
 - Human-readable summary and HTML output use `--mode` to control density: grouped default output, expanded verbose findings, grouped research evidence with normalized keys, or compact CI logs. Default, research, HTML, and JSON reports use the same canonical finding groups and group fingerprints; CI mode shows a filtered top-group subset and labels it as filtered for log size. JSON and SARIF preserve the full finding set, including finding confidence.
 - `--output PATH` writes the selected report format to a file instead of standard output.
@@ -84,6 +84,7 @@ agent-audit scan fixtures/compatibility/valid/spec-basic --profile all
 agent-audit scan fixtures/compatibility/host/mixed-profile-metadata --profile codex,github-copilot
 agent-audit scan fixtures/compatibility/host/mixed-profile-metadata --profile codex --profile github-copilot
 agent-audit scan fixtures/spec/basic --format json
+agent-audit scan fixtures/spec/basic --format public-json
 agent-audit scan fixtures/spec/basic --format sarif
 agent-audit scan fixtures/spec/basic --format html
 agent-audit scan fixtures/spec/basic --mode verbose
@@ -153,6 +154,8 @@ cargo run -q -p agent-audit-cli -- scan fixtures/compatibility/host/mixed-profil
 ```
 
 Finding objects include `fingerprint`, `severity`, `confidence`, `category`, location, rationale, remediation, and suppression guidance. Finding groups include `group_fingerprint`. JSON also includes a structured `patterns` array with concise ecosystem-level observations, counts, and affected package percentages when aggregate evidence supports them. Legacy reports that omit `confidence` or fingerprint fields still deserialize with defaults.
+
+Use `--format public-json` when producing reusable public audit datasets. Public JSON keeps audit metadata, repository metadata, package identifiers, findings, finding groups, fingerprints, metrics, patterns, and bounded evidence snippets, but omits full `SKILL.md` body text, code block bodies, inline code bodies, and other large manifest content by default. The public dataset projection is documented in `docs/report.schema.json` under `$defs.publicDataset`.
 
 JSON reports include stable compatibility matrix data:
 
