@@ -241,14 +241,14 @@ The current scanner supports:
   - `SKILL010`: broken relative reference.
   - `SKILL020`: oversized manifest.
   - `SKILL030`: duplicate skill name.
-  - `SKILL040`: unknown frontmatter field.
+  - `SKILL040`: host-specific or unrecognized metadata field.
   - `SKILL041`: malformed frontmatter.
   - `SKILL050`: invalid host-specific metadata.
   - Active `SUPPLY` rules: selected v0.5.0 supply-chain and provenance checks documented in the rule registry.
 
 Rule metadata defines each rule's ID, status, severity, category, explanation, remediation, and safe suppression guidance. Rule status is explicit: `active` rules may emit findings and may be suppressed, while `reserved` rules document planned rule IDs and are not emitted or accepted in suppression config. See [Rule Documentation](./docs/rules/README.md) for the generated rule registry.
 
-`SKILL050` is active metadata for host-specific metadata schema violations and ignored host-specific metadata. Some host-specific or otherwise unknown frontmatter is also reported as `SKILL040`.
+`SKILL050` is active metadata for host-specific metadata schema violations and ignored host-specific metadata. Some host-specific or otherwise unrecognized frontmatter is also reported as `SKILL040`.
 
 Configuration is documented in [Config](./docs/config.md). Important current behavior:
 

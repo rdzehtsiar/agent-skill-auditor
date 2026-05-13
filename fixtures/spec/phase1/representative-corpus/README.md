@@ -14,7 +14,7 @@ Expected scan shape:
 - `SKILL002`: 2 missing descriptions.
 - `SKILL010`: 4 broken relative references.
 - `SKILL030`: 4 duplicate skill name findings.
-- `SKILL040`: 3 unknown frontmatter fields.
+- `SKILL040`: 3 host-specific or unrecognized metadata fields.
 
 Package inventory:
 
@@ -23,7 +23,7 @@ Package inventory:
 - `generic/missing-name/SKILL.md`: missing name.
 - `generic/missing-description/SKILL.md`: missing description.
 - `generic/broken-reference/SKILL.md`: broken relative reference.
-- `generic/unknown-field/SKILL.md`: unknown frontmatter field.
+- `generic/unknown-field/SKILL.md`: host-specific or unrecognized metadata field.
 - `generic/duplicate-a/SKILL.md`: first duplicate name.
 - `generic/duplicate-b/SKILL.md`: second duplicate name.
 - `generic/artifact-complete/SKILL.md`: scripts, references, and assets.

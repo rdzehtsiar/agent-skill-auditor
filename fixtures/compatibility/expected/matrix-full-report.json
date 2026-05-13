@@ -7,7 +7,7 @@
     },
     "ruleset": {
       "version": "0.6.0",
-      "hash": "fnv1a64:7ac7c4a42a4430de"
+      "hash": "fnv1a64:bee351a45fa77334"
     },
     "host_profiles": {
       "selected": [
@@ -258,19 +258,19 @@
     },
     {
       "rule_id": "SKILL040",
-      "fingerprint": "fnv1a64:ee64e748fe10c215",
+      "fingerprint": "fnv1a64:660e3c8d7423dcf5",
       "severity": "low",
-      "confidence": "high",
+      "confidence": "medium",
       "category": "compatibility",
-      "title": "Unknown frontmatter field",
-      "message": "The manifest declares unsupported frontmatter field `owner`.",
+      "title": "Host-specific or unrecognized metadata field",
+      "message": "The field `owner` is not defined by the selected host profiles and may be ignored or interpreted differently.",
       "location": {
         "path": "generic/unknown-frontmatter/SKILL.md",
         "line": 4
       },
-      "rationale": "Unknown fields may be ignored, rejected, or interpreted differently by hosts, reducing portability and reviewability.",
-      "remediation": "Remove the field, move the information into the Markdown body, or wait for documented host profile support.",
-      "suppression": "Suppress `SKILL040` only with a documented reason in the project audit config."
+      "rationale": "Host-specific or unrecognized metadata fields may be ignored, rejected, or interpreted differently by selected host profiles, reducing portability and reviewability.",
+      "remediation": "Use metadata defined by the selected host profiles, move the information into the Markdown body, or document a reviewed profile-specific exception.",
+      "suppression": "Suppress `SKILL040` only when the field is intentionally retained for a documented host, wrapper, or ecosystem convention."
     }
   ],
   "finding_groups": [
@@ -307,12 +307,12 @@
       "rule_id": "SKILL040",
       "group_fingerprint": "fnv1a64:18036a90900fd927",
       "severity": "low",
-      "confidence": "high",
+      "confidence": "medium",
       "category": "compatibility",
-      "title": "Unknown frontmatter field",
-      "rationale": "Unknown fields may be ignored, rejected, or interpreted differently by hosts, reducing portability and reviewability.",
-      "remediation": "Remove the field, move the information into the Markdown body, or wait for documented host profile support.",
-      "suppression": "Suppress `SKILL040` only with a documented reason in the project audit config.",
+      "title": "Host-specific or unrecognized metadata field",
+      "rationale": "Host-specific or unrecognized metadata fields may be ignored, rejected, or interpreted differently by selected host profiles, reducing portability and reviewability.",
+      "remediation": "Use metadata defined by the selected host profiles, move the information into the Markdown body, or document a reviewed profile-specific exception.",
+      "suppression": "Suppress `SKILL040` only when the field is intentionally retained for a documented host, wrapper, or ecosystem convention.",
       "evidence_key": "frontmatter_field=owner|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot",
       "dimensions": {
         "frontmatter_field": "owner",
@@ -329,7 +329,7 @@
             "path": "generic/unknown-frontmatter/SKILL.md",
             "line": 4
           },
-          "message": "The manifest declares unsupported frontmatter field `owner`."
+          "message": "The field `owner` is not defined by the selected host profiles and may be ignored or interpreted differently."
         }
       ]
     }

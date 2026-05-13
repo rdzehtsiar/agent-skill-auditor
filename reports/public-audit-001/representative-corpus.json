@@ -1,4 +1,50 @@
 {
+  "audit": {
+    "output_schema_version": "1",
+    "scanner": {
+      "name": "agent-audit",
+      "version": "0.6.0"
+    },
+    "ruleset": {
+      "version": "0.6.0",
+      "hash": "fnv1a64:bee351a45fa77334"
+    },
+    "host_profiles": {
+      "selected": [
+        "agent-skills-spec",
+        "claude-code",
+        "codex",
+        "github-copilot",
+        "vscode-copilot",
+        "generic"
+      ],
+      "version": "0.6.0",
+      "hash": "fnv1a64:381004ac00e7640f"
+    },
+    "config": {
+      "path": null,
+      "hash": null
+    },
+    "scan": {
+      "root": "fixtures/spec/phase1/representative-corpus"
+    },
+    "command": {
+      "name": "scan",
+      "format": "json",
+      "mode": "default",
+      "profiles": [],
+      "fail_on": [],
+      "supply_chain": false,
+      "strict_supply_chain": false
+    },
+    "platform": {
+      "os": "windows",
+      "arch": "x86_64",
+      "family": "windows"
+    },
+    "repository": null,
+    "timestamp": null
+  },
   "packages": [
     {
       "root": ".agents/skills/artifacts",
@@ -994,7 +1040,9 @@
   "findings": [
     {
       "rule_id": "SKILL010",
+      "fingerprint": "fnv1a64:eeebab71a6cab53d",
       "severity": "low",
+      "confidence": "high",
       "category": "spec",
       "title": "Broken relative reference",
       "message": "The manifest references `references/playbook.md`, but the file was not found.",
@@ -1008,7 +1056,9 @@
     },
     {
       "rule_id": "SKILL002",
+      "fingerprint": "fnv1a64:c3679941cee68276",
       "severity": "low",
+      "confidence": "high",
       "category": "spec",
       "title": "Missing skill description",
       "message": "The skill manifest does not declare a description.",
@@ -1022,7 +1072,9 @@
     },
     {
       "rule_id": "SKILL030",
+      "fingerprint": "fnv1a64:0c9bac6a6debe4fd",
       "severity": "low",
+      "confidence": "high",
       "category": "compatibility",
       "title": "Duplicate skill name",
       "message": "The skill name `corpus-host-duplicate` is also declared by other manifest path(s): `.claude/skills/duplicate-b/SKILL.md`.",
@@ -1036,7 +1088,9 @@
     },
     {
       "rule_id": "SKILL030",
+      "fingerprint": "fnv1a64:4dacbd1497c8c8a9",
       "severity": "low",
+      "confidence": "high",
       "category": "compatibility",
       "title": "Duplicate skill name",
       "message": "The skill name `corpus-host-duplicate` is also declared by other manifest path(s): `.claude/skills/duplicate-a/SKILL.md`.",
@@ -1050,21 +1104,25 @@
     },
     {
       "rule_id": "SKILL040",
+      "fingerprint": "fnv1a64:6e9bd5ad72d24530",
       "severity": "low",
+      "confidence": "medium",
       "category": "compatibility",
-      "title": "Unknown frontmatter field",
-      "message": "The manifest declares unsupported frontmatter field `host`.",
+      "title": "Host-specific or unrecognized metadata field",
+      "message": "The field `host` is not defined by the selected host profiles and may be ignored or interpreted differently.",
       "location": {
         "path": ".claude/skills/unknown-frontmatter/SKILL.md",
         "line": 4
       },
-      "rationale": "Unknown fields may be ignored, rejected, or interpreted differently by hosts, reducing portability and reviewability.",
-      "remediation": "Remove the field, move the information into the Markdown body, or wait for documented host profile support.",
-      "suppression": "Suppress `SKILL040` only with a documented reason in the project audit config."
+      "rationale": "Host-specific or unrecognized metadata fields may be ignored, rejected, or interpreted differently by selected host profiles, reducing portability and reviewability.",
+      "remediation": "Use metadata defined by the selected host profiles, move the information into the Markdown body, or document a reviewed profile-specific exception.",
+      "suppression": "Suppress `SKILL040` only when the field is intentionally retained for a documented host, wrapper, or ecosystem convention."
     },
     {
       "rule_id": "SKILL010",
+      "fingerprint": "fnv1a64:d4d7fcce0b6401cc",
       "severity": "low",
+      "confidence": "high",
       "category": "spec",
       "title": "Broken relative reference",
       "message": "The manifest references `references/release.md`, but the file was not found.",
@@ -1078,7 +1136,9 @@
     },
     {
       "rule_id": "SKILL001",
+      "fingerprint": "fnv1a64:be6487206e8dd660",
       "severity": "low",
+      "confidence": "high",
       "category": "spec",
       "title": "Missing skill name",
       "message": "The skill manifest does not declare a name.",
@@ -1092,7 +1152,9 @@
     },
     {
       "rule_id": "SKILL010",
+      "fingerprint": "fnv1a64:5828dc131918c8dd",
       "severity": "low",
+      "confidence": "high",
       "category": "spec",
       "title": "Broken relative reference",
       "message": "The manifest references `references/missing-guide.md`, but the file was not found.",
@@ -1106,7 +1168,9 @@
     },
     {
       "rule_id": "SKILL030",
+      "fingerprint": "fnv1a64:22f4232fff4167a4",
       "severity": "low",
+      "confidence": "high",
       "category": "compatibility",
       "title": "Duplicate skill name",
       "message": "The skill name `corpus-duplicate` is also declared by other manifest path(s): `generic/duplicate-b/SKILL.md`.",
@@ -1120,7 +1184,9 @@
     },
     {
       "rule_id": "SKILL030",
+      "fingerprint": "fnv1a64:8e1613dd3b3d00d4",
       "severity": "low",
+      "confidence": "high",
       "category": "compatibility",
       "title": "Duplicate skill name",
       "message": "The skill name `corpus-duplicate` is also declared by other manifest path(s): `generic/duplicate-a/SKILL.md`.",
@@ -1134,7 +1200,9 @@
     },
     {
       "rule_id": "SKILL002",
+      "fingerprint": "fnv1a64:90ab7685044b7d7c",
       "severity": "low",
+      "confidence": "high",
       "category": "spec",
       "title": "Missing skill description",
       "message": "The skill manifest does not declare a description.",
@@ -1148,7 +1216,9 @@
     },
     {
       "rule_id": "SKILL001",
+      "fingerprint": "fnv1a64:f1183bd20c1574f3",
       "severity": "low",
+      "confidence": "high",
       "category": "spec",
       "title": "Missing skill name",
       "message": "The skill manifest does not declare a name.",
@@ -1162,21 +1232,25 @@
     },
     {
       "rule_id": "SKILL040",
+      "fingerprint": "fnv1a64:be9e4e395b379b46",
       "severity": "low",
+      "confidence": "medium",
       "category": "compatibility",
-      "title": "Unknown frontmatter field",
-      "message": "The manifest declares unsupported frontmatter field `x-owner`.",
+      "title": "Host-specific or unrecognized metadata field",
+      "message": "The field `x-owner` is not defined by the selected host profiles and may be ignored or interpreted differently.",
       "location": {
         "path": "generic/unknown-field/SKILL.md",
         "line": 4
       },
-      "rationale": "Unknown fields may be ignored, rejected, or interpreted differently by hosts, reducing portability and reviewability.",
-      "remediation": "Remove the field, move the information into the Markdown body, or wait for documented host profile support.",
-      "suppression": "Suppress `SKILL040` only with a documented reason in the project audit config."
+      "rationale": "Host-specific or unrecognized metadata fields may be ignored, rejected, or interpreted differently by selected host profiles, reducing portability and reviewability.",
+      "remediation": "Use metadata defined by the selected host profiles, move the information into the Markdown body, or document a reviewed profile-specific exception.",
+      "suppression": "Suppress `SKILL040` only when the field is intentionally retained for a documented host, wrapper, or ecosystem convention."
     },
     {
       "rule_id": "SKILL001",
+      "fingerprint": "fnv1a64:5893fb1f4b115343",
       "severity": "low",
+      "confidence": "high",
       "category": "spec",
       "title": "Missing skill name",
       "message": "The skill manifest does not declare a name.",
@@ -1190,21 +1264,25 @@
     },
     {
       "rule_id": "SKILL040",
+      "fingerprint": "fnv1a64:ac99ff4ce3daecaa",
       "severity": "low",
+      "confidence": "medium",
       "category": "compatibility",
-      "title": "Unknown frontmatter field",
-      "message": "The manifest declares unsupported frontmatter field `owner`.",
+      "title": "Host-specific or unrecognized metadata field",
+      "message": "The field `owner` is not defined by the selected host profiles and may be ignored or interpreted differently.",
       "location": {
         "path": "nested/team/security/checks/SKILL.md",
         "line": 4
       },
-      "rationale": "Unknown fields may be ignored, rejected, or interpreted differently by hosts, reducing portability and reviewability.",
-      "remediation": "Remove the field, move the information into the Markdown body, or wait for documented host profile support.",
-      "suppression": "Suppress `SKILL040` only with a documented reason in the project audit config."
+      "rationale": "Host-specific or unrecognized metadata fields may be ignored, rejected, or interpreted differently by selected host profiles, reducing portability and reviewability.",
+      "remediation": "Use metadata defined by the selected host profiles, move the information into the Markdown body, or document a reviewed profile-specific exception.",
+      "suppression": "Suppress `SKILL040` only when the field is intentionally retained for a documented host, wrapper, or ecosystem convention."
     },
     {
       "rule_id": "SKILL010",
+      "fingerprint": "fnv1a64:982333ebdf749d16",
       "severity": "low",
+      "confidence": "high",
       "category": "spec",
       "title": "Broken relative reference",
       "message": "The manifest references `references/checklist.md`, but the file was not found.",
@@ -1217,12 +1295,1861 @@
       "suppression": "Suppress `SKILL010` only with a documented reason in the project audit config."
     }
   ],
+  "finding_groups": [
+    {
+      "rule_id": "SKILL001",
+      "group_fingerprint": "fnv1a64:6c3da7af2d36deb5",
+      "severity": "low",
+      "confidence": "high",
+      "category": "spec",
+      "title": "Missing skill name",
+      "rationale": "Skills without stable names are hard to inventory and compare across hosts.",
+      "remediation": "Add a non-empty `name` field to frontmatter or a clear top-level heading.",
+      "suppression": "Suppress `SKILL001` only with a documented reason in the project audit config.",
+      "evidence_key": "host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot",
+      "dimensions": {
+        "host_profile": "agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot"
+      },
+      "finding_count": 3,
+      "affected_package_count": 3,
+      "affected_packages": [
+        ".github/skills/missing-name/SKILL.md",
+        "generic/missing-name/SKILL.md",
+        "nested/team/portability/missing-name/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": ".github/skills/missing-name/SKILL.md",
+            "line": 1
+          },
+          "message": "The skill manifest does not declare a name."
+        },
+        {
+          "location": {
+            "path": "generic/missing-name/SKILL.md",
+            "line": 1
+          },
+          "message": "The skill manifest does not declare a name."
+        },
+        {
+          "location": {
+            "path": "nested/team/portability/missing-name/SKILL.md",
+            "line": 1
+          },
+          "message": "The skill manifest does not declare a name."
+        }
+      ]
+    },
+    {
+      "rule_id": "SKILL002",
+      "group_fingerprint": "fnv1a64:846266d12f7e80e8",
+      "severity": "low",
+      "confidence": "high",
+      "category": "spec",
+      "title": "Missing skill description",
+      "rationale": "Reviewers and host profiles need a concise behavior statement for the skill.",
+      "remediation": "Add a non-empty `description` field to frontmatter or an opening paragraph.",
+      "suppression": "Suppress `SKILL002` only with a documented reason in the project audit config.",
+      "evidence_key": "host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot",
+      "dimensions": {
+        "host_profile": "agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot"
+      },
+      "finding_count": 2,
+      "affected_package_count": 2,
+      "affected_packages": [
+        ".agents/skills/missing-description/SKILL.md",
+        "generic/missing-description/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": ".agents/skills/missing-description/SKILL.md",
+            "line": 1
+          },
+          "message": "The skill manifest does not declare a description."
+        },
+        {
+          "location": {
+            "path": "generic/missing-description/SKILL.md",
+            "line": 1
+          },
+          "message": "The skill manifest does not declare a description."
+        }
+      ]
+    },
+    {
+      "rule_id": "SKILL010",
+      "group_fingerprint": "fnv1a64:5b6331b70eaec49f",
+      "severity": "low",
+      "confidence": "high",
+      "category": "spec",
+      "title": "Broken relative reference",
+      "rationale": "Broken references can make a skill behave differently than documented or fail at runtime.",
+      "remediation": "Create the referenced file, update the link, or remove the stale reference.",
+      "suppression": "Suppress `SKILL010` only with a documented reason in the project audit config.",
+      "evidence_key": "host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot",
+      "dimensions": {
+        "host_profile": "agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot"
+      },
+      "finding_count": 4,
+      "affected_package_count": 4,
+      "affected_packages": [
+        ".agents/skills/broken-reference/SKILL.md",
+        ".github/skills/broken-reference/SKILL.md",
+        "generic/broken-reference/SKILL.md",
+        "nested/team/security/checks/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": ".agents/skills/broken-reference/SKILL.md",
+            "line": 8
+          },
+          "message": "The manifest references `references/playbook.md`, but the file was not found."
+        },
+        {
+          "location": {
+            "path": ".github/skills/broken-reference/SKILL.md",
+            "line": 8
+          },
+          "message": "The manifest references `references/release.md`, but the file was not found."
+        },
+        {
+          "location": {
+            "path": "generic/broken-reference/SKILL.md",
+            "line": 8
+          },
+          "message": "The manifest references `references/missing-guide.md`, but the file was not found."
+        }
+      ]
+    },
+    {
+      "rule_id": "SKILL030",
+      "group_fingerprint": "fnv1a64:0b15203c4d5649ea",
+      "severity": "low",
+      "confidence": "high",
+      "category": "compatibility",
+      "title": "Duplicate skill name",
+      "rationale": "Duplicate names make inventory, policy, host routing, and review ambiguous.",
+      "remediation": "Rename packages so every scanned skill has a unique stable name.",
+      "suppression": "Suppress `SKILL030` only with a documented reason in the project audit config.",
+      "evidence_key": "host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot",
+      "dimensions": {
+        "host_profile": "agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot"
+      },
+      "finding_count": 4,
+      "affected_package_count": 4,
+      "affected_packages": [
+        ".claude/skills/duplicate-a/SKILL.md",
+        ".claude/skills/duplicate-b/SKILL.md",
+        "generic/duplicate-a/SKILL.md",
+        "generic/duplicate-b/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": ".claude/skills/duplicate-a/SKILL.md",
+            "line": 1
+          },
+          "message": "The skill name `corpus-host-duplicate` is also declared by other manifest path(s): `.claude/skills/duplicate-b/SKILL.md`."
+        },
+        {
+          "location": {
+            "path": ".claude/skills/duplicate-b/SKILL.md",
+            "line": 1
+          },
+          "message": "The skill name `corpus-host-duplicate` is also declared by other manifest path(s): `.claude/skills/duplicate-a/SKILL.md`."
+        },
+        {
+          "location": {
+            "path": "generic/duplicate-a/SKILL.md",
+            "line": 1
+          },
+          "message": "The skill name `corpus-duplicate` is also declared by other manifest path(s): `generic/duplicate-b/SKILL.md`."
+        }
+      ]
+    },
+    {
+      "rule_id": "SKILL040",
+      "group_fingerprint": "fnv1a64:ddda4205713f0217",
+      "severity": "low",
+      "confidence": "medium",
+      "category": "compatibility",
+      "title": "Host-specific or unrecognized metadata field",
+      "rationale": "Host-specific or unrecognized metadata fields may be ignored, rejected, or interpreted differently by selected host profiles, reducing portability and reviewability.",
+      "remediation": "Use metadata defined by the selected host profiles, move the information into the Markdown body, or document a reviewed profile-specific exception.",
+      "suppression": "Suppress `SKILL040` only when the field is intentionally retained for a documented host, wrapper, or ecosystem convention.",
+      "evidence_key": "frontmatter_field=host|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot",
+      "dimensions": {
+        "frontmatter_field": "host",
+        "host_profile": "agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot"
+      },
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        ".claude/skills/unknown-frontmatter/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": ".claude/skills/unknown-frontmatter/SKILL.md",
+            "line": 4
+          },
+          "message": "The field `host` is not defined by the selected host profiles and may be ignored or interpreted differently."
+        }
+      ]
+    },
+    {
+      "rule_id": "SKILL040",
+      "group_fingerprint": "fnv1a64:18036a90900fd927",
+      "severity": "low",
+      "confidence": "medium",
+      "category": "compatibility",
+      "title": "Host-specific or unrecognized metadata field",
+      "rationale": "Host-specific or unrecognized metadata fields may be ignored, rejected, or interpreted differently by selected host profiles, reducing portability and reviewability.",
+      "remediation": "Use metadata defined by the selected host profiles, move the information into the Markdown body, or document a reviewed profile-specific exception.",
+      "suppression": "Suppress `SKILL040` only when the field is intentionally retained for a documented host, wrapper, or ecosystem convention.",
+      "evidence_key": "frontmatter_field=owner|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot",
+      "dimensions": {
+        "frontmatter_field": "owner",
+        "host_profile": "agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot"
+      },
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "nested/team/security/checks/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "nested/team/security/checks/SKILL.md",
+            "line": 4
+          },
+          "message": "The field `owner` is not defined by the selected host profiles and may be ignored or interpreted differently."
+        }
+      ]
+    },
+    {
+      "rule_id": "SKILL040",
+      "group_fingerprint": "fnv1a64:5bdfdf722774e08b",
+      "severity": "low",
+      "confidence": "medium",
+      "category": "compatibility",
+      "title": "Host-specific or unrecognized metadata field",
+      "rationale": "Host-specific or unrecognized metadata fields may be ignored, rejected, or interpreted differently by selected host profiles, reducing portability and reviewability.",
+      "remediation": "Use metadata defined by the selected host profiles, move the information into the Markdown body, or document a reviewed profile-specific exception.",
+      "suppression": "Suppress `SKILL040` only when the field is intentionally retained for a documented host, wrapper, or ecosystem convention.",
+      "evidence_key": "frontmatter_field=x-owner|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot",
+      "dimensions": {
+        "frontmatter_field": "x-owner",
+        "host_profile": "agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot"
+      },
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "generic/unknown-field/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "generic/unknown-field/SKILL.md",
+            "line": 4
+          },
+          "message": "The field `x-owner` is not defined by the selected host profiles and may be ignored or interpreted differently."
+        }
+      ]
+    }
+  ],
   "suppressed_findings": [],
   "summary": {
     "package_count": 30,
     "finding_count": 16,
     "suppressed_finding_count": 0,
     "invalid_manifest_count": 5,
-    "broken_reference_count": 4
+    "broken_reference_count": 4,
+    "actual_secret_evidence_count": 0,
+    "prompt_secret_exposure_count": 0
+  },
+  "supply_chain": {
+    "licenses": [],
+    "trust_manifests": [],
+    "external_urls": [],
+    "remote_dependencies": [],
+    "dependency_manifests": [],
+    "package_managers": [],
+    "lockfiles": [],
+    "executables": [
+      {
+        "path": "generic/artifact-complete/scripts/check.sh",
+        "line": null,
+        "source": "filesystem",
+        "kind": "script",
+        "language": "shell",
+        "reason": "script extension .sh",
+        "referenced": false,
+        "normalized": "generic/artifact-complete/scripts/check.sh",
+        "raw": "scripts/check.sh",
+        "confidence": "high"
+      },
+      {
+        "path": "generic/scripts-only/scripts/task.ps1",
+        "line": null,
+        "source": "filesystem",
+        "kind": "script",
+        "language": null,
+        "reason": "script extension .ps1",
+        "referenced": false,
+        "normalized": "generic/scripts-only/scripts/task.ps1",
+        "raw": "scripts/task.ps1",
+        "confidence": "high"
+      },
+      {
+        "path": "generic/valid-tools/SKILL.md",
+        "line": 4,
+        "source": "frontmatter",
+        "kind": "command",
+        "language": null,
+        "reason": "declared manifest tool dependency",
+        "referenced": false,
+        "normalized": "shell",
+        "raw": "shell",
+        "confidence": "high"
+      }
+    ],
+    "binaries": [],
+    "checksums": [],
+    "permissions": [
+      {
+        "path": "generic/valid-tools/SKILL.md",
+        "line": 6,
+        "source": "frontmatter",
+        "kind": "filesystem-read",
+        "evidence": "declared",
+        "normalized": "filesystem_read=read-files",
+        "raw": "read-files",
+        "confidence": "high"
+      }
+    ],
+    "offline_readiness": [
+      {
+        "path": ".agents/skills/artifacts/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": ".agents/skills/broken-reference/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": ".agents/skills/missing-description/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": ".agents/skills/triage/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": ".claude/skills/duplicate-a/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": ".claude/skills/duplicate-b/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": ".claude/skills/planning/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": ".claude/skills/unknown-frontmatter/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": ".github/skills/assets/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": ".github/skills/broken-reference/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": ".github/skills/missing-name/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": ".github/skills/release-notes/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "deep/products/alpha/.agents/skills/nested-agent/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "deep/products/beta/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "generic/artifact-complete/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "generic/assets-only/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "generic/broken-reference/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "generic/duplicate-a/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "generic/duplicate-b/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "generic/missing-description/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "generic/missing-name/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "generic/references-only/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "generic/scripts-only/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "generic/unknown-field/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "generic/valid-basic/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "generic/valid-tools/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "nested/team/platform/review/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "nested/team/portability/missing-name/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "nested/team/quality/docs/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
+        "path": "nested/team/security/checks/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      }
+    ]
+  },
+  "compatibility": {
+    "profiles": [
+      "agent-skills-spec",
+      "claude-code",
+      "codex",
+      "github-copilot",
+      "vscode-copilot",
+      "generic"
+    ],
+    "matrix": [
+      {
+        "path": ".agents/skills/artifacts/SKILL.md",
+        "name": "corpus-agent-artifacts",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "pass",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": ".agents/skills/broken-reference/SKILL.md",
+        "name": "corpus-agent-broken-reference",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
+          },
+          {
+            "profile": "claude-code",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
+          },
+          {
+            "profile": "codex",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
+          },
+          {
+            "profile": "github-copilot",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
+          },
+          {
+            "profile": "generic",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
+          }
+        ]
+      },
+      {
+        "path": ".agents/skills/missing-description/SKILL.md",
+        "name": "corpus-agent-missing-description",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL002"
+            ]
+          },
+          {
+            "profile": "claude-code",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL002"
+            ]
+          },
+          {
+            "profile": "codex",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL002"
+            ]
+          },
+          {
+            "profile": "github-copilot",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL002"
+            ]
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL002"
+            ]
+          },
+          {
+            "profile": "generic",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL002"
+            ]
+          }
+        ]
+      },
+      {
+        "path": ".agents/skills/triage/SKILL.md",
+        "name": "corpus-agent-triage",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "pass",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": ".claude/skills/duplicate-a/SKILL.md",
+        "name": "corpus-host-duplicate",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
+          },
+          {
+            "profile": "claude-code",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
+          },
+          {
+            "profile": "codex",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
+          },
+          {
+            "profile": "github-copilot",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
+          },
+          {
+            "profile": "generic",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
+          }
+        ]
+      },
+      {
+        "path": ".claude/skills/duplicate-b/SKILL.md",
+        "name": "corpus-host-duplicate",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
+          },
+          {
+            "profile": "claude-code",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
+          },
+          {
+            "profile": "codex",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
+          },
+          {
+            "profile": "github-copilot",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
+          },
+          {
+            "profile": "generic",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
+          }
+        ]
+      },
+      {
+        "path": ".claude/skills/planning/SKILL.md",
+        "name": "corpus-claude-planning",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "pass",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": ".claude/skills/unknown-frontmatter/SKILL.md",
+        "name": "corpus-claude-unknown",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL040"
+            ]
+          },
+          {
+            "profile": "claude-code",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL040"
+            ]
+          },
+          {
+            "profile": "codex",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL040"
+            ]
+          },
+          {
+            "profile": "github-copilot",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL040"
+            ]
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL040"
+            ]
+          },
+          {
+            "profile": "generic",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL040"
+            ]
+          }
+        ]
+      },
+      {
+        "path": ".github/skills/assets/SKILL.md",
+        "name": "corpus-github-assets",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "pass",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": ".github/skills/broken-reference/SKILL.md",
+        "name": "corpus-github-broken-reference",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
+          },
+          {
+            "profile": "claude-code",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
+          },
+          {
+            "profile": "codex",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
+          },
+          {
+            "profile": "github-copilot",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
+          },
+          {
+            "profile": "generic",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
+          }
+        ]
+      },
+      {
+        "path": ".github/skills/missing-name/SKILL.md",
+        "name": null,
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
+          },
+          {
+            "profile": "claude-code",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
+          },
+          {
+            "profile": "codex",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
+          },
+          {
+            "profile": "github-copilot",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
+          },
+          {
+            "profile": "generic",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
+          }
+        ]
+      },
+      {
+        "path": ".github/skills/release-notes/SKILL.md",
+        "name": "corpus-github-release-notes",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "pass",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "deep/products/alpha/.agents/skills/nested-agent/SKILL.md",
+        "name": "corpus-deep-nested-agent",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "pass",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "deep/products/beta/SKILL.md",
+        "name": "corpus-deep-product-beta",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "pass",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "generic/artifact-complete/SKILL.md",
+        "name": "corpus-artifact-complete",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "pass",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "generic/assets-only/SKILL.md",
+        "name": "corpus-assets-only",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "pass",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "generic/broken-reference/SKILL.md",
+        "name": "corpus-broken-reference",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
+          },
+          {
+            "profile": "claude-code",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
+          },
+          {
+            "profile": "codex",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
+          },
+          {
+            "profile": "github-copilot",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
+          },
+          {
+            "profile": "generic",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010"
+            ]
+          }
+        ]
+      },
+      {
+        "path": "generic/duplicate-a/SKILL.md",
+        "name": "corpus-duplicate",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
+          },
+          {
+            "profile": "claude-code",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
+          },
+          {
+            "profile": "codex",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
+          },
+          {
+            "profile": "github-copilot",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
+          },
+          {
+            "profile": "generic",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
+          }
+        ]
+      },
+      {
+        "path": "generic/duplicate-b/SKILL.md",
+        "name": "corpus-duplicate",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
+          },
+          {
+            "profile": "claude-code",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
+          },
+          {
+            "profile": "codex",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
+          },
+          {
+            "profile": "github-copilot",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
+          },
+          {
+            "profile": "generic",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL030"
+            ]
+          }
+        ]
+      },
+      {
+        "path": "generic/missing-description/SKILL.md",
+        "name": "corpus-missing-description",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL002"
+            ]
+          },
+          {
+            "profile": "claude-code",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL002"
+            ]
+          },
+          {
+            "profile": "codex",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL002"
+            ]
+          },
+          {
+            "profile": "github-copilot",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL002"
+            ]
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL002"
+            ]
+          },
+          {
+            "profile": "generic",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL002"
+            ]
+          }
+        ]
+      },
+      {
+        "path": "generic/missing-name/SKILL.md",
+        "name": null,
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
+          },
+          {
+            "profile": "claude-code",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
+          },
+          {
+            "profile": "codex",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
+          },
+          {
+            "profile": "github-copilot",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
+          },
+          {
+            "profile": "generic",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
+          }
+        ]
+      },
+      {
+        "path": "generic/references-only/SKILL.md",
+        "name": "corpus-references-only",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "pass",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "generic/scripts-only/SKILL.md",
+        "name": "corpus-scripts-only",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "pass",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "generic/unknown-field/SKILL.md",
+        "name": "corpus-unknown-field",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL040"
+            ]
+          },
+          {
+            "profile": "claude-code",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL040"
+            ]
+          },
+          {
+            "profile": "codex",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL040"
+            ]
+          },
+          {
+            "profile": "github-copilot",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL040"
+            ]
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL040"
+            ]
+          },
+          {
+            "profile": "generic",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL040"
+            ]
+          }
+        ]
+      },
+      {
+        "path": "generic/valid-basic/SKILL.md",
+        "name": "corpus-valid-basic",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "pass",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "generic/valid-tools/SKILL.md",
+        "name": "corpus-valid-tools",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "pass",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "nested/team/platform/review/SKILL.md",
+        "name": "corpus-platform-review",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "pass",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "nested/team/portability/missing-name/SKILL.md",
+        "name": null,
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
+          },
+          {
+            "profile": "claude-code",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
+          },
+          {
+            "profile": "codex",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
+          },
+          {
+            "profile": "github-copilot",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
+          },
+          {
+            "profile": "generic",
+            "status": "fail",
+            "finding_ids": [
+              "SKILL001"
+            ]
+          }
+        ]
+      },
+      {
+        "path": "nested/team/quality/docs/SKILL.md",
+        "name": "corpus-quality-docs",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "pass",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "nested/team/security/checks/SKILL.md",
+        "name": "corpus-security-checks",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010",
+              "SKILL040"
+            ]
+          },
+          {
+            "profile": "claude-code",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010",
+              "SKILL040"
+            ]
+          },
+          {
+            "profile": "codex",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010",
+              "SKILL040"
+            ]
+          },
+          {
+            "profile": "github-copilot",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010",
+              "SKILL040"
+            ]
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010",
+              "SKILL040"
+            ]
+          },
+          {
+            "profile": "generic",
+            "status": "warn",
+            "finding_ids": [
+              "SKILL010",
+              "SKILL040"
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

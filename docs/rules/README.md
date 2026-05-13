@@ -27,7 +27,7 @@ Rule status is explicit: `active` rules may emit findings and be suppressed, whi
 | [SKILL010](#skill010-broken-relative-reference) | `active` | `low` | `spec` | Broken relative reference |
 | [SKILL020](#skill020-oversized-skill-manifest) | `active` | `low` | `spec` | Oversized skill manifest |
 | [SKILL030](#skill030-duplicate-skill-name) | `active` | `low` | `compatibility` | Duplicate skill name |
-| [SKILL040](#skill040-unknown-frontmatter-field) | `active` | `low` | `compatibility` | Unknown frontmatter field |
+| [SKILL040](#skill040-host-specific-or-unrecognized-metadata-field) | `active` | `low` | `compatibility` | Host-specific or unrecognized metadata field |
 | [SKILL041](#skill041-malformed-frontmatter) | `active` | `low` | `spec` | Malformed frontmatter |
 | [SKILL050](#skill050-ignored-host-specific-metadata) | `active` | `low` | `compatibility` | Ignored host-specific metadata |
 | [SUPPLY001](#supply001-missing-repository-license-evidence) | `active` | `low` | `reproducibility` | Missing repository license evidence |
@@ -671,7 +671,7 @@ Compliant:
 One manifest declares name: pr-reviewer and another declares name: release-reviewer.
 ```
 
-## SKILL040: Unknown frontmatter field
+## SKILL040: Host-specific or unrecognized metadata field
 
 - Status: `active`
 - Severity: `low`
@@ -681,15 +681,15 @@ One manifest declares name: pr-reviewer and another declares name: release-revie
 
 ### Why It Matters
 
-Unknown fields may be ignored, rejected, or interpreted differently by hosts, reducing portability and reviewability.
+Host-specific or unrecognized metadata fields may be ignored, rejected, or interpreted differently by selected host profiles, reducing portability and reviewability.
 
 ### How To Fix
 
-Remove the field, move the information into the Markdown body, or wait for documented host profile support.
+Use metadata defined by the selected host profiles, move the information into the Markdown body, or document a reviewed profile-specific exception.
 
 ### Safe Suppression
 
-Suppress `SKILL040` only with a documented reason in the project audit config.
+Suppress `SKILL040` only when the field is intentionally retained for a documented host, wrapper, or ecosystem convention.
 
 ### Examples
 

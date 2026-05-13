@@ -98,7 +98,7 @@ Portable baseline profile for deterministic skill package checks.
 
 - Required fields: `name`, `description`.
 - Accepted optional fields: none beyond required portable fields.
-- Profile data records `license` as known ignored metadata, but the current structural evaluator still reports it as unknown frontmatter with `SKILL040` unless the field is accepted by the evaluator.
+- Profile data records `license` as known ignored metadata, but the current structural evaluator still reports it as host-specific or unrecognized metadata with `SKILL040` unless the field is accepted by the evaluator.
 - Metadata: optional `tools`; `agent-skills` namespace.
 - Path conventions: `SKILL.md`, `scripts/`, `references/`, `assets/`.
 - Recommended manifest size: 32768 bytes.
@@ -114,7 +114,7 @@ Broad local-agent profile for packages that are not targeting a known host.
 
 - Required fields: `name`.
 - Accepted optional fields: `description`, `tools`.
-- Profile data records `allowed-tools` as known ignored metadata, but the current structural evaluator still reports it as unknown frontmatter with `SKILL040` unless the field is accepted by the evaluator.
+- Profile data records `allowed-tools` as known ignored metadata, but the current structural evaluator still reports it as host-specific or unrecognized metadata with `SKILL040` unless the field is accepted by the evaluator.
 - Metadata: generic `metadata`; `generic` namespace.
 - Path conventions: `**/SKILL.md`, `references/`, `assets/`.
 - Recommended manifest size: 16384 bytes.
@@ -198,7 +198,7 @@ Compatibility findings use the normal finding contract: what happened, where it 
 
 Current profile-attributed compatibility rules include:
 
-- `SKILL040`: unknown frontmatter field.
+- `SKILL040`: host-specific or unrecognized metadata field.
 - `SKILL050`: invalid or ignored host-specific metadata for the selected profile.
 
 Baseline structural rules also influence compatibility status:

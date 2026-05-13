@@ -1192,10 +1192,9 @@ fn finding_confidence_from_rule_id(rule_id: RuleId) -> FindingConfidence {
         | RuleId::Skill010
         | RuleId::Skill020
         | RuleId::Skill030
-        | RuleId::Skill040
         | RuleId::Skill041
         | RuleId::Supply012 => FindingConfidence::High,
-        RuleId::Sec011 | RuleId::Sec012 => FindingConfidence::Medium,
+        RuleId::Sec011 | RuleId::Sec012 | RuleId::Skill040 => FindingConfidence::Medium,
         RuleId::Sec002
         | RuleId::Sec003
         | RuleId::Sec007
@@ -1765,8 +1764,8 @@ mod tests {
     use super::*;
     use crate::config::parse_audit_config;
     use crate::model::{
-        ExternalUrlKind, FindingCategory, RemoteDependencyKind, Severity, SkillFinding,
-        SupplyChainSourceKind,
+        ExternalUrlKind, FindingCategory, FindingConfidence, RemoteDependencyKind, Severity,
+        SkillFinding, SupplyChainSourceKind,
     };
     use crate::test_support::TestWorkspace;
     use agent_audit_hosts::{CompatibilityStatus, HOST_PROFILES};
@@ -3581,7 +3580,7 @@ profiles:
             vec![
                 (
                     "SKILL040",
-                    "The manifest declares unsupported frontmatter field `allowed-tools`.",
+                    "The field `allowed-tools` is not defined by the selected host profiles and may be ignored or interpreted differently.",
                 ),
                 (
                     "SKILL050",
@@ -3648,7 +3647,7 @@ profiles:
                 .collect::<Vec<_>>(),
             vec![(
                 "SKILL040",
-                "The manifest declares unsupported frontmatter field `owner`."
+                "The field `owner` is not defined by the selected host profiles and may be ignored or interpreted differently."
             )]
         );
         assert_eq!(
@@ -5032,7 +5031,7 @@ experimental_host_hint: codex-only
         assert_eq!(finding.title, metadata.title);
         assert_eq!(
             finding.message,
-            "The manifest declares unsupported frontmatter field `experimental_host_hint`."
+            "The field `experimental_host_hint` is not defined by the selected host profiles and may be ignored or interpreted differently."
         );
         assert_eq!(finding.location.path, "SKILL.md");
         assert_eq!(finding.location.line, Some(4));
@@ -5070,7 +5069,7 @@ codex:
         );
         assert_eq!(
             report.findings[0].message,
-            "The manifest declares unsupported frontmatter field `codex`."
+            "The field `codex` is not defined by the selected host profiles and may be ignored or interpreted differently."
         );
     }
 
@@ -5140,9 +5139,9 @@ middle_hint: middle
                 .map(|finding| finding.message.as_str())
                 .collect::<Vec<_>>(),
             vec![
-                "The manifest declares unsupported frontmatter field `zeta_hint`.",
-                "The manifest declares unsupported frontmatter field `alpha_hint`.",
-                "The manifest declares unsupported frontmatter field `middle_hint`.",
+                "The field `zeta_hint` is not defined by the selected host profiles and may be ignored or interpreted differently.",
+                "The field `alpha_hint` is not defined by the selected host profiles and may be ignored or interpreted differently.",
+                "The field `middle_hint` is not defined by the selected host profiles and may be ignored or interpreted differently.",
             ]
         );
         assert!(report
@@ -6222,6 +6221,75 @@ ignore:
             .matched_match
             .as_deref()
             == Some("requires")));
+    }
+
+    #[test]
+    fn skill040_groups_repeated_metadata_fields_with_profiles() {
+        let workspace = TestWorkspace::new("scan-skill040-grouped-metadata-field");
+        workspace.write_file(
+            "alpha/SKILL.md",
+            r#"---
+name: alpha
+description: Alpha fixture.
+requires: node
+---
+
+# Alpha
+"#,
+        );
+        workspace.write_file(
+            "beta/SKILL.md",
+            r#"---
+name: beta
+description: Beta fixture.
+requires: python
+---
+
+# Beta
+"#,
+        );
+        let config = parse_audit_config(
+            r#"
+profiles:
+  - codex
+  - github-copilot
+"#,
+        )
+        .expect("valid config");
+
+        let report = scan_path(
+            workspace.root(),
+            &ScanOptions {
+                config: Some(config),
+                ..ScanOptions::default()
+            },
+        )
+        .expect("scan path");
+
+        assert_eq!(report.findings.len(), 2);
+        assert_eq!(report.finding_groups.len(), 1);
+
+        let group = &report.finding_groups[0];
+        assert_eq!(group.rule_id, "SKILL040");
+        assert_eq!(group.confidence, FindingConfidence::Medium);
+        assert_eq!(group.title, "Host-specific or unrecognized metadata field");
+        assert_eq!(
+            group.evidence_key,
+            "frontmatter_field=requires|host_profile=codex,github-copilot"
+        );
+        assert_eq!(
+            group
+                .dimensions
+                .get("frontmatter_field")
+                .map(String::as_str),
+            Some("requires")
+        );
+        assert_eq!(
+            group.dimensions.get("host_profile").map(String::as_str),
+            Some("codex,github-copilot")
+        );
+        assert_eq!(group.finding_count, 2);
+        assert_eq!(group.affected_package_count, 2);
     }
 
     #[test]

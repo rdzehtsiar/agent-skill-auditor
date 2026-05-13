@@ -11,7 +11,7 @@
       "path": "beta/SKILL.md",
       "line": 4,
       "rule_id": "SKILL040",
-      "message": "The manifest declares unsupported frontmatter field `owner`."
+      "message": "The field `owner` is not defined by the selected host profiles and may be ignored or interpreted differently."
     },
     {
       "path": "gamma/SKILL.md",

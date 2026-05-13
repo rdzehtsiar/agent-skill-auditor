@@ -750,15 +750,15 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
     RuleMetadata {
         id: RuleId::Skill040,
         status: RuleStatus::Active,
-        title: "Unknown frontmatter field",
+        title: "Host-specific or unrecognized metadata field",
         severity: RuleSeverity::Low,
         category: RuleCategory::Compatibility,
         applicable_profiles: ALL_HOST_PROFILES,
         input_node_types: FRONTMATTER_INPUT,
-        rationale: "Unknown fields may be ignored, rejected, or interpreted differently by hosts, reducing portability and reviewability.",
-        remediation: "Remove the field, move the information into the Markdown body, or wait for documented host profile support.",
+        rationale: "Host-specific or unrecognized metadata fields may be ignored, rejected, or interpreted differently by selected host profiles, reducing portability and reviewability.",
+        remediation: "Use metadata defined by the selected host profiles, move the information into the Markdown body, or document a reviewed profile-specific exception.",
         suppression_guidance:
-            "Suppress `SKILL040` only with a documented reason in the project audit config.",
+            "Suppress `SKILL040` only when the field is intentionally retained for a documented host, wrapper, or ecosystem convention.",
         examples: SKILL040_EXAMPLES,
     },
     RuleMetadata {
@@ -3197,7 +3197,9 @@ fn unknown_frontmatter_field_finding(
 ) -> EvaluatedRuleFinding {
     structural_finding(
         RuleId::Skill040,
-        &format!("The manifest declares unsupported frontmatter field `{field}`."),
+        &format!(
+            "The field `{field}` is not defined by the selected host profiles and may be ignored or interpreted differently."
+        ),
         path,
         line,
     )
@@ -3615,7 +3617,7 @@ mod tests {
     fn active_metadata_lookup_accepts_active_and_rejects_reserved_or_unknown_ids() {
         assert_eq!(
             active_rule_metadata("SKILL040").map(|metadata| metadata.title),
-            Some("Unknown frontmatter field")
+            Some("Host-specific or unrecognized metadata field")
         );
         assert_eq!(
             rule_metadata("SKILL050").map(|metadata| metadata.status),
@@ -5147,7 +5149,7 @@ mod tests {
             findings,
             vec![finding(
                 RuleId::Skill040,
-                "The manifest declares unsupported frontmatter field `owner`.",
+                "The field `owner` is not defined by the selected host profiles and may be ignored or interpreted differently.",
                 "unknown-field/SKILL.md",
                 Some(4)
             )]

@@ -1125,6 +1125,10 @@ fn finding_base_dimensions(finding: &SkillFinding) -> BTreeMap<String, String> {
 }
 
 fn frontmatter_field_for_finding(finding: &SkillFinding) -> Option<String> {
+    if matches!(finding.rule_id.as_str(), "SKILL040" | "SKILL050") {
+        return first_backtick_value(&finding.message);
+    }
+
     let message = finding.message.to_ascii_lowercase();
     if !message.contains("frontmatter field") && !message.contains("unknown field") {
         return None;
