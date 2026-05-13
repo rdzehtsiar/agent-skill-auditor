@@ -13,12 +13,17 @@ fingerprints identify individual findings across repeated runs; group
 fingerprints identify repeated issue families for aggregate ecosystem pattern
 reporting.
 
-## Command
+## Commands
 
 ```text
-cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus
-cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --format json
-cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --format public-json --corpus-name "v0.8 public audit" --corpus-entry-id phase1-representative --methodology-version 2026-05 --inclusion-tag synthetic --repo-classification fixture-corpus --scan-batch-id public-audit-001
+cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --output reports/public-audit-001/representative-corpus-summary.txt
+cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --mode ci --output reports/public-audit-001/representative-corpus-ci.txt
+cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --mode verbose --output reports/public-audit-001/representative-corpus-verbose.txt
+cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --mode research --output reports/public-audit-001/representative-corpus-research.txt
+cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --format json --output reports/public-audit-001/representative-corpus.json
+cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --format public-json --output reports/public-audit-001/representative-corpus-public.json --corpus-name "v0.8 public audit" --corpus-entry-id phase1-representative --methodology-version 2026-05 --inclusion-tag synthetic --repo-classification fixture-corpus --scan-batch-id public-audit-001
+cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --format sarif --output reports/public-audit-001/representative-corpus.sarif
+cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --format html --output reports/public-audit-001/representative-corpus.html --corpus-name "v0.8 public audit" --corpus-entry-id phase1-representative --methodology-version 2026-05 --inclusion-tag synthetic --repo-classification fixture-corpus --scan-batch-id public-audit-001
 ```
 
 The run only reads fixture files. It does not execute fixture scripts, does not
@@ -75,18 +80,47 @@ package manifests are:
 Stable artifacts:
 
 - `representative-corpus-summary.txt`
+- `representative-corpus-ci.txt`
+- `representative-corpus-verbose.txt`
+- `representative-corpus-research.txt`
 - `representative-corpus.json`
+- `representative-corpus-public.json`
+- `representative-corpus.sarif`
+- `representative-corpus.html`
 
-The checked-in artifacts are legacy phase 1 summary and full JSON outputs. A new
-public dataset artifact should use `--format public-json` so the shared output is
-bounded and public-safe by default.
+`representative-corpus-public.json` and `representative-corpus.html` include
+the public-audit methodology metadata:
+
+- Corpus name: `v0.8 public audit`.
+- Corpus entry ID: `phase1-representative`.
+- Methodology version: `2026-05`.
+- Inclusion tag: `synthetic`.
+- Repository classification: `fixture-corpus`.
+- Scan batch ID: `public-audit-001`.
+
+## Quality Notes
+
+- Default, CI, verbose, research, JSON, public-safe JSON, SARIF, and HTML
+  outputs rendered without crashes.
+- Full JSON and public JSON contain the same 7 canonical finding groups.
+- Full JSON contains 16 finding fingerprints and 7 group fingerprints.
+- SARIF contains 16 results, audit metadata, and 16
+  `agentAuditFindingFingerprint` partial fingerprints.
+- HTML leads with executive summary, audit metadata, observed ecosystem
+  patterns, finding groups, compatibility, and supply-chain intelligence before
+  package-level details.
+- No `@rad` or `@hoo` fake dependency strings were present in the generated
+  reports or corpus.
+- No heredoc-related matches were present in this corpus or the generated
+  reports, so this pass did not expose heredoc permission false positives.
 
 ## Notable Gaps
 
 - The corpus is synthetic, not a sampled public ecosystem snapshot.
 - Fixture scripts are inert text and are inventoried only; phase 1 does not run
   or statically analyze script behavior.
-- The run covers phase 1 structural rules only, not later security analyzer
-  rules or host profile compatibility matrices.
-- SARIF and HTML rendering are covered by deterministic tests, but this audit
-  record stores only summary and JSON artifacts.
+- The run covers the phase 1 representative corpus; it is not a broad
+  security-analyzer corpus and does not exercise every later supply-chain or
+  script-analysis rule.
+- The no-heredoc finding is a negative search result for this corpus, not a
+  dedicated heredoc regression fixture.

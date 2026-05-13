@@ -32,6 +32,7 @@
       "name": "scan",
       "format": "json",
       "mode": "default",
+      "output": "reports/public-audit-001/representative-corpus.json",
       "profiles": [],
       "fail_on": [],
       "supply_chain": false,
@@ -1557,6 +1558,58 @@
             "line": 4
           },
           "message": "The field `x-owner` is not defined by the selected host profiles and may be ignored or interpreted differently."
+        }
+      ]
+    }
+  ],
+  "patterns": [
+    {
+      "id": "low-trust-manifest-adoption",
+      "title": "Low trust-manifest adoption",
+      "summary": "Trust manifest evidence is missing for 30 of 30 packages (100%).",
+      "count": 30,
+      "affected_package_count": 30,
+      "affected_package_percent": 100,
+      "evidence": [
+        {
+          "kind": "trust_manifests",
+          "count": 0
+        },
+        {
+          "kind": "packages_without_trust_manifest",
+          "count": 30
+        }
+      ]
+    },
+    {
+      "id": "host-specific-metadata-extensions",
+      "title": "Host-specific metadata extensions",
+      "summary": "Host-specific or unknown metadata appears in 3 of 30 packages (10%).",
+      "count": 3,
+      "affected_package_count": 3,
+      "affected_package_percent": 10,
+      "evidence": [
+        {
+          "kind": "SKILL040",
+          "count": 3
+        }
+      ]
+    },
+    {
+      "id": "low-checksum-evidence",
+      "title": "Low checksum evidence",
+      "summary": "Executable or binary artifact evidence exceeds checksum evidence across 3 of 30 packages (10%).",
+      "count": 3,
+      "affected_package_count": 3,
+      "affected_package_percent": 10,
+      "evidence": [
+        {
+          "kind": "executable_or_binary_artifacts",
+          "count": 3
+        },
+        {
+          "kind": "checksums",
+          "count": 0
         }
       ]
     }
