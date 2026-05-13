@@ -134,6 +134,8 @@ pub struct AuditCommandMetadata {
     pub name: Option<String>,
     pub format: Option<String>,
     pub mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
     #[serde(default)]
     pub profiles: Vec<String>,
     #[serde(default)]

@@ -343,6 +343,10 @@
         "mode": {
           "$ref": "#/$defs/optionalString"
         },
+        "output": {
+          "$ref": "#/$defs/optionalString",
+          "description": "Requested report output path when the scan wrote a generated report file; omitted when output was written to standard output."
+        },
         "profiles": {
           "type": "array",
           "items": {

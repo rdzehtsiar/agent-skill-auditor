@@ -278,8 +278,27 @@ fn render_ci_summary(report: &ScanReport) -> String {
     let readiness_counts = offline_readiness_counts(&report.supply_chain);
     let finding_groups = effective_finding_groups(report);
     let top_groups = ci_top_finding_groups(finding_groups.as_ref());
+    let fail_on = ci_fail_on_severities(report);
+    let blocking_groups = ci_blocking_finding_groups(finding_groups.as_ref(), &fail_on);
+    let non_blocking_group_count = finding_groups.len().saturating_sub(blocking_groups.len());
+    let top_blocking_groups = ci_top_finding_groups_from_refs(&blocking_groups);
 
     let mut lines = summary_header("Agent Skill Auditor CI scan summary", report);
+    lines.push(format!(
+        "CI policy: fail_on={} blocking_groups={} non_blocking_groups={}",
+        ci_fail_on_summary(&fail_on),
+        blocking_groups.len(),
+        non_blocking_group_count
+    ));
+    lines.push(format!(
+        "Report output: {} (format={})",
+        ci_report_output_summary(&report.audit),
+        report.audit.command.format.as_deref().unwrap_or("unknown")
+    ));
+    lines.push(ci_exit_code_behavior_summary(
+        &fail_on,
+        !blocking_groups.is_empty(),
+    ));
     lines.push(format!(
         "Severity totals: critical={} high={} medium={} low={} info={}",
         severity_counts.critical,
@@ -330,6 +349,26 @@ fn render_ci_summary(report: &ScanReport) -> String {
                 severity_name(group.severity),
                 confidence_name(group.confidence),
                 category_name(group.category),
+                group.finding_count,
+                group.affected_package_count,
+                group.title,
+                group.group_fingerprint
+            ));
+        }
+    }
+    if top_blocking_groups.is_empty() {
+        lines.push("Top blocking groups: none".to_owned());
+    } else {
+        lines.push(format!(
+            "Top blocking groups: showing {} of {} canonical blocking groups.",
+            top_blocking_groups.len(),
+            blocking_groups.len()
+        ));
+        for group in top_blocking_groups {
+            lines.push(format!(
+                "BLOCKING {} [{}] x{} packages={}: {} fingerprint={}",
+                group.rule_id,
+                severity_name(group.severity),
                 group.finding_count,
                 group.affected_package_count,
                 group.title,
@@ -1081,6 +1120,87 @@ fn ci_top_finding_groups(groups: &[FindingGroup]) -> Vec<&FindingGroup> {
     });
     groups.truncate(CI_TOP_GROUP_LIMIT);
     groups
+}
+
+fn ci_top_finding_groups_from_refs<'a>(groups: &[&'a FindingGroup]) -> Vec<&'a FindingGroup> {
+    let mut groups = groups.to_vec();
+    groups.sort_by(|left, right| {
+        ci_finding_group_order_key(left).cmp(&ci_finding_group_order_key(right))
+    });
+    groups.truncate(CI_TOP_GROUP_LIMIT);
+    groups
+}
+
+fn ci_blocking_finding_groups<'a>(
+    groups: &'a [FindingGroup],
+    fail_on: &BTreeSet<Severity>,
+) -> Vec<&'a FindingGroup> {
+    if fail_on.is_empty() {
+        return Vec::new();
+    }
+
+    groups
+        .iter()
+        .filter(|group| fail_on.contains(&group.severity))
+        .collect()
+}
+
+fn ci_fail_on_severities(report: &ScanReport) -> BTreeSet<Severity> {
+    report
+        .audit
+        .command
+        .fail_on
+        .iter()
+        .filter_map(|severity| severity_from_name(severity))
+        .collect()
+}
+
+fn severity_from_name(value: &str) -> Option<Severity> {
+    match value {
+        "critical" => Some(Severity::Critical),
+        "high" => Some(Severity::High),
+        "medium" => Some(Severity::Medium),
+        "low" => Some(Severity::Low),
+        "info" => Some(Severity::Info),
+        _ => None,
+    }
+}
+
+fn ci_fail_on_summary(fail_on: &BTreeSet<Severity>) -> String {
+    if fail_on.is_empty() {
+        return "none".to_owned();
+    }
+
+    fail_on
+        .iter()
+        .map(|severity| severity_name(*severity))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn ci_report_output_summary(audit: &AuditMetadata) -> String {
+    audit
+        .command
+        .output
+        .as_deref()
+        .unwrap_or("stdout")
+        .to_owned()
+}
+
+fn ci_exit_code_behavior_summary(
+    fail_on: &BTreeSet<Severity>,
+    has_blocking_groups: bool,
+) -> String {
+    if fail_on.is_empty() {
+        return "Exit code behavior: returns 0 unless scanning or report writing fails; fail_on is not configured.".to_owned();
+    }
+
+    if has_blocking_groups {
+        "Exit code behavior: returns 1 after rendering because at least one unsuppressed finding exactly matches fail_on.".to_owned()
+    } else {
+        "Exit code behavior: returns 0 because no unsuppressed finding exactly matches fail_on."
+            .to_owned()
+    }
 }
 
 fn ci_finding_group_order_key(
@@ -4776,6 +4896,9 @@ mod tests {
         let summary = render_summary_with_mode(&report, ReportMode::Ci);
 
         assert!(summary.contains("Agent Skill Auditor CI scan summary"));
+        assert!(summary.contains("CI policy: fail_on=none blocking_groups=0 non_blocking_groups=1"));
+        assert!(summary.contains("Report output: stdout (format=unknown)"));
+        assert!(summary.contains("Exit code behavior: returns 0 unless scanning or report writing fails; fail_on is not configured."));
         assert!(summary.contains("Severity totals: critical=0 high=0 medium=4 low=0 info=0"));
         assert!(summary.contains("Category totals: spec=0 compatibility=0 security=4 quality=0 portability=0 reproducibility=0"));
         assert!(summary.contains(
@@ -4784,9 +4907,27 @@ mod tests {
         assert!(summary.contains("filtered for CI log size"));
         assert!(summary.contains("SEC009 [medium/medium/security] x4 packages=4"));
         assert!(summary.contains("fingerprint=fnv1a64:"));
+        assert!(summary.contains("Top blocking groups: none"));
         assert!(!summary.contains("sample:"));
         assert!(!summary.contains("Full findings:"));
         assert!(!summary.contains("Supply chain:"));
+    }
+
+    #[test]
+    fn ci_summary_reports_blocking_groups_output_path_and_exit_behavior() {
+        let mut report = repeated_finding_report(4);
+        report.audit.command.format = Some("summary".to_owned());
+        report.audit.command.output = Some("reports/ci.txt".to_owned());
+        report.audit.command.fail_on = vec!["medium".to_owned(), "high".to_owned()];
+
+        let summary = render_summary_with_mode(&report, ReportMode::Ci);
+
+        assert!(summary
+            .contains("CI policy: fail_on=medium,high blocking_groups=1 non_blocking_groups=0"));
+        assert!(summary.contains("Report output: reports/ci.txt (format=summary)"));
+        assert!(summary.contains("Exit code behavior: returns 1 after rendering because at least one unsuppressed finding exactly matches fail_on."));
+        assert!(summary.contains("Top blocking groups: showing 1 of 1 canonical blocking groups."));
+        assert!(summary.contains("BLOCKING SEC009 [medium] x4 packages=4"));
     }
 
     #[test]

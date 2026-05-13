@@ -66,7 +66,7 @@ agent-audit scan [PATH] [--format FORMAT] [--mode MODE] [--output PATH] [--open]
 - Supported formats are `summary`, `json`, `public-json`, `sarif`, and `html`.
 - `--mode` defaults to `default`. Supported modes are `default`, `verbose`, `research`, and `ci`.
 - Human-readable summary and HTML output use `--mode` to control density: grouped default output, expanded verbose findings, grouped research evidence with normalized keys, or compact CI logs. Default, research, HTML, and JSON reports use the same canonical finding groups and group fingerprints; CI mode shows a filtered top-group subset and labels it as filtered for log size. JSON and SARIF preserve the full finding set, including finding confidence.
-- `--output PATH` writes the selected report format to a file instead of standard output.
+- `--output PATH` writes the selected report format to a file instead of standard output. CI summaries include the generated output path when it is known.
 - `--open` opens an HTML report after it is written. It applies only with `--format html --output PATH`, and only after `fail_on` checks pass.
 - `--config PATH` explicitly reads and validates a YAML audit config before scanning.
 - `--fail-on SEVERITY` fails after rendering the report when any unsuppressed finding exactly matches that severity. Repeat it to match more than one severity.
@@ -101,6 +101,8 @@ agent-audit scan fixtures/spec/basic --config .agent-audit.yaml --fail-on high
 Config loading is explicit. The scanner does not auto-discover `.agent-audit.yaml` when `--config` is omitted.
 
 When both config `fail_on` and CLI `--fail-on` values are provided, the CLI values take precedence. For example, a config that fails on `low` can be narrowed for one run with `--fail-on high`.
+
+CI mode keeps output short and action-oriented. It reports the exact `fail_on` severities, blocking canonical finding groups, non-blocking canonical finding groups, top blocking groups, the generated output path or `stdout`, and exit-code behavior. `fail_on` remains exact severity matching: the CLI returns a non-zero exit after rendering when any unsuppressed finding has a configured severity, and returns zero otherwise unless scanning or report writing fails.
 
 When no profile is selected in config or on the CLI, the scanner evaluates all supported compatibility profiles in registry order: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, and `generic`. CLI `--profile` values override config `profiles`.
 

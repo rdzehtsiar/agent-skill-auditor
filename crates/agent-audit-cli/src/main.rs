@@ -427,6 +427,7 @@ fn enrich_report_audit_metadata(
         name: Some("scan".to_owned()),
         format: Some(command.format.as_str().to_owned()),
         mode: Some(command.mode.as_str().to_owned()),
+        output: command.output.as_deref().map(path_metadata_string),
         profiles: command.profiles.clone(),
         fail_on: effective_fail_on.iter().map(severity_label).collect(),
         supply_chain: command.supply_chain,
@@ -1259,6 +1260,40 @@ description: HTML output fixture.
         let report = fs::read_to_string(output_path).expect("read report file");
         assert!(report.starts_with("{\n"));
         assert!(report.contains("\"file-output\""));
+    }
+
+    #[test]
+    fn run_scan_ci_output_reports_policy_path_and_fail_on_exit_behavior() {
+        let workspace = CliTestWorkspace::new("ci-policy-output");
+        workspace.write_file("SKILL.md", missing_name_skill());
+        let output_path = workspace.root.join("reports/ci.txt");
+        let mut stdout = Vec::new();
+
+        let result = run_scan_with_writer(
+            ScanCommand {
+                mode: ReportMode::Ci,
+                output: Some(output_path.clone()),
+                fail_on: vec![Severity::Low],
+                ..scan_command(&workspace, ReportFormat::Summary)
+            },
+            &mut stdout,
+        );
+        let error = result.expect_err("CI fail_on low should fail after writing report");
+
+        assert!(stdout.is_empty());
+        assert!(error
+            .to_string()
+            .contains("fail_on matched an unsuppressed finding severity"));
+        let report = fs::read_to_string(&output_path).expect("read CI report file");
+        assert!(report.starts_with("Agent Skill Auditor CI scan summary\n"));
+        assert!(report.contains("CI policy: fail_on=low blocking_groups=1"));
+        assert!(report.contains(&format!(
+            "Report output: {} (format=summary)",
+            path_metadata_string(&output_path)
+        )));
+        assert!(report.contains("Exit code behavior: returns 1 after rendering"));
+        assert!(report.contains("Top blocking groups: showing 1 of 1 canonical blocking groups."));
+        assert!(report.ends_with('\n'));
     }
 
     #[test]

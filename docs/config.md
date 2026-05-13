@@ -183,6 +183,8 @@ Suppressed findings do not trigger `fail_on`. Suppression is applied before fail
 
 CLI `--fail-on` values override config `fail_on` values when both are provided.
 
+In `--mode ci`, the summary reports the configured `fail_on` severities, the number of canonical finding groups that block the run, the number that do not block, a filtered list of top blocking groups, the generated output path when `--output` is used, and the exact exit-code rule. A scan exits non-zero after rendering when any unsuppressed finding exactly matches one of the configured severities; suppressed findings and findings at other severities do not block.
+
 ## Suppressions
 
 Use `ignore` entries only for reviewed false positives or accepted risks. Each entry must name one active rule ID, a clear reason, and at least one match target:

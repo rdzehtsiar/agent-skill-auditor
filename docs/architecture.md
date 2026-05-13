@@ -79,7 +79,7 @@ The JSON schema in `docs/report.schema.json` documents the supply-chain inventor
 
 The `summary` object includes separate `actual_secret_evidence_count` and `prompt_secret_exposure_count` fields. Prompt-injection findings such as `SEC011` remain visible as findings, but they do not increase the actual secret evidence count.
 
-The CLI chooses the requested format, writes `--output PATH` when provided, and owns the `--open` workflow. Opening is only valid for explicit HTML output files and happens after rendering and after `fail_on` checks pass.
+The CLI chooses the requested format, writes `--output PATH` when provided, and owns the `--open` workflow. Opening is only valid for explicit HTML output files and happens after rendering and after `fail_on` checks pass. CI mode uses the canonical finding groups from the report model, labels its top-group list as filtered for log size, reports blocking and non-blocking group counts from exact `fail_on` severities, and states whether the rendered scan will return zero or non-zero.
 
 ## Security Risk Model
 
