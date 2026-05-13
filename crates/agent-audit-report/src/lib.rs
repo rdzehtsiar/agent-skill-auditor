@@ -2270,19 +2270,19 @@ fn dependency_manifest_pinning_name(pinning: DependencyManifestPinningKind) -> &
     }
 }
 
-fn supply_chain_source_name(source: agent_audit_core::SupplyChainSourceKind) -> &'static str {
+fn supply_chain_source_name(source: SupplyChainSourceKind) -> &'static str {
     match source {
-        agent_audit_core::SupplyChainSourceKind::Frontmatter => "frontmatter",
-        agent_audit_core::SupplyChainSourceKind::MarkdownLink => "markdown-link",
-        agent_audit_core::SupplyChainSourceKind::InlineCode => "inline-code",
-        agent_audit_core::SupplyChainSourceKind::CodeBlock => "code-block",
-        agent_audit_core::SupplyChainSourceKind::Script => "script",
-        agent_audit_core::SupplyChainSourceKind::DependencyManifest => "dependency-manifest",
-        agent_audit_core::SupplyChainSourceKind::PackageManifest => "package-manifest",
-        agent_audit_core::SupplyChainSourceKind::Lockfile => "lockfile",
-        agent_audit_core::SupplyChainSourceKind::TrustManifest => "trust-manifest",
-        agent_audit_core::SupplyChainSourceKind::Filesystem => "filesystem",
-        agent_audit_core::SupplyChainSourceKind::Inferred => "inferred",
+        SupplyChainSourceKind::Frontmatter => "frontmatter",
+        SupplyChainSourceKind::MarkdownLink => "markdown-link",
+        SupplyChainSourceKind::InlineCode => "inline-code",
+        SupplyChainSourceKind::CodeBlock => "code-block",
+        SupplyChainSourceKind::Script => "script",
+        SupplyChainSourceKind::DependencyManifest => "dependency-manifest",
+        SupplyChainSourceKind::PackageManifest => "package-manifest",
+        SupplyChainSourceKind::Lockfile => "lockfile",
+        SupplyChainSourceKind::TrustManifest => "trust-manifest",
+        SupplyChainSourceKind::Filesystem => "filesystem",
+        SupplyChainSourceKind::Inferred => "inferred",
     }
 }
 
@@ -3588,7 +3588,7 @@ mod tests {
         assert!(!rendered.contains(full_code_block));
         assert!(!rendered.contains(long_tail));
         assert_eq!(value["audit"], serde_json::to_value(&report.audit).unwrap());
-        assert_eq!(value["repository"], serde_json::Value::Null);
+        assert_eq!(value["repository"], Value::Null);
         assert_eq!(
             value["packages"][0]["manifest_path"],
             "skills/review/SKILL.md"

@@ -15,6 +15,7 @@ mod permission_reconciliation;
 pub mod scan;
 #[cfg(test)]
 mod test_support;
+mod text_utils;
 pub mod trust_manifest;
 mod url_inventory;
 

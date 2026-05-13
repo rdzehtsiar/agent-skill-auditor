@@ -6,6 +6,7 @@ use serde::Deserialize;
 
 use crate::error::{AuditError, AuditResult};
 use crate::model::{AuditMethodologyMetadata, Severity};
+use crate::text_utils::normalized_match_text;
 
 pub const CONFIG_FILENAME: &str = ".agent-audit.yaml";
 
@@ -305,12 +306,7 @@ fn validate_ignore_path(index: usize, path: &str) -> AuditResult<String> {
 }
 
 fn normalize_ignore_match(value: &str) -> String {
-    value
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .trim_matches(|character: char| matches!(character, '.' | ',' | ';' | ':'))
-        .to_ascii_lowercase()
+    normalized_match_text(value)
 }
 
 pub fn parse_severity(value: &str) -> Option<Severity> {

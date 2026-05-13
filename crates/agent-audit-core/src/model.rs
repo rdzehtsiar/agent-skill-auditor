@@ -9,6 +9,8 @@ use agent_audit_hosts::{profiles, ProfileCompatibilityResult};
 use agent_audit_rules::RULE_REGISTRY;
 use serde::{Deserialize, Serialize};
 
+use crate::text_utils::normalized_match_text;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanReport {
     #[serde(default)]
@@ -1783,7 +1785,7 @@ fn host_profile_for_finding(
                 .any(|rule_id| rule_id == &finding.rule_id)
         })
         .map(|profile| profile.profile.as_str())
-        .collect::<std::collections::BTreeSet<_>>();
+        .collect::<BTreeSet<_>>();
 
     (!profiles.is_empty()).then(|| profiles.into_iter().collect::<Vec<_>>().join(","))
 }
@@ -1828,12 +1830,7 @@ fn first_backtick_value(value: &str) -> Option<String> {
 }
 
 fn normalized_evidence_value(value: &str) -> String {
-    value
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .trim_matches(|character: char| matches!(character, '.' | ',' | ';' | ':'))
-        .to_ascii_lowercase()
+    normalized_match_text(value)
 }
 
 fn finding_fingerprint_input(finding: &SkillFinding) -> String {
