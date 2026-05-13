@@ -1379,16 +1379,14 @@ mod tests {
             &html,
             &[
                 "<h2 id=\"summary\">Executive Summary</h2>",
-                "<h2 id=\"risk-distribution\">Risk Distribution</h2>",
-                "<h2 id=\"compatibility\">Compatibility / Host Support</h2>",
-                "<h2 id=\"top-risky-skills\">Top Risky Skills</h2>",
-                "<h2 id=\"broken-references\">Broken References</h2>",
-                "<h2 id=\"external-urls\">External URLs</h2>",
-                "<h2 id=\"secret-usage\">Secret Usage</h2>",
-                "<h2 id=\"offline-readiness\">Offline Audit Readiness</h2>",
-                "<h2 id=\"packages\">Packages</h2>",
+                "<h2 id=\"audit-metadata\">Audit Metadata</h2>",
                 "<h2 id=\"findings\">Finding Groups</h2>",
-                "<h2 id=\"skill-details\">Skill Details</h2>",
+                "<h2 id=\"compatibility\">Compatibility / Host Support</h2>",
+                "<h2 id=\"supply-chain\">Supply-Chain Summary</h2>",
+                "<h2 id=\"security-signals\">Security Review Signals</h2>",
+                "<h2 id=\"external-urls\">External URL / Domain Summary</h2>",
+                "<h2 id=\"packages-with-findings\">Packages with Findings</h2>",
+                "<h2 id=\"all-packages\">Appendix: All Packages</h2>",
             ],
         );
         assert!(html.contains("clean-package"));
@@ -1487,8 +1485,9 @@ Bootstrap with scripts/install.sh.
         let report =
             scan_path(workspace.root(), &ScanOptions::default()).expect("scan risk order fixture");
         let html = render_html(&report);
-        let top_risky = html_section(&html, "top-risky-skills");
+        let top_risky = html_section(&html, "security-signals");
 
+        assert!(top_risky.contains("<h3>Top Risky Skills</h3>"));
         assert!(top_risky.contains("zeta-higher-risk"));
         assert!(top_risky.contains("alpha-lower-risk"));
         assert_in_order(&top_risky, &["zeta-higher-risk", "alpha-lower-risk"]);
@@ -1498,16 +1497,17 @@ Bootstrap with scripts/install.sh.
     fn milestone6_html_skill_details_cover_clean_packages_and_unmatched_findings() {
         let report = report_with_skill_detail_edge_cases();
         let html = render_html(&report);
-        let skill_details = html_section(&html, "skill-details");
+        let packages_with_findings = html_section(&html, "packages-with-findings");
+        let all_packages = html_section(&html, "all-packages");
 
-        assert!(skill_details.contains("<h3>clean-detail</h3>"));
-        assert!(skill_details.contains("<td>skills/clean/SKILL.md</td>"));
-        assert!(skill_details.contains("<td colspan=\"5\">No findings for this package.</td>"));
-        assert!(skill_details.contains("<h3>risky-detail</h3>"));
-        assert!(skill_details.contains("SKILL001"));
-        assert!(skill_details.contains("<h3>Unmatched findings</h3>"));
-        assert!(skill_details.contains("WORKSPACE001"));
-        assert!(skill_details.contains("README.md:7"));
+        assert!(!packages_with_findings.contains("<h3>clean-detail</h3>"));
+        assert!(all_packages.contains("<td>clean-detail</td>"));
+        assert!(all_packages.contains("<td>skills/clean/SKILL.md</td>"));
+        assert!(packages_with_findings.contains("<h3>risky-detail</h3>"));
+        assert!(packages_with_findings.contains("SKILL001"));
+        assert!(packages_with_findings.contains("<h3>Unmatched findings</h3>"));
+        assert!(packages_with_findings.contains("WORKSPACE001"));
+        assert!(packages_with_findings.contains("README.md:7"));
     }
 
     fn representative_corpus_root() -> PathBuf {

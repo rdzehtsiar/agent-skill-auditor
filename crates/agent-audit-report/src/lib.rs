@@ -25,6 +25,8 @@ pub const SUPPORTED_REPORT_MODES_HELP: &str = "supported: default, verbose, rese
 const SUMMARY_COMPATIBILITY_ROW_LIMIT: usize = 5;
 const CI_TOP_GROUP_LIMIT: usize = 5;
 const PUBLIC_DATASET_SNIPPET_LIMIT: usize = 240;
+const HTML_TOP_PACKAGE_LIMIT: usize = 25;
+const HTML_TOP_URL_LIMIT: usize = 25;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReportFormat {
@@ -962,6 +964,9 @@ tbody tr:nth-child(even){background:var(--soft)}
 .summary div{border:1px solid var(--border);padding:.75rem;background:var(--soft)}
 .count{display:block;font-size:1.5rem;font-weight:700}
 .muted{color:var(--muted)}
+.toc ol{columns:2;list-style-position:inside;padding-left:0}
+.section-note{color:var(--muted)}
+.compact td,.compact th{padding:.375rem .5rem}
 .status,.severity{font-weight:700}
 .severity-critical{color:var(--critical)}
 .severity-high{color:var(--high)}
@@ -984,35 +989,33 @@ tbody tr:nth-child(even){background:var(--soft)}
     );
 
     if mode == ReportMode::Ci {
-        extend_html_audit_metadata(&mut html, &report.audit);
         extend_html_executive_summary(&mut html, report, &view_model);
+        extend_html_audit_metadata(&mut html, &report.audit);
         extend_html_ecosystem_patterns(&mut html, report);
         extend_html_ci_summary(&mut html, report, &view_model);
         html.push_str("</main>\n</body>\n</html>\n");
         return html;
     }
 
-    extend_html_audit_metadata(&mut html, &report.audit);
+    extend_html_table_of_contents(&mut html, report);
     extend_html_executive_summary(&mut html, report, &view_model);
+    extend_html_audit_metadata(&mut html, &report.audit);
     extend_html_ecosystem_patterns(&mut html, report);
-    extend_html_risk_distribution(&mut html, &view_model);
+    extend_html_findings(&mut html, report);
     extend_html_compatibility(&mut html, report, &view_model);
-    extend_html_top_risky_skills(&mut html, &view_model);
-    extend_html_broken_references(&mut html, &view_model);
+    extend_html_supply_chain_summary(&mut html, report);
+    extend_html_security_review_signals(&mut html, report, &view_model);
     extend_html_external_urls(&mut html, &view_model);
-    extend_html_secret_usage(&mut html, &view_model);
-    extend_html_offline_readiness(&mut html, report, &view_model);
-    extend_html_packages(&mut html, report);
     match mode {
-        ReportMode::Default => extend_html_findings(&mut html, report),
         ReportMode::Verbose => extend_html_full_findings(&mut html, report, false),
         ReportMode::Research => {
-            extend_html_findings(&mut html, report);
             extend_html_full_findings(&mut html, report, true);
         }
+        ReportMode::Default => {}
         ReportMode::Ci => unreachable!("CI mode returns before full report sections"),
     }
-    extend_html_skill_details(&mut html, &view_model, mode);
+    extend_html_packages_with_findings(&mut html, &view_model, mode);
+    extend_html_package_appendix(&mut html, report);
     html.push_str("</main>\n</body>\n</html>\n");
 
     html
@@ -1111,6 +1114,42 @@ fn with_trailing_newline(mut rendered: String) -> String {
 
 fn summary_count(label: &str, count: usize) -> String {
     format!("<div><span class=\"count\">{count}</span>{label}</div>")
+}
+
+fn extend_html_table_of_contents(html: &mut String, report: &ScanReport) {
+    let has_compatibility = !report.compatibility.is_empty();
+    html.push_str(
+        "<nav class=\"toc\" aria-labelledby=\"contents\"><h2 id=\"contents\">Contents</h2><ol>",
+    );
+    for (id, label) in [
+        ("summary", "Executive summary"),
+        ("audit-metadata", "Audit metadata"),
+        ("ecosystem-patterns", "Ecosystem patterns"),
+        ("findings", "Finding groups"),
+    ] {
+        html.push_str("<li>");
+        html.push_str(&escape_html(label));
+        html.push_str(" <span class=\"muted\">#");
+        html.push_str(id);
+        html.push_str("</span></li>");
+    }
+    if has_compatibility {
+        html.push_str("<li>Compatibility summary <span class=\"muted\">#compatibility</span></li>");
+    }
+    for (id, label) in [
+        ("supply-chain", "Supply-chain summary"),
+        ("security-signals", "Security review signals"),
+        ("external-urls", "External URL / domain summary"),
+        ("packages-with-findings", "Packages with findings"),
+        ("all-packages", "Appendix: all packages"),
+    ] {
+        html.push_str("<li>");
+        html.push_str(&escape_html(label));
+        html.push_str(" <span class=\"muted\">#");
+        html.push_str(id);
+        html.push_str("</span></li>");
+    }
+    html.push_str("</ol></nav>\n");
 }
 
 fn extend_html_audit_metadata(html: &mut String, audit: &AuditMetadata) {
@@ -1242,8 +1281,8 @@ fn extend_html_ecosystem_patterns(html: &mut String, report: &ScanReport) {
     html.push_str("</tbody></table></section>\n");
 }
 
-fn extend_html_risk_distribution(html: &mut String, view_model: &HtmlReportViewModel<'_>) {
-    html.push_str("<section aria-labelledby=\"risk-distribution\"><h2 id=\"risk-distribution\">Risk Distribution</h2>");
+fn extend_html_risk_distribution_content(html: &mut String, view_model: &HtmlReportViewModel<'_>) {
+    html.push_str("<h3>Risk Distribution</h3>");
     html.push_str(
         "<table><thead><tr><th>Severity</th><th>Active findings</th></tr></thead><tbody>",
     );
@@ -1282,7 +1321,7 @@ fn extend_html_risk_distribution(html: &mut String, view_model: &HtmlReportViewM
         html.push_str(&count.to_string());
         html.push_str("</td></tr>");
     }
-    html.push_str("</tbody></table></section>\n");
+    html.push_str("</tbody></table>");
 }
 
 fn extend_html_ci_summary(
@@ -1369,8 +1408,8 @@ fn extend_html_ci_summary(
     html.push_str("</tbody></table></section>\n");
 }
 
-fn extend_html_top_risky_skills(html: &mut String, view_model: &HtmlReportViewModel<'_>) {
-    html.push_str("<section aria-labelledby=\"top-risky-skills\"><h2 id=\"top-risky-skills\">Top Risky Skills</h2><table><thead><tr><th>Skill</th><th>Manifest</th><th>Findings</th><th>Risk score</th></tr></thead><tbody>");
+fn extend_html_top_risky_skills_content(html: &mut String, view_model: &HtmlReportViewModel<'_>) {
+    html.push_str("<h3>Top Risky Skills</h3><table class=\"compact\"><thead><tr><th>Skill</th><th>Manifest</th><th>Findings</th><th>Risk score</th></tr></thead><tbody>");
     if view_model.top_risky_skills.is_empty() {
         html.push_str("<tr><td colspan=\"4\">No risky skills identified.</td></tr>");
     }
@@ -1398,11 +1437,11 @@ fn extend_html_top_risky_skills(html: &mut String, view_model: &HtmlReportViewMo
         html.push_str(&skill.score.to_string());
         html.push_str("</td></tr>");
     }
-    html.push_str("</tbody></table></section>\n");
+    html.push_str("</tbody></table>");
 }
 
-fn extend_html_broken_references(html: &mut String, view_model: &HtmlReportViewModel<'_>) {
-    html.push_str("<section aria-labelledby=\"broken-references\"><h2 id=\"broken-references\">Broken References</h2><table><thead><tr><th>Location</th><th>Rule</th><th>Message</th><th>How to fix</th></tr></thead><tbody>");
+fn extend_html_broken_references_content(html: &mut String, view_model: &HtmlReportViewModel<'_>) {
+    html.push_str("<h3>Broken References</h3><table class=\"compact\"><thead><tr><th>Location</th><th>Rule</th><th>Message</th><th>How to fix</th></tr></thead><tbody>");
     if view_model.broken_references.is_empty() {
         html.push_str("<tr><td colspan=\"4\">No broken references found.</td></tr>");
     }
@@ -1421,16 +1460,52 @@ fn extend_html_broken_references(html: &mut String, view_model: &HtmlReportViewM
         html.push_str(&escape_html(&finding.remediation));
         html.push_str("</td></tr>");
     }
-    html.push_str("</tbody></table></section>\n");
+    html.push_str("</tbody></table>");
 }
 
 fn extend_html_external_urls(html: &mut String, view_model: &HtmlReportViewModel<'_>) {
-    html.push_str("<section aria-labelledby=\"external-urls\"><h2 id=\"external-urls\">External URLs</h2><table><thead><tr><th>Location</th><th>Kind</th><th>URL</th><th>Pinned</th><th>Source</th></tr></thead><tbody>");
+    html.push_str("<section aria-labelledby=\"external-urls\"><h2 id=\"external-urls\">External URL / Domain Summary</h2>");
+    html.push_str("<p class=\"section-note\">Domain-level aggregation is reserved for the dedicated URL-domain summary pass; this section keeps the report order stable and lists top URL evidence after aggregate counts.</p>");
+    html.push_str("<div class=\"summary\">");
+    html.push_str(&summary_count(
+        "Total external URLs",
+        view_model.external_urls.len(),
+    ));
+    html.push_str(&summary_count(
+        "Mutable or unpinned URLs",
+        view_model
+            .external_urls
+            .iter()
+            .filter(|url| url.pinned == Some(false))
+            .count(),
+    ));
+    html.push_str("</div>");
+    html.push_str(
+        "<table class=\"compact\"><thead><tr><th>Kind</th><th>URLs</th></tr></thead><tbody>",
+    );
+    for (kind, count) in external_url_kind_counts(&view_model.external_urls) {
+        html.push_str("<tr><td>");
+        html.push_str(kind);
+        html.push_str("</td><td>");
+        html.push_str(&count.to_string());
+        html.push_str("</td></tr>");
+    }
     if view_model.external_urls.is_empty() {
+        html.push_str("<tr><td colspan=\"2\">No external URLs observed.</td></tr>");
+    }
+    html.push_str("</tbody></table>");
+
+    html.push_str("<h3>Top URL Evidence</h3><table class=\"compact\"><thead><tr><th>Location</th><th>Kind</th><th>URL</th><th>Pinned</th><th>Source</th></tr></thead><tbody>");
+    let urls = view_model
+        .external_urls
+        .iter()
+        .take(HTML_TOP_URL_LIMIT)
+        .copied()
+        .collect::<Vec<_>>();
+    if urls.is_empty() {
         html.push_str("<tr><td colspan=\"5\">No external URLs observed.</td></tr>");
     }
-
-    for url in &view_model.external_urls {
+    for url in urls {
         html.push_str("<tr><td>");
         html.push_str(&escape_html(&location_display(&url.path, url.line)));
         html.push_str("</td><td>");
@@ -1443,11 +1518,27 @@ fn extend_html_external_urls(html: &mut String, view_model: &HtmlReportViewModel
         html.push_str(supply_chain_source_name(url.source));
         html.push_str("</td></tr>");
     }
+    if view_model.external_urls.len() > HTML_TOP_URL_LIMIT {
+        html.push_str("<tr><td colspan=\"5\">");
+        html.push_str(&escape_html(&format!(
+            "{} additional URLs omitted from the default HTML view.",
+            view_model.external_urls.len() - HTML_TOP_URL_LIMIT
+        )));
+        html.push_str("</td></tr>");
+    }
     html.push_str("</tbody></table></section>\n");
 }
 
-fn extend_html_secret_usage(html: &mut String, view_model: &HtmlReportViewModel<'_>) {
-    html.push_str("<section aria-labelledby=\"secret-usage\"><h2 id=\"secret-usage\">Secret Usage</h2><p class=\"section-note\">Actual secret evidence is separate from prompt-risk text that mentions secret exposure.</p><table><thead><tr><th>Location</th><th>Source</th><th>Evidence</th><th>Detail</th></tr></thead><tbody>");
+fn external_url_kind_counts(urls: &[&ExternalUrl]) -> Vec<(&'static str, usize)> {
+    let mut counts = BTreeMap::<&'static str, usize>::new();
+    for url in urls {
+        *counts.entry(external_url_kind_name(url.kind)).or_default() += 1;
+    }
+    counts.into_iter().collect()
+}
+
+fn extend_html_secret_usage_content(html: &mut String, view_model: &HtmlReportViewModel<'_>) {
+    html.push_str("<p class=\"section-note\">Actual secret evidence is separate from prompt-risk text that mentions secret exposure.</p><table class=\"compact\"><thead><tr><th>Location</th><th>Source</th><th>Evidence</th><th>Detail</th></tr></thead><tbody>");
     if view_model.actual_secret_evidence.is_empty() {
         html.push_str("<tr><td colspan=\"4\">No secret usage evidence observed.</td></tr>");
     }
@@ -1499,15 +1590,15 @@ fn extend_html_secret_usage(html: &mut String, view_model: &HtmlReportViewModel<
         html.push_str(&escape_html(&finding.message));
         html.push_str("</td></tr>");
     }
-    html.push_str("</tbody></table></section>\n");
+    html.push_str("</tbody></table>");
 }
 
-fn extend_html_offline_readiness(
+fn extend_html_offline_readiness_content(
     html: &mut String,
     report: &ScanReport,
     view_model: &HtmlReportViewModel<'_>,
 ) {
-    html.push_str("<section aria-labelledby=\"offline-readiness\"><h2 id=\"offline-readiness\">Offline Audit Readiness</h2><p class=\"section-note\">Static auditability signal from local evidence; not a runtime offline capability claim.</p><div class=\"summary\">");
+    html.push_str("<h3>Offline Audit Readiness</h3><p class=\"section-note\">Static auditability signal from local evidence; not a runtime offline capability claim.</p><div class=\"summary\">");
     html.push_str(&summary_count(
         "Ready",
         view_model.offline_readiness_totals.ready,
@@ -1524,7 +1615,7 @@ fn extend_html_offline_readiness(
         "Unknown",
         view_model.offline_readiness_totals.unknown,
     ));
-    html.push_str("</div><table><thead><tr><th>Path</th><th>Status</th><th>Score</th><th>Reasons</th></tr></thead><tbody>");
+    html.push_str("</div><table class=\"compact\"><thead><tr><th>Path</th><th>Status</th><th>Score</th><th>Reasons</th></tr></thead><tbody>");
 
     let mut readiness = report
         .supply_chain
@@ -1549,39 +1640,13 @@ fn extend_html_offline_readiness(
         html.push_str(&escape_html(&item.reasons.join("; ")));
         html.push_str("</td></tr>");
     }
-    html.push_str("</tbody></table></section>\n");
-}
-
-fn extend_html_packages(html: &mut String, report: &ScanReport) {
-    html.push_str(
-        "<section aria-labelledby=\"packages\"><h2 id=\"packages\">Packages</h2><table><thead><tr><th>Name</th><th>Description</th><th>Manifest</th><th>Root</th></tr></thead><tbody>",
-    );
-    let packages = sorted_packages(&report.packages);
-    if packages.is_empty() {
-        html.push_str("<tr><td colspan=\"4\">No packages discovered.</td></tr>");
-    }
-    for package in packages {
-        html.push_str("<tr><td>");
-        html.push_str(&escape_html(package.manifest.name.as_deref().unwrap_or("")));
-        html.push_str("</td><td>");
-        html.push_str(&escape_html(
-            package.manifest.description.as_deref().unwrap_or(""),
-        ));
-        html.push_str("</td><td>");
-        html.push_str(&escape_html(&package.manifest_path));
-        html.push_str("</td><td>");
-        html.push_str(&escape_html(&package.root));
-        html.push_str("</td></tr>");
-    }
     html.push_str("</tbody></table>");
-    extend_html_package_inventory(html, report);
-    html.push_str("</section>\n");
 }
 
-fn extend_html_package_inventory(html: &mut String, report: &ScanReport) {
+fn extend_html_supply_chain_summary(html: &mut String, report: &ScanReport) {
     let manifest_counts = dependency_manifest_counts(&report.supply_chain);
     let finding_counts = supply_chain_finding_counts(&report.findings);
-    html.push_str("<h3>Supply Chain Summary</h3><div class=\"summary\">");
+    html.push_str("<section aria-labelledby=\"supply-chain\"><h2 id=\"supply-chain\">Supply-Chain Summary</h2><div class=\"summary\">");
     html.push_str(&summary_count(
         "Dependency manifests",
         manifest_counts.total,
@@ -1607,7 +1672,7 @@ fn extend_html_package_inventory(html: &mut String, report: &ScanReport) {
         finding_counts.install_without_reproducibility_evidence,
     ));
     html.push_str("</div>");
-    html.push_str("<h3>Package Inventory</h3><table><thead><tr><th>Type</th><th>Location</th><th>Manager</th><th>Evidence</th><th>Pinned</th></tr></thead><tbody>");
+    html.push_str("<h3>Package Inventory Evidence</h3><table class=\"compact\"><thead><tr><th>Type</th><th>Location</th><th>Manager</th><th>Evidence</th><th>Pinned</th></tr></thead><tbody>");
 
     let mut rows = Vec::new();
     for manifest in &report.supply_chain.dependency_manifests {
@@ -1659,7 +1724,9 @@ fn extend_html_package_inventory(html: &mut String, report: &ScanReport) {
         html.push_str("<tr><td colspan=\"5\">No package inventory evidence.</td></tr>");
     }
 
-    for (kind, location, manager, evidence, pinned) in rows {
+    let total_rows = rows.len();
+    for (kind, location, manager, evidence, pinned) in rows.into_iter().take(HTML_TOP_PACKAGE_LIMIT)
+    {
         html.push_str("<tr><td>");
         html.push_str(kind);
         html.push_str("</td><td>");
@@ -1672,7 +1739,29 @@ fn extend_html_package_inventory(html: &mut String, report: &ScanReport) {
         html.push_str(pinned);
         html.push_str("</td></tr>");
     }
-    html.push_str("</tbody></table>");
+    if total_rows > HTML_TOP_PACKAGE_LIMIT {
+        html.push_str("<tr><td colspan=\"5\">");
+        html.push_str(&escape_html(&format!(
+            "{} additional inventory rows omitted from the default HTML view.",
+            total_rows - HTML_TOP_PACKAGE_LIMIT
+        )));
+        html.push_str("</td></tr>");
+    }
+    html.push_str("</tbody></table></section>\n");
+}
+
+fn extend_html_security_review_signals(
+    html: &mut String,
+    report: &ScanReport,
+    view_model: &HtmlReportViewModel<'_>,
+) {
+    html.push_str("<section aria-labelledby=\"security-signals\"><h2 id=\"security-signals\">Security Review Signals</h2>");
+    extend_html_risk_distribution_content(html, view_model);
+    extend_html_top_risky_skills_content(html, view_model);
+    extend_html_broken_references_content(html, view_model);
+    extend_html_secret_usage_content(html, view_model);
+    extend_html_offline_readiness_content(html, report, view_model);
+    html.push_str("</section>\n");
 }
 
 fn extend_html_findings(html: &mut String, report: &ScanReport) {
@@ -1695,12 +1784,12 @@ fn extend_html_full_findings(html: &mut String, report: &ScanReport, include_res
     let heading = if include_research_keys {
         "Full Finding Evidence"
     } else {
-        "Findings"
+        "Finding Evidence"
     };
     let heading_id = if include_research_keys {
         "full-finding-evidence"
     } else {
-        "findings"
+        "finding-evidence"
     };
     let key_header = if include_research_keys {
         "<th>Normalized key</th>"
@@ -1819,20 +1908,25 @@ fn html_group_samples(group: &FindingGroup) -> String {
         .join("<br>")
 }
 
-fn extend_html_skill_details(
+fn extend_html_packages_with_findings(
     html: &mut String,
     view_model: &HtmlReportViewModel<'_>,
     mode: ReportMode,
 ) {
     html.push_str(
-        "<section aria-labelledby=\"skill-details\"><h2 id=\"skill-details\">Skill Details</h2>",
+        "<section aria-labelledby=\"packages-with-findings\"><h2 id=\"packages-with-findings\">Packages with Findings</h2>",
     );
-    if view_model.finding_groups.is_empty() {
-        html.push_str("<p class=\"muted\">No per-skill findings to report.</p>");
+    let groups = view_model
+        .finding_groups
+        .iter()
+        .filter(|group| !group.findings.is_empty())
+        .collect::<Vec<_>>();
+    if groups.is_empty() {
+        html.push_str("<p class=\"muted\">No packages with findings.</p>");
     }
 
-    for (index, group) in view_model.finding_groups.iter().enumerate() {
-        let anchor = format!("skill-detail-{}", index + 1);
+    for (index, group) in groups.iter().enumerate() {
+        let anchor = format!("package-finding-{}", index + 1);
         html.push_str("<section class=\"skill-detail\" id=\"");
         html.push_str(&anchor);
         html.push_str("\"><h3>");
@@ -1859,15 +1953,9 @@ fn extend_html_skill_details(
 
         let include_details = matches!(mode, ReportMode::Verbose | ReportMode::Research);
         if include_details {
-            html.push_str("<table><thead><tr><th>Rule</th><th>Severity</th><th>Confidence</th><th>Location</th><th>Message</th><th>Why it matters</th><th>How to fix</th><th>Suppression</th></tr></thead><tbody>");
+            html.push_str("<table class=\"compact\"><thead><tr><th>Rule</th><th>Severity</th><th>Confidence</th><th>Location</th><th>Message</th><th>Why it matters</th><th>How to fix</th><th>Suppression</th></tr></thead><tbody>");
         } else {
-            html.push_str("<table><thead><tr><th>Rule</th><th>Severity</th><th>Confidence</th><th>Location</th><th>Message</th></tr></thead><tbody>");
-        }
-        if group.findings.is_empty() {
-            let colspan = if include_details { 8 } else { 5 };
-            html.push_str(&format!(
-                "<tr><td colspan=\"{colspan}\">No findings for this package.</td></tr>"
-            ));
+            html.push_str("<table class=\"compact\"><thead><tr><th>Rule</th><th>Severity</th><th>Confidence</th><th>Location</th><th>Message</th></tr></thead><tbody>");
         }
         for finding in &group.findings {
             html.push_str("<tr><td>");
@@ -1896,6 +1984,50 @@ fn extend_html_skill_details(
         html.push_str("</tbody></table></section>");
     }
     html.push_str("</section>\n");
+}
+
+fn extend_html_package_appendix(html: &mut String, report: &ScanReport) {
+    html.push_str("<section aria-labelledby=\"all-packages\"><h2 id=\"all-packages\">Appendix: All Packages</h2>");
+    html.push_str("<p class=\"section-note\">Packages without findings are summarized here instead of expanded in the default report body.</p>");
+    html.push_str("<table class=\"compact\"><thead><tr><th>Name</th><th>Description</th><th>Manifest</th><th>Root</th><th>Findings</th></tr></thead><tbody>");
+
+    let packages = sorted_packages(&report.packages);
+    if packages.is_empty() {
+        html.push_str("<tr><td colspan=\"5\">No packages discovered.</td></tr>");
+    }
+
+    let findings_by_manifest = findings_by_package_manifest(report);
+    for package in packages {
+        let finding_count = findings_by_manifest
+            .get(package.manifest_path.as_str())
+            .copied()
+            .unwrap_or(0);
+        html.push_str("<tr><td>");
+        html.push_str(&escape_html(package.manifest.name.as_deref().unwrap_or("")));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(
+            package.manifest.description.as_deref().unwrap_or(""),
+        ));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&package.manifest_path));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&package.root));
+        html.push_str("</td><td>");
+        html.push_str(&finding_count.to_string());
+        html.push_str("</td></tr>");
+    }
+    html.push_str("</tbody></table></section>\n");
+}
+
+fn findings_by_package_manifest(report: &ScanReport) -> BTreeMap<&str, usize> {
+    let packages = sorted_packages(&report.packages);
+    let mut counts = BTreeMap::new();
+    for finding in &report.findings {
+        if let Some(package) = package_for_finding(&packages, finding) {
+            *counts.entry(package.manifest_path.as_str()).or_default() += 1;
+        }
+    }
+    counts
 }
 
 fn html_severity(severity: &str) -> String {
@@ -4251,7 +4383,7 @@ mod tests {
         }));
 
         let html = render_html(&report);
-        let section = html_section(&html, "packages");
+        let section = html_section(&html, "supply-chain");
 
         assert!(section.contains("Dependency manifests"));
         assert!(section.contains("Lockfiles"));
@@ -4622,7 +4754,8 @@ mod tests {
         let html = render_html(&report);
 
         assert!(html.contains("<h2 id=\"summary\">Executive Summary</h2>"));
-        assert!(html.contains("<h2 id=\"packages\">Packages</h2>"));
+        assert!(html.contains("<h2 id=\"packages-with-findings\">Packages with Findings</h2>"));
+        assert!(html.contains("<h2 id=\"all-packages\">Appendix: All Packages</h2>"));
         assert!(html.contains("<h2 id=\"findings\">Finding Groups</h2>"));
         assert!(html.contains("<span class=\"count\">1</span>Packages"));
         assert!(html.contains("<span class=\"count\">1</span>Findings"));
@@ -4661,7 +4794,7 @@ mod tests {
             &[
                 "<h2 id=\"summary\">Executive Summary</h2>",
                 "<h2 id=\"ecosystem-patterns\">Observed Ecosystem Patterns</h2>",
-                "<h2 id=\"risk-distribution\">Risk Distribution</h2>",
+                "<h2 id=\"findings\">Finding Groups</h2>",
             ],
         );
         assert!(html.contains("<td>Dependency reproducibility gaps in executable skills</td>"));
@@ -4714,8 +4847,15 @@ mod tests {
 
         let html = render_html_with_mode(&report, ReportMode::Verbose);
 
-        assert!(html.contains("<h2 id=\"findings\">Findings</h2>"));
-        assert!(!html.contains("<h2 id=\"findings\">Finding Groups</h2>"));
+        assert!(html.contains("<h2 id=\"findings\">Finding Groups</h2>"));
+        assert!(html.contains("<h2 id=\"finding-evidence\">Finding Evidence</h2>"));
+        assert_in_order(
+            &html,
+            &[
+                "<h2 id=\"findings\">Finding Groups</h2>",
+                "<h2 id=\"finding-evidence\">Finding Evidence</h2>",
+            ],
+        );
         assert!(html.contains("skills/repeated-0/scripts/install.sh:2"));
         assert!(html.contains("skills/repeated-1/scripts/install.sh:2"));
         assert!(html.contains("skills/repeated-2/scripts/install.sh:2"));
@@ -4788,7 +4928,7 @@ mod tests {
 
         let html = render_html(&report);
 
-        assert!(html.contains("<tr><td colspan=\"4\">No packages discovered.</td></tr>"));
+        assert!(html.contains("<tr><td colspan=\"5\">No packages discovered.</td></tr>"));
         assert!(html.contains("<tr><td colspan=\"14\">No findings.</td></tr>"));
         assert!(!html.contains("<h2 id=\"compatibility\">Compatibility</h2>"));
     }
@@ -4867,9 +5007,10 @@ mod tests {
         assert_in_order(
             &html,
             &[
-                "<h2 id=\"compatibility\">Compatibility / Host Support</h2>",
-                "<h2 id=\"packages\">Packages</h2>",
                 "<h2 id=\"findings\">Finding Groups</h2>",
+                "<h2 id=\"compatibility\">Compatibility / Host Support</h2>",
+                "<h2 id=\"packages-with-findings\">Packages with Findings</h2>",
+                "<h2 id=\"all-packages\">Appendix: All Packages</h2>",
             ],
         );
     }
@@ -5091,10 +5232,10 @@ mod tests {
         );
 
         let html = render_html(&report);
-        let packages = html_section(&html, "packages");
+        let packages = html_section(&html, "all-packages");
 
         assert!(packages.contains(
-            "<tr><td></td><td></td><td>skills/empty/SKILL.md</td><td>skills/empty</td></tr>"
+            "<tr><td></td><td></td><td>skills/empty/SKILL.md</td><td>skills/empty</td><td>0</td></tr>"
         ));
         assert!(!packages.contains("None"));
         assert!(!packages.contains("Some("));
@@ -5428,17 +5569,14 @@ mod tests {
         assert_in_order(
             &html,
             &[
-                "<h2 id=\"audit-metadata\">Audit Metadata</h2>",
                 "<h2 id=\"summary\">Executive Summary</h2>",
-                "<h2 id=\"risk-distribution\">Risk Distribution</h2>",
-                "<h2 id=\"top-risky-skills\">Top Risky Skills</h2>",
-                "<h2 id=\"broken-references\">Broken References</h2>",
-                "<h2 id=\"external-urls\">External URLs</h2>",
-                "<h2 id=\"secret-usage\">Secret Usage</h2>",
-                "<h2 id=\"offline-readiness\">Offline Audit Readiness</h2>",
-                "<h2 id=\"packages\">Packages</h2>",
+                "<h2 id=\"audit-metadata\">Audit Metadata</h2>",
                 "<h2 id=\"findings\">Finding Groups</h2>",
-                "<h2 id=\"skill-details\">Skill Details</h2>",
+                "<h2 id=\"supply-chain\">Supply-Chain Summary</h2>",
+                "<h2 id=\"security-signals\">Security Review Signals</h2>",
+                "<h2 id=\"external-urls\">External URL / Domain Summary</h2>",
+                "<h2 id=\"packages-with-findings\">Packages with Findings</h2>",
+                "<h2 id=\"all-packages\">Appendix: All Packages</h2>",
             ],
         );
         assert!(html.contains("<th>Timestamp</th><td>null</td>"));
@@ -5510,13 +5648,13 @@ mod tests {
 
         let html = render_html(&report);
 
-        assert!(html.contains("<section class=\"skill-detail\" id=\"skill-detail-1\">"));
-        assert!(html.contains("<h3>clean</h3>"));
-        assert!(html.contains("<tr><th>Anchor</th><td>skill-detail-1</td></tr>"));
-        assert!(html.contains("<td colspan=\"5\">No findings for this package.</td>"));
-        assert!(html.contains("<section class=\"skill-detail\" id=\"skill-detail-2\">"));
+        let packages_with_findings = html_section(&html, "packages-with-findings");
+        assert!(!packages_with_findings.contains("<h3>clean</h3>"));
+        assert!(packages_with_findings
+            .contains("<section class=\"skill-detail\" id=\"package-finding-1\">"));
         assert!(html.contains("<h3>review</h3>"));
-        assert!(html.contains("<tr><th>Anchor</th><td>skill-detail-2</td></tr>"));
+        assert!(html.contains("<tr><th>Anchor</th><td>package-finding-1</td></tr>"));
+        assert!(html_section(&html, "all-packages").contains("<td>clean</td>"));
         assert!(!html.contains("href="));
     }
 
