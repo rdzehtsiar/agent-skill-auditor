@@ -22,6 +22,16 @@ fail_on:
 supply_chain:
   policy: default
 
+methodology:
+  corpus_name: v0.8 public audit
+  corpus_entry_id: repo-001
+  methodology_version: 2026-05
+  inclusion_tags:
+    - public
+    - executable
+  repo_classification: oss-skill-repo
+  scan_batch_id: batch-2026-05
+
 ignore:
   - rule: SKILL050
     path: .github/skills/reviewer/SKILL.md
@@ -31,12 +41,13 @@ ignore:
     reason: Accepted risk: generated requires metadata is reviewed by the platform team.
 ```
 
-All sections are optional. Missing sections, empty files, `{}`, and explicitly empty sections default to empty collections and default supply-chain policy:
+All sections are optional. Missing sections, empty files, `{}`, and explicitly empty sections default to empty collections, default supply-chain policy, and no methodology metadata:
 
 ```yaml
 profiles:
 fail_on:
 supply_chain:
+methodology:
 ignore:
 ```
 
@@ -184,6 +195,36 @@ Suppressed findings do not trigger `fail_on`. Suppression is applied before fail
 CLI `--fail-on` values override config `fail_on` values when both are provided.
 
 In `--mode ci`, the summary reports the configured `fail_on` severities, the number of canonical finding groups that block the run, the number that do not block, a filtered list of top blocking groups, the generated output path when `--output` is used, and the exact exit-code rule. A scan exits non-zero after rendering when any unsuppressed finding exactly matches one of the configured severities; suppressed findings and findings at other severities do not block.
+
+## Methodology Metadata
+
+`methodology` attaches optional v0.8 public-audit context to generated JSON, public JSON, and HTML reports. The scanner omits `audit.methodology` when no methodology metadata is provided, so normal local scans keep their existing deterministic shape.
+
+Supported fields are:
+
+- `corpus_name`
+- `corpus_entry_id`
+- `methodology_version`
+- `inclusion_tags`
+- `repo_classification`
+- `scan_batch_id`
+
+Scalar values are trimmed. `inclusion_tags` are trimmed, sorted, and de-duplicated for stable output.
+
+The same fields can be supplied for one scan with CLI flags. CLI values override config values for matching fields:
+
+```bash
+agent-audit scan ./skills \
+  --config .agent-audit.yaml \
+  --format public-json \
+  --output reports/public-audit-001/dataset.json \
+  --corpus-name "v0.8 public audit" \
+  --corpus-entry-id repo-001 \
+  --methodology-version 2026-05 \
+  --inclusion-tag public,executable \
+  --repo-classification oss-skill-repo \
+  --scan-batch-id batch-2026-05
+```
 
 ## Suppressions
 

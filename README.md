@@ -58,7 +58,7 @@ See [Install And Workflow Paths](./docs/release/install.md) for v0.7.0 release-c
 ## CLI Usage
 
 ```text
-agent-audit scan [PATH] [--format FORMAT] [--mode MODE] [--output PATH] [--open] [--config PATH] [--fail-on SEVERITY] [--profile PROFILE] [--supply-chain] [--strict-supply-chain]
+agent-audit scan [PATH] [--format FORMAT] [--mode MODE] [--output PATH] [--open] [--config PATH] [--fail-on SEVERITY] [--profile PROFILE] [--supply-chain] [--strict-supply-chain] [--corpus-name NAME] [--corpus-entry-id ID] [--methodology-version VERSION] [--inclusion-tag TAG] [--repo-classification CLASSIFICATION] [--scan-batch-id ID]
 ```
 
 - `PATH` defaults to `.`.
@@ -74,6 +74,7 @@ agent-audit scan [PATH] [--format FORMAT] [--mode MODE] [--output PATH] [--open]
 - `--profile PROFILE` selects compatibility profiles. Repeat it or use comma-separated values. Use `--profile all` for every supported profile.
 - `--supply-chain` is accepted for compatibility with supply-chain-focused workflows; inventory and supply-chain rules already run by default.
 - `--strict-supply-chain` requires local trust manifest and license evidence, adding missing-metadata findings that default scans intentionally avoid.
+- Optional methodology flags (`--corpus-name`, `--corpus-entry-id`, `--methodology-version`, `--inclusion-tag`, `--repo-classification`, and `--scan-batch-id`) attach v0.8 public-audit context to JSON, public JSON, and HTML reports. They are omitted from normal scans when unset.
 
 Examples:
 
@@ -96,6 +97,7 @@ agent-audit scan fixtures/spec/basic --strict-supply-chain
 agent-audit scan fixtures/spec/basic --config .agent-audit.yaml
 agent-audit scan fixtures/spec/basic --fail-on medium --fail-on high
 agent-audit scan fixtures/spec/basic --config .agent-audit.yaml --fail-on high
+agent-audit scan ./skills --config .agent-audit.yaml --format public-json --output reports/public-audit-001/dataset.json --corpus-name "v0.8 public audit" --corpus-entry-id repo-001 --methodology-version 2026-05 --inclusion-tag public,executable --repo-classification oss-skill-repo --scan-batch-id batch-2026-05
 ```
 
 Config loading is explicit. The scanner does not auto-discover `.agent-audit.yaml` when `--config` is omitted.
@@ -157,7 +159,7 @@ cargo run -q -p agent-audit-cli -- scan fixtures/compatibility/host/mixed-profil
 
 Finding objects include `fingerprint`, `severity`, `confidence`, `category`, location, rationale, remediation, and suppression guidance. Finding groups include `group_fingerprint`. JSON also includes a structured `patterns` array with concise ecosystem-level observations, counts, and affected package percentages when aggregate evidence supports them. Legacy reports that omit `confidence` or fingerprint fields still deserialize with defaults.
 
-Use `--format public-json` when producing reusable public audit datasets. Public JSON keeps audit metadata, repository metadata, package identifiers, findings, finding groups, fingerprints, metrics, patterns, and bounded evidence snippets, but omits full `SKILL.md` body text, code block bodies, inline code bodies, and other large manifest content by default. The public dataset projection is documented in `docs/report.schema.json` under `$defs.publicDataset`.
+Use `--format public-json` when producing reusable public audit datasets. Public JSON keeps audit metadata, optional methodology metadata, repository metadata, package identifiers, findings, finding groups, fingerprints, metrics, patterns, and bounded evidence snippets, but omits full `SKILL.md` body text, code block bodies, inline code bodies, and other large manifest content by default. The public dataset projection is documented in `docs/report.schema.json` under `$defs.publicDataset`.
 
 JSON reports include stable compatibility matrix data:
 

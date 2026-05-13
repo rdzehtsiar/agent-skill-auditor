@@ -1330,6 +1330,30 @@ fn extend_html_audit_metadata(html: &mut String, audit: &AuditMetadata) {
     if let Some(hash) = audit.config.hash.as_deref() {
         extend_html_metadata_row(html, "Config hash", hash);
     }
+    if let Some(methodology) = audit.methodology.as_ref() {
+        if let Some(corpus_name) = methodology.corpus_name.as_deref() {
+            extend_html_metadata_row(html, "Corpus name", corpus_name);
+        }
+        if let Some(corpus_entry_id) = methodology.corpus_entry_id.as_deref() {
+            extend_html_metadata_row(html, "Corpus entry ID", corpus_entry_id);
+        }
+        if let Some(methodology_version) = methodology.methodology_version.as_deref() {
+            extend_html_metadata_row(html, "Methodology version", methodology_version);
+        }
+        if !methodology.inclusion_tags.is_empty() {
+            extend_html_metadata_row(
+                html,
+                "Inclusion tags",
+                &methodology.inclusion_tags.join(", "),
+            );
+        }
+        if let Some(repo_classification) = methodology.repo_classification.as_deref() {
+            extend_html_metadata_row(html, "Repository classification", repo_classification);
+        }
+        if let Some(scan_batch_id) = methodology.scan_batch_id.as_deref() {
+            extend_html_metadata_row(html, "Scan batch ID", scan_batch_id);
+        }
+    }
     if let Some(platform) = audit.platform.as_ref() {
         extend_html_metadata_row(
             html,

@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 
 use agent_audit_core::model::{
-    stable_audit_hash, AuditCommandMetadata, AuditConfigMetadata, AuditPlatformMetadata,
-    AuditRepositoryMetadata,
+    stable_audit_hash, AuditCommandMetadata, AuditConfigMetadata, AuditMethodologyMetadata,
+    AuditPlatformMetadata, AuditRepositoryMetadata,
 };
 use agent_audit_core::{
     parse_audit_config, parse_severity, report_matches_fail_on, scan_path, AuditConfig, AuditError,
@@ -97,6 +97,43 @@ struct ScanCommand {
         help = "Require local trust manifest and license evidence, emitting missing metadata findings"
     )]
     strict_supply_chain: bool,
+    #[arg(
+        long,
+        value_name = "NAME",
+        help = "Attach optional public-audit corpus name metadata"
+    )]
+    corpus_name: Option<String>,
+    #[arg(
+        long,
+        value_name = "ID",
+        help = "Attach optional public-audit corpus entry ID metadata"
+    )]
+    corpus_entry_id: Option<String>,
+    #[arg(
+        long,
+        value_name = "VERSION",
+        help = "Attach optional public-audit methodology version metadata"
+    )]
+    methodology_version: Option<String>,
+    #[arg(
+        long = "inclusion-tag",
+        value_delimiter = ',',
+        value_name = "TAG",
+        help = "Attach optional public-audit inclusion tag metadata; repeat or comma-separate values"
+    )]
+    inclusion_tags: Vec<String>,
+    #[arg(
+        long,
+        value_name = "CLASSIFICATION",
+        help = "Attach optional public-audit repository classification metadata"
+    )]
+    repo_classification: Option<String>,
+    #[arg(
+        long,
+        value_name = "ID",
+        help = "Attach optional public-audit scan batch ID metadata"
+    )]
+    scan_batch_id: Option<String>,
 }
 
 fn main() -> Result<()> {
@@ -140,6 +177,9 @@ fn run_scan_with_writer_and_opener(
         .as_ref()
         .map(|loaded| loaded.metadata.clone())
         .unwrap_or_default();
+    let config_methodology = loaded_config
+        .as_ref()
+        .and_then(|loaded| loaded.config.methodology.clone());
     let config = effective_config(
         loaded_config.map(|loaded| loaded.config),
         &command.profiles,
@@ -153,7 +193,13 @@ fn run_scan_with_writer_and_opener(
             ..ScanOptions::default()
         },
     )?;
-    enrich_report_audit_metadata(&mut report, &command, &fail_on, config_metadata);
+    enrich_report_audit_metadata(
+        &mut report,
+        &command,
+        &fail_on,
+        config_metadata,
+        config_methodology,
+    );
     write_report_apply_fail_on_and_maybe_open(&report, &command, &fail_on, writer, opener)
 }
 
@@ -284,6 +330,12 @@ fn write_report_and_apply_fail_on(
         profiles: Vec::new(),
         supply_chain: false,
         strict_supply_chain: false,
+        corpus_name: None,
+        corpus_entry_id: None,
+        methodology_version: None,
+        inclusion_tags: Vec::new(),
+        repo_classification: None,
+        scan_batch_id: None,
     };
 
     write_report_apply_fail_on_and_maybe_open(report, &command, fail_on, writer, |_| Ok(()))
@@ -420,6 +472,7 @@ fn enrich_report_audit_metadata(
     command: &ScanCommand,
     effective_fail_on: &[Severity],
     config: AuditConfigMetadata,
+    config_methodology: Option<AuditMethodologyMetadata>,
 ) {
     report.audit.config = config;
     report.audit.scan.root = Some(path_metadata_string(&command.path));
@@ -433,12 +486,68 @@ fn enrich_report_audit_metadata(
         supply_chain: command.supply_chain,
         strict_supply_chain: command.strict_supply_chain,
     };
+    report.audit.methodology = effective_methodology_metadata(command, config_methodology);
     report.audit.platform = Some(AuditPlatformMetadata {
         os: std::env::consts::OS.to_owned(),
         arch: std::env::consts::ARCH.to_owned(),
         family: std::env::consts::FAMILY.to_owned(),
     });
     report.audit.repository = detect_repository_metadata(&command.path);
+}
+
+fn effective_methodology_metadata(
+    command: &ScanCommand,
+    config_methodology: Option<AuditMethodologyMetadata>,
+) -> Option<AuditMethodologyMetadata> {
+    let mut methodology = config_methodology.unwrap_or_default();
+
+    override_optional_string(&mut methodology.corpus_name, command.corpus_name.as_deref());
+    override_optional_string(
+        &mut methodology.corpus_entry_id,
+        command.corpus_entry_id.as_deref(),
+    );
+    override_optional_string(
+        &mut methodology.methodology_version,
+        command.methodology_version.as_deref(),
+    );
+    override_optional_string(
+        &mut methodology.repo_classification,
+        command.repo_classification.as_deref(),
+    );
+    override_optional_string(
+        &mut methodology.scan_batch_id,
+        command.scan_batch_id.as_deref(),
+    );
+
+    if !command.inclusion_tags.is_empty() {
+        methodology.inclusion_tags = normalized_cli_values(&command.inclusion_tags);
+    }
+
+    if methodology.is_empty() {
+        None
+    } else {
+        Some(methodology)
+    }
+}
+
+fn override_optional_string(target: &mut Option<String>, value: Option<&str>) {
+    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return;
+    };
+
+    *target = Some(value.to_owned());
+}
+
+fn normalized_cli_values(values: &[String]) -> Vec<String> {
+    let mut values = values
+        .iter()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+    values.sort();
+    values.dedup();
+    values
 }
 
 fn detect_repository_metadata(scan_root: &Path) -> Option<AuditRepositoryMetadata> {
@@ -633,6 +742,27 @@ mod tests {
     }
 
     #[test]
+    fn scan_help_lists_methodology_metadata_options() {
+        let mut command = Cli::command();
+        let help = command
+            .find_subcommand_mut("scan")
+            .expect("scan subcommand should be registered")
+            .render_long_help()
+            .to_string();
+
+        for option in [
+            "--corpus-name <NAME>",
+            "--corpus-entry-id <ID>",
+            "--methodology-version <VERSION>",
+            "--inclusion-tag <TAG>",
+            "--repo-classification <CLASSIFICATION>",
+            "--scan-batch-id <ID>",
+        ] {
+            assert!(help.contains(option), "help should contain {option}");
+        }
+    }
+
+    #[test]
     fn scan_help_lists_output_and_open_options() {
         let mut command = Cli::command();
         let help = command
@@ -663,6 +793,52 @@ mod tests {
                 assert_eq!(command.profiles, Vec::<String>::new());
                 assert!(!command.supply_chain);
                 assert!(!command.strict_supply_chain);
+                assert_eq!(command.corpus_name, None);
+                assert_eq!(command.corpus_entry_id, None);
+                assert_eq!(command.methodology_version, None);
+                assert_eq!(command.inclusion_tags, Vec::<String>::new());
+                assert_eq!(command.repo_classification, None);
+                assert_eq!(command.scan_batch_id, None);
+            }
+        }
+    }
+
+    #[test]
+    fn parses_methodology_metadata_options() {
+        let cli = Cli::parse_from([
+            "agent-audit",
+            "scan",
+            "fixtures/spec/basic",
+            "--corpus-name",
+            "v0.8 public audit",
+            "--corpus-entry-id",
+            "repo-001",
+            "--methodology-version",
+            "2026-05",
+            "--inclusion-tag",
+            "public,executable",
+            "--inclusion-tag",
+            "security",
+            "--repo-classification",
+            "oss-skill-repo",
+            "--scan-batch-id",
+            "batch-2026-05",
+        ]);
+
+        match cli.command {
+            Command::Scan(command) => {
+                assert_eq!(command.corpus_name.as_deref(), Some("v0.8 public audit"));
+                assert_eq!(command.corpus_entry_id.as_deref(), Some("repo-001"));
+                assert_eq!(command.methodology_version.as_deref(), Some("2026-05"));
+                assert_eq!(
+                    command.inclusion_tags,
+                    vec!["public", "executable", "security"]
+                );
+                assert_eq!(
+                    command.repo_classification.as_deref(),
+                    Some("oss-skill-repo")
+                );
+                assert_eq!(command.scan_batch_id.as_deref(), Some("batch-2026-05"));
             }
         }
     }
@@ -1107,6 +1283,79 @@ description: JSON output fixture.
             value["audit"]["host_profiles"]["selected"],
             serde_json::json!(HOST_PROFILES)
         );
+        assert!(value["audit"].get("methodology").is_none());
+    }
+
+    #[test]
+    fn run_scan_includes_config_methodology_metadata_in_json() {
+        let workspace = CliTestWorkspace::new("config-methodology-json");
+        workspace.write_file("SKILL.md", valid_skill("config-methodology-json"));
+        workspace.write_file(
+            "agent-audit.yaml",
+            r#"
+methodology:
+  corpus_name: v0.8 public audit
+  corpus_entry_id: repo-001
+  methodology_version: 2026-05
+  inclusion_tags:
+    - security
+    - public
+  repo_classification: oss-skill-repo
+  scan_batch_id: batch-2026-05
+"#,
+        );
+
+        let output = run_scan_output(configured_scan_command(
+            &workspace,
+            ReportFormat::Json,
+            "agent-audit.yaml",
+        ))
+        .expect("run JSON scan");
+        let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
+        let methodology = &value["audit"]["methodology"];
+
+        assert_eq!(methodology["corpus_name"], "v0.8 public audit");
+        assert_eq!(methodology["corpus_entry_id"], "repo-001");
+        assert_eq!(methodology["methodology_version"], "2026-05");
+        assert_eq!(
+            methodology["inclusion_tags"],
+            serde_json::json!(["public", "security"])
+        );
+        assert_eq!(methodology["repo_classification"], "oss-skill-repo");
+        assert_eq!(methodology["scan_batch_id"], "batch-2026-05");
+    }
+
+    #[test]
+    fn run_scan_cli_methodology_overrides_config_metadata() {
+        let workspace = CliTestWorkspace::new("cli-methodology-json");
+        workspace.write_file("SKILL.md", valid_skill("cli-methodology-json"));
+        workspace.write_file(
+            "agent-audit.yaml",
+            r#"
+methodology:
+  corpus_name: config corpus
+  inclusion_tags:
+    - config
+  repo_classification: internal
+"#,
+        );
+
+        let output = run_scan_output(ScanCommand {
+            corpus_name: Some("cli corpus".to_owned()),
+            inclusion_tags: vec!["zeta".to_owned(), "alpha".to_owned(), "zeta".to_owned()],
+            repo_classification: Some("oss".to_owned()),
+            ..configured_scan_command(&workspace, ReportFormat::Json, "agent-audit.yaml")
+        })
+        .expect("run JSON scan");
+        let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
+        let methodology = &value["audit"]["methodology"];
+
+        assert_eq!(methodology["corpus_name"], "cli corpus");
+        assert_eq!(
+            methodology["inclusion_tags"],
+            serde_json::json!(["alpha", "zeta"])
+        );
+        assert_eq!(methodology["repo_classification"], "oss");
     }
 
     #[test]
@@ -1145,6 +1394,42 @@ PUBLIC_JSON_FULL_MANIFEST_BODY_SHOULD_NOT_APPEAR
         assert!(value["findings"].is_array());
         assert!(value["finding_groups"].is_array());
         assert!(value["patterns"].is_array());
+    }
+
+    #[test]
+    fn run_scan_includes_cli_methodology_metadata_in_public_json() {
+        let workspace = CliTestWorkspace::new("public-json-methodology");
+        workspace.write_file("SKILL.md", valid_skill("public-json-methodology"));
+
+        let output = run_scan_output(ScanCommand {
+            corpus_name: Some("v0.8 public audit".to_owned()),
+            corpus_entry_id: Some("repo-002".to_owned()),
+            methodology_version: Some("2026-05".to_owned()),
+            inclusion_tags: vec!["public".to_owned()],
+            scan_batch_id: Some("batch-2026-05".to_owned()),
+            ..scan_command(&workspace, ReportFormat::PublicJson)
+        })
+        .expect("run public JSON scan");
+        let value: serde_json::Value =
+            serde_json::from_str(&output).expect("parse public JSON output");
+
+        assert_eq!(
+            value["audit"]["methodology"]["corpus_name"],
+            "v0.8 public audit"
+        );
+        assert_eq!(value["audit"]["methodology"]["corpus_entry_id"], "repo-002");
+        assert_eq!(
+            value["audit"]["methodology"]["methodology_version"],
+            "2026-05"
+        );
+        assert_eq!(
+            value["audit"]["methodology"]["inclusion_tags"],
+            serde_json::json!(["public"])
+        );
+        assert_eq!(
+            value["audit"]["methodology"]["scan_batch_id"],
+            "batch-2026-05"
+        );
     }
 
     #[test]
@@ -1221,6 +1506,26 @@ description: HTML output fixture.
         assert!(output.contains("<th>Timestamp</th><td>null</td>"));
         assert!(output.contains("html-output"));
         assert!(output.ends_with('\n'));
+    }
+
+    #[test]
+    fn run_scan_includes_methodology_metadata_in_html_when_provided() {
+        let workspace = CliTestWorkspace::new("html-methodology");
+        workspace.write_file("SKILL.md", valid_skill("html-methodology"));
+
+        let output = run_scan_output(ScanCommand {
+            corpus_name: Some("v0.8 public audit".to_owned()),
+            corpus_entry_id: Some("repo-html".to_owned()),
+            inclusion_tags: vec!["public".to_owned(), "html".to_owned()],
+            repo_classification: Some("fixture".to_owned()),
+            ..scan_command(&workspace, ReportFormat::Html)
+        })
+        .expect("run HTML scan");
+
+        assert!(output.contains("<th>Corpus name</th><td>v0.8 public audit</td>"));
+        assert!(output.contains("<th>Corpus entry ID</th><td>repo-html</td>"));
+        assert!(output.contains("<th>Inclusion tags</th><td>html, public</td>"));
+        assert!(output.contains("<th>Repository classification</th><td>fixture</td>"));
     }
 
     #[test]
@@ -2508,6 +2813,12 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
             profiles: Vec::new(),
             supply_chain: false,
             strict_supply_chain: false,
+            corpus_name: None,
+            corpus_entry_id: None,
+            methodology_version: None,
+            inclusion_tags: Vec::new(),
+            repo_classification: None,
+            scan_batch_id: None,
         }
     }
 

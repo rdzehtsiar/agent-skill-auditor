@@ -41,6 +41,8 @@ pub struct AuditMetadata {
     pub config: AuditConfigMetadata,
     pub scan: AuditScanMetadata,
     pub command: AuditCommandMetadata,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub methodology: Option<AuditMethodologyMetadata>,
     pub platform: Option<AuditPlatformMetadata>,
     pub repository: Option<AuditRepositoryMetadata>,
     pub timestamp: Option<String>,
@@ -56,6 +58,7 @@ impl Default for AuditMetadata {
             config: AuditConfigMetadata::default(),
             scan: AuditScanMetadata::default(),
             command: AuditCommandMetadata::default(),
+            methodology: None,
             platform: None,
             repository: None,
             timestamp: None,
@@ -142,6 +145,33 @@ pub struct AuditCommandMetadata {
     pub fail_on: Vec<String>,
     pub supply_chain: bool,
     pub strict_supply_chain: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuditMethodologyMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub corpus_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub corpus_entry_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub methodology_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inclusion_tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo_classification: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scan_batch_id: Option<String>,
+}
+
+impl AuditMethodologyMetadata {
+    pub fn is_empty(&self) -> bool {
+        self.corpus_name.is_none()
+            && self.corpus_entry_id.is_none()
+            && self.methodology_version.is_none()
+            && self.inclusion_tags.is_empty()
+            && self.repo_classification.is_none()
+            && self.scan_batch_id.is_none()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -213,6 +213,10 @@
         "command": {
           "$ref": "#/$defs/auditCommandMetadata"
         },
+        "methodology": {
+          "$ref": "#/$defs/auditMethodologyMetadata",
+          "description": "Optional v0.8 public-audit methodology metadata. Omitted when not provided by config or CLI."
+        },
         "platform": {
           "anyOf": [
             {
@@ -364,6 +368,33 @@
         },
         "strict_supply_chain": {
           "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "auditMethodologyMetadata": {
+      "type": "object",
+      "properties": {
+        "corpus_name": {
+          "type": "string"
+        },
+        "corpus_entry_id": {
+          "type": "string"
+        },
+        "methodology_version": {
+          "type": "string"
+        },
+        "inclusion_tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "repo_classification": {
+          "type": "string"
+        },
+        "scan_batch_id": {
+          "type": "string"
         }
       },
       "additionalProperties": false

@@ -5,7 +5,7 @@ use agent_audit_rules::{rule_metadata, RuleStatus};
 use serde::Deserialize;
 
 use crate::error::{AuditError, AuditResult};
-use crate::model::Severity;
+use crate::model::{AuditMethodologyMetadata, Severity};
 
 pub const CONFIG_FILENAME: &str = ".agent-audit.yaml";
 
@@ -15,6 +15,7 @@ pub struct AuditConfig {
     pub fail_on: Vec<Severity>,
     pub ignore: Vec<ConfigIgnoreEntry>,
     pub supply_chain: SupplyChainConfig,
+    pub methodology: Option<AuditMethodologyMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,6 +45,7 @@ impl AuditConfig {
             fail_on: Vec::new(),
             ignore: Vec::new(),
             supply_chain: SupplyChainConfig::default(),
+            methodology: None,
         }
     }
 }
@@ -59,6 +61,8 @@ struct RawConfig {
     ignore: Option<Vec<RawIgnoreEntry>>,
     #[serde(default)]
     supply_chain: Option<RawSupplyChainConfig>,
+    #[serde(default)]
+    methodology: Option<RawMethodologyConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -77,6 +81,18 @@ struct RawSupplyChainConfig {
     policy: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawMethodologyConfig {
+    corpus_name: Option<String>,
+    corpus_entry_id: Option<String>,
+    methodology_version: Option<String>,
+    #[serde(default)]
+    inclusion_tags: Option<Vec<String>>,
+    repo_classification: Option<String>,
+    scan_batch_id: Option<String>,
+}
+
 pub fn parse_audit_config(content: &str) -> AuditResult<AuditConfig> {
     let raw = serde_yaml::from_str::<Option<RawConfig>>(content)
         .map_err(|source| AuditError::ConfigParse {
@@ -89,12 +105,14 @@ pub fn parse_audit_config(content: &str) -> AuditResult<AuditConfig> {
     let fail_on = validate_fail_on(raw.fail_on.unwrap_or_default())?;
     let ignore = validate_ignore(raw.ignore.unwrap_or_default())?;
     let supply_chain = validate_supply_chain(raw.supply_chain)?;
+    let methodology = validate_methodology(raw.methodology)?;
 
     Ok(AuditConfig {
         profiles,
         fail_on,
         ignore,
         supply_chain,
+        methodology,
     })
 }
 
@@ -202,6 +220,59 @@ fn validate_supply_chain(raw: Option<RawSupplyChainConfig>) -> AuditResult<Suppl
             }
         },
     })
+}
+
+fn validate_methodology(
+    raw: Option<RawMethodologyConfig>,
+) -> AuditResult<Option<AuditMethodologyMetadata>> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+
+    let mut metadata = AuditMethodologyMetadata {
+        corpus_name: optional_trimmed_string(raw.corpus_name),
+        corpus_entry_id: optional_trimmed_string(raw.corpus_entry_id),
+        methodology_version: optional_trimmed_string(raw.methodology_version),
+        inclusion_tags: validate_inclusion_tags(raw.inclusion_tags.unwrap_or_default())?,
+        repo_classification: optional_trimmed_string(raw.repo_classification),
+        scan_batch_id: optional_trimmed_string(raw.scan_batch_id),
+    };
+
+    normalize_methodology_tags(&mut metadata.inclusion_tags);
+
+    if metadata.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(metadata))
+    }
+}
+
+fn optional_trimmed_string(value: Option<String>) -> Option<String> {
+    value
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn validate_inclusion_tags(tags: Vec<String>) -> AuditResult<Vec<String>> {
+    tags.into_iter()
+        .enumerate()
+        .map(|(index, tag)| {
+            let tag = tag.trim();
+            if tag.is_empty() {
+                return Err(validation_error(format!(
+                    "methodology.inclusion_tags[{index}] must be a non-empty string"
+                )));
+            }
+            Ok(tag.to_owned())
+        })
+        .collect()
+}
+
+fn normalize_methodology_tags(tags: &mut Vec<String>) {
+    tags.sort();
+    tags.dedup();
 }
 
 fn required_non_empty_field<'a>(
@@ -461,6 +532,68 @@ supply_chain:
         );
         assert!(message.contains("unknown policy `required`"));
         assert!(message.contains("expected one of: default, strict"));
+    }
+
+    #[test]
+    fn parses_optional_methodology_metadata() {
+        let config = parse(
+            r#"
+methodology:
+  corpus_name: " v0.8 public audit "
+  corpus_entry_id: " repo-001 "
+  methodology_version: " 2026-05 "
+  inclusion_tags:
+    - " executable "
+    - " public "
+    - " executable "
+  repo_classification: " oss-skill-repo "
+  scan_batch_id: " batch-2026-05 "
+"#,
+        );
+        let methodology = config.methodology.expect("methodology metadata");
+
+        assert_eq!(
+            methodology.corpus_name.as_deref(),
+            Some("v0.8 public audit")
+        );
+        assert_eq!(methodology.corpus_entry_id.as_deref(), Some("repo-001"));
+        assert_eq!(methodology.methodology_version.as_deref(), Some("2026-05"));
+        assert_eq!(methodology.inclusion_tags, vec!["executable", "public"]);
+        assert_eq!(
+            methodology.repo_classification.as_deref(),
+            Some("oss-skill-repo")
+        );
+        assert_eq!(methodology.scan_batch_id.as_deref(), Some("batch-2026-05"));
+    }
+
+    #[test]
+    fn empty_methodology_metadata_is_absent() {
+        let config = parse(
+            r#"
+methodology:
+  corpus_name: " "
+  inclusion_tags:
+"#,
+        );
+
+        assert_eq!(config.methodology, None);
+    }
+
+    #[test]
+    fn rejects_blank_methodology_inclusion_tag() {
+        let error = parse_error(
+            r#"
+methodology:
+  inclusion_tags:
+    - public
+    - " "
+"#,
+        );
+
+        assert_validation_contains(
+            error,
+            "methodology.inclusion_tags[1] must be a non-empty string",
+        );
     }
 
     #[test]
