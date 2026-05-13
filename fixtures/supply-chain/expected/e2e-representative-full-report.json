@@ -1,4 +1,46 @@
 {
+  "audit": {
+    "output_schema_version": "1",
+    "scanner": {
+      "name": "agent-audit",
+      "version": "0.6.0"
+    },
+    "ruleset": {
+      "version": "0.6.0",
+      "hash": "fnv1a64:7ac7c4a42a4430de"
+    },
+    "host_profiles": {
+      "selected": [
+        "agent-skills-spec",
+        "claude-code",
+        "codex",
+        "github-copilot",
+        "vscode-copilot",
+        "generic"
+      ],
+      "version": "0.6.0",
+      "hash": "fnv1a64:381004ac00e7640f"
+    },
+    "config": {
+      "path": null,
+      "hash": null
+    },
+    "scan": {
+      "root": null
+    },
+    "command": {
+      "name": null,
+      "format": null,
+      "mode": null,
+      "profiles": [],
+      "fail_on": [],
+      "supply_chain": false,
+      "strict_supply_chain": false
+    },
+    "platform": null,
+    "repository": null,
+    "timestamp": null
+  },
   "packages": [
     {
       "root": "",
@@ -73,7 +115,9 @@
     "finding_count": 0,
     "suppressed_finding_count": 0,
     "invalid_manifest_count": 0,
-    "broken_reference_count": 0
+    "broken_reference_count": 0,
+    "actual_secret_evidence_count": 0,
+    "prompt_secret_exposure_count": 0
   },
   "supply_chain": {
     "licenses": [
@@ -194,6 +238,20 @@
         "pinned": true
       }
     ],
+    "dependency_manifests": [
+      {
+        "path": "package.json",
+        "line": 1,
+        "source": "dependency-manifest",
+        "manager": "npm",
+        "normalized": "package.json",
+        "raw": "package.json",
+        "confidence": "high",
+        "dependency_count": 1,
+        "unpinned_dependency_count": 0,
+        "pinning": "exact-pinned"
+      }
+    ],
     "package_managers": [
       {
         "path": "package.json",
@@ -286,7 +344,12 @@
         "score": 100,
         "reasons": [
           "local package evidence has no remote or install blockers"
-        ]
+        ],
+        "remote_fetch_dependency": {
+          "detected": true,
+          "evidence_count": 3,
+          "reason": "3 remote fetch dependency signal detected"
+        }
       }
     ]
   },

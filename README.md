@@ -18,7 +18,7 @@ Agent Skill Auditor currently provides a local CLI scanner for skill packages.
 
 The v0.6.0 CLI can discover `SKILL.md` manifests, parse frontmatter and Markdown content, extract normalized package metadata, evaluate metadata-backed deterministic rules, evaluate local host compatibility profiles, inventory local supply-chain evidence, load explicit audit config, apply documented suppressions, and render summary, JSON, SARIF, and self-contained offline HTML reports. It runs offline and does not execute skill scripts.
 
-The v0.5.0 supply-chain capability reports local evidence for licenses, trust manifests, external URLs, remote dependencies, package manager files, lockfiles, executable and binary artifacts, checksums, observed permissions, and offline readiness. It does not contact repositories or registries, verify repository ownership, or prove that a remote source is trustworthy.
+The v0.5.0 supply-chain capability reports local evidence for licenses, trust manifests, external URLs, remote dependencies, dependency manifests, package manager files, lockfiles, executable and binary artifacts, checksums, observed permissions, and offline audit readiness. Offline audit readiness is an auditability signal based on local evidence; it does not prove the skill can run offline. It does not contact repositories or registries, verify repository ownership, or prove that a remote source is trustworthy.
 
 The v0.7.0 integration work documents CI-ready install and workflow paths for local Cargo builds, the checked-in GitHub Action, local Docker images, the npm wrapper, a Homebrew tap formula template, and mise/asdf guidance. External publication channels are not live unless the corresponding release tags, assets, registries, taps, plugin repositories, and credentials exist.
 
@@ -65,7 +65,7 @@ agent-audit scan [PATH] [--format FORMAT] [--mode MODE] [--output PATH] [--open]
 - `--format` defaults to `summary`.
 - Supported formats are `summary`, `json`, `sarif`, and `html`.
 - `--mode` defaults to `default`. Supported modes are `default`, `verbose`, `research`, and `ci`.
-- Human-readable summary and HTML output use `--mode` to control density: grouped default output, expanded verbose findings, grouped research evidence with normalized keys, or compact CI logs. JSON and SARIF preserve the full finding set, including finding confidence.
+- Human-readable summary and HTML output use `--mode` to control density: grouped default output, expanded verbose findings, grouped research evidence with normalized keys, or compact CI logs. Default, research, HTML, and JSON reports use the same canonical finding groups and group fingerprints; CI mode shows a filtered top-group subset and labels it as filtered for log size. JSON and SARIF preserve the full finding set, including finding confidence.
 - `--output PATH` writes the selected report format to a file instead of standard output.
 - `--open` opens an HTML report after it is written. It applies only with `--format html --output PATH`, and only after `fail_on` checks pass.
 - `--config PATH` explicitly reads and validates a YAML audit config before scanning.
@@ -152,7 +152,7 @@ cargo run -q -p agent-audit-cli -- scan fixtures/compatibility/host/mixed-profil
 cargo run -q -p agent-audit-cli -- scan fixtures/compatibility/host/mixed-profile-metadata --profile codex,github-copilot --format json > report.json
 ```
 
-Finding objects include `severity`, `confidence`, `category`, location, rationale, remediation, and suppression guidance. Legacy reports that omit `confidence` deserialize as `medium`.
+Finding objects include `fingerprint`, `severity`, `confidence`, `category`, location, rationale, remediation, and suppression guidance. Finding groups include `group_fingerprint`. Legacy reports that omit `confidence` or fingerprint fields still deserialize with defaults.
 
 JSON reports include stable compatibility matrix data:
 
@@ -188,6 +188,7 @@ JSON reports also include a stable `supply_chain` section. The section is an inv
   "trust_manifests": [],
   "external_urls": [],
   "remote_dependencies": [],
+  "dependency_manifests": [],
   "package_managers": [],
   "lockfiles": [],
   "executables": [],
@@ -198,7 +199,9 @@ JSON reports also include a stable `supply_chain` section. The section is an inv
 }
 ```
 
-Summary output includes concise supply-chain counts and offline readiness status. SARIF includes supply-chain rule findings as normal results; the full inventory remains in JSON.
+`offline_readiness[].status`, `score`, and `reasons` describe static offline auditability. Optional `runtime_offline_capability`, `external_service_dependency`, and `remote_fetch_dependency` fields are separate so reports do not imply runtime offline behavior from auditability evidence alone.
+
+Summary output includes concise supply-chain counts and offline audit readiness status. SARIF includes supply-chain rule findings as normal results; the full inventory remains in JSON.
 
 SARIF output is intended for code scanning integrations that accept SARIF:
 
@@ -217,7 +220,7 @@ cargo run -q -p agent-audit-cli -- scan fixtures/compatibility/host/mixed-profil
 
 SARIF stores compatibility matrix data under run properties, adds profile context to compatibility findings, and includes finding confidence as a result property. HTML reports are single files that use no hosted assets and can be reviewed offline. External URLs are rendered as text for review rather than fetched or embedded.
 
-The HTML report renders an executive summary, risk distribution, host support, top risky skills, broken references, external URLs, secret usage, offline readiness, packages, findings, and per-skill detail sections. `--open` is limited to explicit HTML file output: the CLI writes the report first, evaluates `fail_on`, and opens the file only when the scan result passes.
+The HTML report renders an executive summary, risk distribution, host support, top risky skills, broken references, external URLs, secret usage, offline audit readiness, packages, findings, and per-skill detail sections. Secret usage separates actual secret evidence, such as secret-like environment access, from prompt-risk text that mentions exposing secrets. `--open` is limited to explicit HTML file output: the CLI writes the report first, evaluates `fail_on`, and opens the file only when the scan result passes.
 
 ## Current Checks
 
@@ -229,7 +232,7 @@ The current scanner supports:
 - Markdown heading, link, inline code, and fenced code block extraction.
 - Relative file reference extraction.
 - Skill artifact inventory for `scripts/`, `references/`, and `assets/`.
-- Supply-chain evidence inventory for local licenses, trust manifests, external URLs, package managers, lockfiles, executables, binary artifacts, checksums, observed permissions, and offline readiness.
+- Supply-chain evidence inventory for local licenses, trust manifests, external URLs, dependency manifests, package managers, lockfiles, executables, binary artifacts, checksums, observed permissions, and offline audit readiness.
 - A metadata-backed deterministic rule engine for initial structural, spec, and compatibility checks.
 - An offline deterministic compatibility matrix for `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, and `generic`.
 - Deterministic findings for:

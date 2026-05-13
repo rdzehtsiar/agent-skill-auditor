@@ -2200,14 +2200,123 @@ fn has_silent_override_pattern(text: &str) -> bool {
 
 fn analyze_shell_security_text(path: &str, text: &str) -> Vec<SecuritySignal> {
     let mut signals = Vec::new();
+    let mut heredocs = Vec::new();
 
     for (line_index, line) in text.lines().enumerate() {
+        if consume_shell_heredoc_line(line, &mut heredocs) {
+            continue;
+        }
+
         signals.extend(analyze_shell_security_line(path, line_index + 1, line));
+
+        let uncommented = shell_uncommented_prefix(line);
+        let code = mask_shell_quoted_content(uncommented);
+        heredocs.extend(find_shell_heredoc_delimiters(uncommented, &code));
     }
 
     signals.sort();
     signals.dedup();
     signals
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ShellHeredocDelimiter {
+    delimiter: String,
+    strip_tabs: bool,
+}
+
+fn consume_shell_heredoc_line(line: &str, heredocs: &mut Vec<ShellHeredocDelimiter>) -> bool {
+    let Some(active) = heredocs.first() else {
+        return false;
+    };
+
+    let candidate = if active.strip_tabs {
+        line.trim_start_matches('\t')
+    } else {
+        line
+    };
+
+    if candidate.trim_end_matches('\r') == active.delimiter {
+        heredocs.remove(0);
+    }
+
+    true
+}
+
+fn find_shell_heredoc_delimiters(uncommented: &str, code: &str) -> Vec<ShellHeredocDelimiter> {
+    let bytes = code.as_bytes();
+    let mut delimiters = Vec::new();
+    let mut index = 0;
+
+    while index + 1 < bytes.len() {
+        if bytes[index] != b'<' || bytes[index + 1] != b'<' {
+            index += 1;
+            continue;
+        }
+
+        if bytes.get(index + 2) == Some(&b'<') {
+            index += 3;
+            continue;
+        }
+
+        let strip_tabs = bytes.get(index + 2) == Some(&b'-');
+        let delimiter_start = index + if strip_tabs { 3 } else { 2 };
+        let Some((delimiter_end, delimiter)) =
+            parse_shell_heredoc_delimiter(uncommented, delimiter_start)
+        else {
+            index += 2;
+            continue;
+        };
+
+        delimiters.push(ShellHeredocDelimiter {
+            delimiter,
+            strip_tabs,
+        });
+        index = delimiter_end.max(index + 2);
+    }
+
+    delimiters
+}
+
+fn parse_shell_heredoc_delimiter(line: &str, start: usize) -> Option<(usize, String)> {
+    let bytes = line.as_bytes();
+    let mut index = start;
+
+    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+        index += 1;
+    }
+
+    let quote = match bytes.get(index) {
+        Some(b'\'') => Some(b'\''),
+        Some(b'"') => Some(b'"'),
+        _ => None,
+    };
+
+    if let Some(quote) = quote {
+        let delimiter_start = index + 1;
+        let delimiter_end = line[delimiter_start..]
+            .bytes()
+            .position(|byte| byte == quote)
+            .map(|offset| delimiter_start + offset)?;
+        return Some((
+            delimiter_end + 1,
+            line[delimiter_start..delimiter_end].to_owned(),
+        ));
+    }
+
+    let delimiter_start = index;
+    while bytes.get(index).is_some_and(|byte| {
+        !byte.is_ascii_whitespace() && !matches!(byte, b'|' | b';' | b'&' | b'<' | b'>')
+    }) {
+        index += 1;
+    }
+
+    (index > delimiter_start).then(|| {
+        (
+            index,
+            line[delimiter_start..index].replace('\\', "").to_owned(),
+        )
+    })
 }
 
 fn analyze_shell_security_line(path: &str, line_number: usize, line: &str) -> Vec<SecuritySignal> {
@@ -6208,6 +6317,49 @@ mod tests {
                 (75, "next".to_owned()),
             ]
         );
+    }
+
+    #[test]
+    fn shell_security_analyzer_ignores_embedded_heredoc_code_redirections() {
+        let script = concat!(
+            "cat > generated.js <<'JS'\n",
+            "const keep = items => items.filter((value) => value > 0);\n",
+            "const compare = (left, right) => left >= right;\n",
+            "JS\n",
+            "cat <<'PY' > generated.py\n",
+            "def keep(value):\n",
+            "    return value > 0 and value >= 1\n",
+            "PY\n",
+            "echo x > file.txt\n",
+            "rm -rf build\n",
+        );
+
+        let output = shell_security_analyzer().analyze(&analyzer_input(
+            "scripts/generate.sh",
+            script.as_bytes(),
+            &[SecurityArtifactClassificationSignal::Extension],
+            &[],
+            &[],
+        ));
+
+        assert_eq!(
+            output
+                .signals
+                .iter()
+                .filter(|signal| signal.kind == SecuritySignalKind::FileWrite)
+                .map(|signal| signal.sink.as_ref().and_then(|sink| sink.target.as_deref()))
+                .collect::<Vec<_>>(),
+            vec![Some("generated.js"), Some("generated.py"), Some("file.txt")]
+        );
+        assert!(
+            output
+                .signals
+                .iter()
+                .any(|signal| signal.kind == SecuritySignalKind::DestructiveCommand),
+            "missing destructive command signal: {:?}",
+            output.signals
+        );
+        assert_eq!(output.diagnostics, Vec::new());
     }
 
     #[test]

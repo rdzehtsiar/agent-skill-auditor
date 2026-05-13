@@ -1,6 +1,6 @@
 {
   "fixture": "offline-partial",
-  "description": "Package has mutable remote and package-install evidence that should reduce offline readiness.",
+  "description": "Package has mutable remote and package-install evidence that should reduce offline audit readiness.",
   "supply_chain": {
     "licenses": [],
     "trust_manifests": [],
@@ -44,6 +44,7 @@
         "pinned": false
       }
     ],
+    "dependency_manifests": [],
     "package_managers": [
       {
         "path": "offline-partial/scripts/install.sh",
@@ -91,11 +92,16 @@
         "status": "partial",
         "score": 50,
         "reasons": [
-          "1 package install command has no matching lockfile",
+          "1 package install command has no matching reproducibility evidence",
           "1 unpinned package dependencies",
           "1 unpinned remote dependencies",
           "no local license evidence found"
-        ]
+        ],
+        "remote_fetch_dependency": {
+          "detected": true,
+          "evidence_count": 2,
+          "reason": "2 remote fetch dependency signal detected"
+        }
       }
     ]
   },
@@ -113,7 +119,7 @@
     {
       "rule_id": "SUPPLY003",
       "path": "offline-partial/scripts/install.sh",
-      "message": "The skill runs a npm install command without matching lockfile evidence, so dependency resolution may change between audits."
+      "message": "The skill runs a npm install command without matching lockfile or exact-pinned dependency manifest evidence, so dependency resolution may change between audits."
     },
     {
       "rule_id": "SUPPLY004",

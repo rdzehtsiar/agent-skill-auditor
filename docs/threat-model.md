@@ -10,9 +10,9 @@ The tool is intended to support local review and CI policy decisions before a sk
 
 - Which skill manifests and local artifacts are present.
 - Which host compatibility assumptions are visible from local metadata.
-- Which scripts, URLs, package managers, lockfiles, binaries, checksums, licenses, and trust manifests need review.
+- Which scripts, URLs, package managers, dependency manifests, lockfiles, binaries, checksums, licenses, and trust manifests need review.
 - Whether declared trust-manifest permissions match observed static evidence.
-- Whether the package has enough local evidence for an offline readiness decision.
+- Whether the package has enough local evidence for an offline audit readiness decision.
 
 The output is review evidence. It is not a guarantee that a skill is safe.
 
@@ -37,12 +37,12 @@ The v0.5.0 supply-chain pipeline inventories local evidence for:
 - Repository and skill-local license files or license metadata.
 - Optional `agent-audit.trust.yaml` and `.agent-audit.trust.yaml` trust manifests.
 - External URLs and remote dependency references found in manifests, Markdown, scripts, and package files.
-- Package manager manifests, lockfiles, install commands, and unpinned package versions.
+- Dependency manifests, lockfiles, install commands, and unpinned package versions.
 - Executable scripts, executable-looking binaries, archives, opaque assets, and local checksums.
 - Declared and observed permission evidence.
-- Offline readiness status and deterministic reason strings.
+- Offline audit readiness status and deterministic reason strings. This is a local auditability signal, not a claim that the skill can run without network access at runtime.
 
-This evidence can show that a package includes reviewable local metadata, pins some dependencies, carries lockfiles, or declares permissions that align with observed static behavior.
+This evidence can show that a package includes reviewable local metadata, carries exact-pinned or range-based dependency manifests, carries lockfiles, or declares permissions that align with observed static behavior.
 
 ## What Local Provenance Checks Can Prove
 

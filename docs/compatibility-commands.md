@@ -120,7 +120,7 @@ Expected behavior:
   context in result properties.
 - HTML renders a self-contained offline report with no hosted assets. It
   includes the executive summary, risk distribution, host support, top risky
-  skills, broken references, external URLs, secret usage, offline readiness,
+  skills, broken references, external URLs, secret usage, offline audit readiness,
   packages, findings, and per-skill detail sections.
 - External URLs in HTML are rendered as text for review; the report does not
   fetch or embed remote content.

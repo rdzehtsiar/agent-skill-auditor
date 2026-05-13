@@ -1,4 +1,46 @@
 {
+  "audit": {
+    "output_schema_version": "1",
+    "scanner": {
+      "name": "agent-audit",
+      "version": "0.6.0"
+    },
+    "ruleset": {
+      "version": "0.6.0",
+      "hash": "fnv1a64:7ac7c4a42a4430de"
+    },
+    "host_profiles": {
+      "selected": [
+        "agent-skills-spec",
+        "claude-code",
+        "codex",
+        "github-copilot",
+        "vscode-copilot",
+        "generic"
+      ],
+      "version": "0.6.0",
+      "hash": "fnv1a64:381004ac00e7640f"
+    },
+    "config": {
+      "path": null,
+      "hash": null
+    },
+    "scan": {
+      "root": null
+    },
+    "command": {
+      "name": null,
+      "format": null,
+      "mode": null,
+      "profiles": [],
+      "fail_on": [],
+      "supply_chain": false,
+      "strict_supply_chain": false
+    },
+    "platform": null,
+    "repository": null,
+    "timestamp": null
+  },
   "packages": [
     {
       "root": ".agents/skills/codex-pass",
@@ -200,6 +242,7 @@
   "findings": [
     {
       "rule_id": "SKILL002",
+      "fingerprint": "fnv1a64:90ab7685044b7d7c",
       "severity": "low",
       "confidence": "high",
       "category": "spec",
@@ -215,6 +258,7 @@
     },
     {
       "rule_id": "SKILL040",
+      "fingerprint": "fnv1a64:ee64e748fe10c215",
       "severity": "low",
       "confidence": "high",
       "category": "compatibility",
@@ -232,6 +276,7 @@
   "finding_groups": [
     {
       "rule_id": "SKILL002",
+      "group_fingerprint": "fnv1a64:846266d12f7e80e8",
       "severity": "low",
       "confidence": "high",
       "category": "spec",
@@ -260,6 +305,7 @@
     },
     {
       "rule_id": "SKILL040",
+      "group_fingerprint": "fnv1a64:18036a90900fd927",
       "severity": "low",
       "confidence": "high",
       "category": "compatibility",
@@ -294,13 +340,16 @@
     "finding_count": 2,
     "suppressed_finding_count": 0,
     "invalid_manifest_count": 1,
-    "broken_reference_count": 0
+    "broken_reference_count": 0,
+    "actual_secret_evidence_count": 0,
+    "prompt_secret_exposure_count": 0
   },
   "supply_chain": {
     "licenses": [],
     "trust_manifests": [],
     "external_urls": [],
     "remote_dependencies": [],
+    "dependency_manifests": [],
     "package_managers": [],
     "lockfiles": [],
     "executables": [

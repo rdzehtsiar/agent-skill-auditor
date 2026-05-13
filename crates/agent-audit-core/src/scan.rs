@@ -9,7 +9,8 @@ use crate::discovery::discover_skill_manifests;
 use crate::error::{AuditError, AuditResult};
 use crate::license_inventory::{inventory_license_files, inventory_manifest_license};
 use crate::model::{
-    build_finding_groups, finding_suppression_match_keys, BinaryArtifactKind, CompatibilityMatrix,
+    build_finding_groups, finding_suppression_match_keys, populate_finding_fingerprints,
+    AuditMetadata, BinaryArtifactKind, CompatibilityMatrix, DependencyManifestPinningKind,
     ExternalUrlKind, FindingConfidence, LicenseScope, PackageManagerKind, PermissionEvidenceKind,
     PermissionKind, RemoteDependencyKind, ScanReport, ScanSummary, SkillArtifactKind,
     SkillCompatibilityRow, SkillFile, SkillFileKind, SkillFinding, SkillGraph, SkillManifest,
@@ -35,12 +36,13 @@ use agent_audit_rules::{
     active_rule_metadata, evaluate_package_install_rules, evaluate_security_signal_rules,
     evaluate_structural_rules, evaluate_supply_chain_rules, rule_counts_as_broken_reference,
     rule_counts_as_invalid_manifest, EvaluatedRuleFinding, RuleCategory as RegistryCategory,
-    RuleFrontmatterFieldFact, RuleId, RuleMalformedFrontmatterFact, RuleManifestFacts,
+    RuleDependencyManifestPinningKind, RuleFrontmatterFieldFact, RuleId,
+    RuleMalformedFrontmatterFact, RuleManifestFacts, RulePackageDependencyManifestFact,
     RulePackageFacts, RulePackageFileFact, RulePackageInstallContext, RuleParsedManifestFacts,
     RuleReferenceFact, RuleSeverity as RegistrySeverity, RuleSupplyChainBinaryFact,
-    RuleSupplyChainBinaryKind, RuleSupplyChainChecksumFact, RuleSupplyChainFacts,
-    RuleSupplyChainLicenseFact, RuleSupplyChainLicenseScope, RuleSupplyChainLockfileFact,
-    RuleSupplyChainPackageFact, RuleSupplyChainPackageManagerFact,
+    RuleSupplyChainBinaryKind, RuleSupplyChainChecksumFact, RuleSupplyChainDependencyManifestFact,
+    RuleSupplyChainFacts, RuleSupplyChainLicenseFact, RuleSupplyChainLicenseScope,
+    RuleSupplyChainLockfileFact, RuleSupplyChainPackageFact, RuleSupplyChainPackageManagerFact,
     RuleSupplyChainPackageManagerKind, RuleSupplyChainPermissionEvidenceKind,
     RuleSupplyChainPermissionFact, RuleSupplyChainPermissionKind,
     RuleSupplyChainPolicy as RulePolicy, RuleSupplyChainRemoteDependencyFact,
@@ -101,10 +103,8 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
             inventory_trust_manifest(root, skill_root)?,
         );
         merge_supply_chain_inventory(&mut supply_chain, inventory_license_files(root, skill_root));
-        merge_supply_chain_inventory(
-            &mut supply_chain,
-            inventory_package_files(root, skill_root)?,
-        );
+        let package_file_inventory = inventory_package_files(root, skill_root)?;
+        merge_supply_chain_inventory(&mut supply_chain, package_file_inventory.clone());
 
         if metadata.len() > options.max_manifest_bytes {
             package_facts.push(RulePackageFacts {
@@ -248,6 +248,7 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
             skill_root,
             &manifest_display,
             &graph,
+            &package_file_inventory,
         )?);
 
         packages.push(SkillPackage {
@@ -292,6 +293,7 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         options.config.as_ref(),
     ));
     sort_skill_findings(&mut findings);
+    populate_finding_fingerprints(&mut findings);
     let (findings, suppressed_findings) = apply_suppressions(findings, options.config.as_ref());
 
     let invalid_manifest_count = findings
@@ -302,18 +304,23 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         .iter()
         .filter(|finding| rule_counts_as_broken_reference(&finding.rule_id))
         .count();
+    let actual_secret_evidence_count = actual_secret_evidence_count(&findings, &supply_chain);
+    let prompt_secret_exposure_count = prompt_secret_exposure_count(&findings);
 
     let compatibility =
         compatibility_matrix_for_packages(&packages, &findings, options.config.as_ref());
     let finding_groups = build_finding_groups(&packages, &findings, &compatibility);
 
     Ok(ScanReport {
+        audit: AuditMetadata::default().with_selected_profiles(compatibility.profiles.clone()),
         summary: ScanSummary {
             package_count: packages.len(),
             finding_count: findings.len(),
             suppressed_finding_count: suppressed_findings.len(),
             invalid_manifest_count,
             broken_reference_count,
+            actual_secret_evidence_count,
+            prompt_secret_exposure_count,
         },
         packages,
         findings,
@@ -322,6 +329,48 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         supply_chain,
         compatibility,
     })
+}
+
+fn actual_secret_evidence_count(
+    findings: &[SkillFinding],
+    supply_chain: &SupplyChainInventory,
+) -> usize {
+    findings
+        .iter()
+        .filter(|finding| is_actual_secret_evidence_finding(finding))
+        .count()
+        + supply_chain
+            .permissions
+            .iter()
+            .filter(|permission| permission.kind == PermissionKind::Secrets)
+            .count()
+}
+
+fn prompt_secret_exposure_count(findings: &[SkillFinding]) -> usize {
+    findings
+        .iter()
+        .filter(|finding| is_prompt_secret_exposure_finding(finding))
+        .count()
+}
+
+fn is_actual_secret_evidence_finding(finding: &SkillFinding) -> bool {
+    finding.rule_id == "SEC002"
+        || (finding.rule_id == "SEC003"
+            && (contains_secret_signal_word(&finding.title)
+                || contains_secret_signal_word(&finding.message)
+                || contains_secret_signal_word(&finding.rationale)))
+}
+
+fn is_prompt_secret_exposure_finding(finding: &SkillFinding) -> bool {
+    matches!(finding.rule_id.as_str(), "SEC011" | "SEC012")
+        && (contains_secret_signal_word(&finding.title)
+            || contains_secret_signal_word(&finding.message)
+            || contains_secret_signal_word(&finding.rationale))
+}
+
+fn contains_secret_signal_word(value: &str) -> bool {
+    let value = value.to_ascii_lowercase();
+    value.contains("secret") || value.contains("credential") || value.contains("token")
 }
 
 fn merge_supply_chain_inventory(
@@ -334,6 +383,9 @@ fn merge_supply_chain_inventory(
     target
         .remote_dependencies
         .append(&mut source.remote_dependencies);
+    target
+        .dependency_manifests
+        .append(&mut source.dependency_manifests);
     target.package_managers.append(&mut source.package_managers);
     target.lockfiles.append(&mut source.lockfiles);
     target.executables.append(&mut source.executables);
@@ -353,6 +405,7 @@ fn dedup_supply_chain_inventory(inventory: &mut SupplyChainInventory) {
     inventory.trust_manifests.dedup();
     inventory.external_urls.dedup();
     inventory.remote_dependencies.dedup();
+    inventory.dependency_manifests.dedup();
     inventory.package_managers.dedup();
     inventory.lockfiles.dedup();
     inventory.executables.dedup();
@@ -431,6 +484,15 @@ fn supply_chain_rule_facts(
                 pinned: dependency.pinned,
             })
             .collect(),
+        dependency_manifests: inventory
+            .dependency_manifests
+            .iter()
+            .map(|manifest| RuleSupplyChainDependencyManifestFact {
+                path: manifest.path.clone(),
+                manager: rule_package_manager_kind(manifest.manager),
+                pinning: rule_dependency_manifest_pinning(manifest.pinning),
+            })
+            .collect(),
         package_managers: inventory
             .package_managers
             .iter()
@@ -442,6 +504,7 @@ fn supply_chain_rule_facts(
                     _ => RuleSupplyChainSourceKind::Other,
                 },
                 manager: rule_package_manager_kind(manager.manager),
+                raw: manager.raw.clone(),
             })
             .collect(),
         lockfiles: inventory
@@ -577,6 +640,18 @@ fn rule_package_manager_kind(manager: PackageManagerKind) -> RuleSupplyChainPack
         PackageManagerKind::Gem => RuleSupplyChainPackageManagerKind::Gem,
         PackageManagerKind::Composer => RuleSupplyChainPackageManagerKind::Composer,
         PackageManagerKind::Unknown => RuleSupplyChainPackageManagerKind::Unknown,
+    }
+}
+
+fn rule_dependency_manifest_pinning(
+    pinning: DependencyManifestPinningKind,
+) -> RuleDependencyManifestPinningKind {
+    match pinning {
+        DependencyManifestPinningKind::ExactPinned => {
+            RuleDependencyManifestPinningKind::ExactPinned
+        }
+        DependencyManifestPinningKind::RangeBased => RuleDependencyManifestPinningKind::RangeBased,
+        DependencyManifestPinningKind::Unknown => RuleDependencyManifestPinningKind::Unknown,
     }
 }
 
@@ -947,6 +1022,7 @@ fn compatibility_finding(
 
     SkillFinding {
         rule_id: metadata.id.as_str().to_owned(),
+        fingerprint: String::new(),
         severity: severity_from_metadata(metadata.severity),
         confidence: FindingConfidence::Medium,
         category: category_from_metadata(metadata.category),
@@ -1092,6 +1168,7 @@ fn skill_finding_from_evaluated_rule(finding: EvaluatedRuleFinding) -> SkillFind
 
     SkillFinding {
         rule_id: metadata.id.as_str().to_owned(),
+        fingerprint: String::new(),
         severity: severity_from_metadata(metadata.severity),
         confidence: finding_confidence_from_rule_id(finding.rule_id),
         category: category_from_metadata(metadata.category),
@@ -1395,6 +1472,7 @@ fn package_install_context(
     skill_root: &Path,
     manifest_path: &str,
     graph: &SkillGraph,
+    package_file_inventory: &SupplyChainInventory,
 ) -> AuditResult<RulePackageInstallContext> {
     let mut files = graph
         .files
@@ -1439,6 +1517,15 @@ fn package_install_context(
         package_root: display_path(scan_root, skill_root),
         manifest_path: manifest_path.to_owned(),
         files,
+        dependency_manifests: package_file_inventory
+            .dependency_manifests
+            .iter()
+            .map(|manifest| RulePackageDependencyManifestFact {
+                path: manifest.path.clone(),
+                manager: rule_package_manager_kind(manifest.manager),
+                pinning: rule_dependency_manifest_pinning(manifest.pinning),
+            })
+            .collect(),
     })
 }
 
@@ -4218,6 +4305,18 @@ Read [parent](../outside.md), [absolute](/outside.md), and [windows](C:/outside.
 
         let finding = assert_security_finding(&report, "SEC011", "SKILL.md", Some(8));
         assert_eq!(finding.confidence, FindingConfidence::Medium);
+        assert_eq!(report.summary.actual_secret_evidence_count, 0);
+        assert_eq!(report.summary.prompt_secret_exposure_count, 1);
+    }
+
+    #[test]
+    fn scan_security_env_secret_usage_counts_actual_secret_evidence_only() {
+        let report = scan_security_fixture("env-exfiltration");
+
+        assert_security_finding(&report, "SEC002", "scripts/upload.sh", Some(3));
+        assert_security_finding(&report, "SEC003", "scripts/upload.sh", Some(3));
+        assert_eq!(report.summary.actual_secret_evidence_count, 3);
+        assert_eq!(report.summary.prompt_secret_exposure_count, 1);
     }
 
     #[test]
@@ -4320,6 +4419,96 @@ Read [parent](../outside.md), [absolute](/outside.md), and [windows](C:/outside.
                 report.findings
             );
         }
+    }
+
+    #[test]
+    fn scan_exact_pinned_requirements_manifest_avoids_install_reproducibility_findings() {
+        let workspace = TestWorkspace::new("scan-exact-requirements-install");
+        workspace.write_file("SKILL.md", security_package_install_skill());
+        workspace.write_file("requirements.txt", "requests==2.32.0\nclick==8.1.7\n");
+        workspace.write_file(
+            "scripts/install.sh",
+            "# SPDX-License-Identifier: Apache-2.0\n\npip install -r requirements.txt\n",
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert!(
+            report.findings.iter().all(|finding| !matches!(
+                finding.rule_id.as_str(),
+                "SEC009" | "SUPPLY003" | "SUPPLY004"
+            )),
+            "exact-pinned requirements emitted dependency reproducibility findings: {:#?}",
+            report.findings
+        );
+        assert!(report.supply_chain.lockfiles.is_empty());
+        assert_eq!(
+            report
+                .supply_chain
+                .dependency_manifests
+                .iter()
+                .map(|manifest| (manifest.path.as_str(), manifest.pinning))
+                .collect::<Vec<_>>(),
+            vec![(
+                "requirements.txt",
+                DependencyManifestPinningKind::ExactPinned
+            )]
+        );
+    }
+
+    #[test]
+    fn scan_range_based_requirements_manifest_keeps_dependency_findings() {
+        let workspace = TestWorkspace::new("scan-range-requirements-install");
+        workspace.write_file("SKILL.md", security_package_install_skill());
+        workspace.write_file("requirements.txt", "requests>=2.0\n");
+        workspace.write_file(
+            "scripts/install.sh",
+            "# SPDX-License-Identifier: Apache-2.0\n\npip install -r requirements.txt\n",
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_security_finding(&report, "SEC009", "scripts/install.sh", Some(3));
+        assert!(report
+            .findings
+            .iter()
+            .any(|finding| finding.rule_id == "SUPPLY003"
+                && finding.location.path == "scripts/install.sh"));
+        assert!(report
+            .findings
+            .iter()
+            .any(|finding| finding.rule_id == "SUPPLY004"
+                && finding.location.path == "requirements.txt"));
+        assert!(report.supply_chain.lockfiles.is_empty());
+        assert_eq!(
+            report.supply_chain.dependency_manifests[0].pinning,
+            DependencyManifestPinningKind::RangeBased
+        );
+    }
+
+    #[test]
+    fn scan_mismatched_requirements_manifest_keeps_install_reproducibility_findings() {
+        let workspace = TestWorkspace::new("scan-mismatched-requirements-install");
+        workspace.write_file("SKILL.md", security_package_install_skill());
+        workspace.write_file("requirements.txt", "requests==2.32.0\n");
+        workspace.write_file(
+            "scripts/install.sh",
+            "# SPDX-License-Identifier: Apache-2.0\n\npip install -r other.txt\n",
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_security_finding(&report, "SEC009", "scripts/install.sh", Some(3));
+        assert!(report
+            .findings
+            .iter()
+            .any(|finding| finding.rule_id == "SUPPLY003"
+                && finding.location.path == "scripts/install.sh"));
+        assert!(report.supply_chain.lockfiles.is_empty());
+        assert_eq!(
+            report.supply_chain.dependency_manifests[0].pinning,
+            DependencyManifestPinningKind::ExactPinned
+        );
     }
 
     #[test]
@@ -6628,7 +6817,7 @@ description: JSON stability fixture.
             ]
         );
         assert!(!json_contains_workspace_root(&json, workspace.root()));
-        assert!(!json.contains("timestamp"));
+        assert_eq!(value["audit"]["timestamp"], serde_json::Value::Null);
         assert!(!json.contains("generated_at"));
     }
 
@@ -6639,6 +6828,7 @@ description: JSON stability fixture.
 
         let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
         let json = serde_json::to_string_pretty(&report).expect("serialize report");
+        let mut value: serde_json::Value = serde_json::from_str(&json).expect("parse report");
 
         let expected = r##"{
   "packages": [
@@ -6674,13 +6864,16 @@ description: JSON stability fixture.
     "finding_count": 0,
     "suppressed_finding_count": 0,
     "invalid_manifest_count": 0,
-    "broken_reference_count": 0
+    "broken_reference_count": 0,
+    "actual_secret_evidence_count": 0,
+    "prompt_secret_exposure_count": 0
   },
   "supply_chain": {
     "licenses": [],
     "trust_manifests": [],
     "external_urls": [],
     "remote_dependencies": [],
+    "dependency_manifests": [],
     "package_managers": [],
     "lockfiles": [],
     "executables": [],
@@ -6747,7 +6940,34 @@ description: JSON stability fixture.
     ]
   }
 }"##;
-        assert_eq!(json, expected);
+        assert_eq!(value["audit"]["output_schema_version"], "1");
+        assert!(json.starts_with("{\n  \"audit\":"));
+        assert_eq!(value["audit"]["scanner"]["name"], "agent-audit");
+        assert_eq!(
+            value["audit"]["scanner"]["version"],
+            env!("CARGO_PKG_VERSION")
+        );
+        assert_eq!(value["audit"]["timestamp"], serde_json::Value::Null);
+        assert_eq!(
+            value["audit"]["host_profiles"]["selected"],
+            serde_json::json!(HOST_PROFILES)
+        );
+        assert!(value["audit"]["ruleset"]["hash"]
+            .as_str()
+            .expect("ruleset hash")
+            .starts_with("fnv1a64:"));
+        assert!(value["audit"]["host_profiles"]["hash"]
+            .as_str()
+            .expect("host profile hash")
+            .starts_with("fnv1a64:"));
+        value
+            .as_object_mut()
+            .expect("report object")
+            .remove("audit");
+
+        let expected_value: serde_json::Value =
+            serde_json::from_str(expected).expect("parse expected report");
+        assert_eq!(value, expected_value);
         assert!(!json_contains_workspace_root(&json, workspace.root()));
     }
 

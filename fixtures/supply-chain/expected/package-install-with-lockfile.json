@@ -17,6 +17,20 @@
       }
     ],
     "remote_dependencies": [],
+    "dependency_manifests": [
+      {
+        "path": "package-install-with-lockfile/package.json",
+        "line": 1,
+        "source": "dependency-manifest",
+        "manager": "npm",
+        "normalized": "package.json",
+        "raw": "package.json",
+        "confidence": "high",
+        "dependency_count": 1,
+        "unpinned_dependency_count": 0,
+        "pinning": "exact-pinned"
+      }
+    ],
     "package_managers": [
       {
         "path": "package-install-with-lockfile/package.json",
@@ -85,7 +99,12 @@
         "score": 95,
         "reasons": [
           "no local license evidence found"
-        ]
+        ],
+        "remote_fetch_dependency": {
+          "detected": true,
+          "evidence_count": 1,
+          "reason": "1 remote fetch dependency signal detected"
+        }
       }
     ]
   },

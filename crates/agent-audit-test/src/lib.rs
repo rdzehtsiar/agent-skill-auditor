@@ -11,7 +11,7 @@ pub const FIXTURE_GROUPS: &[&str] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agent_audit_core::model::ScanSummary;
+    use agent_audit_core::model::{AuditMetadata, ScanSummary};
     use agent_audit_core::{
         build_finding_groups, parse_audit_config, scan_path, CompatibilityMatrix, FindingCategory,
         FindingConfidence, FindingLocation, ScanOptions, ScanReport, Severity, SkillFinding,
@@ -54,6 +54,7 @@ mod tests {
     const SUPPLY_CHAIN_SECTION_KEYS: &[&str] = &[
         "binaries",
         "checksums",
+        "dependency_manifests",
         "executables",
         "external_urls",
         "licenses",
@@ -67,6 +68,7 @@ mod tests {
     const IMPLEMENTED_SUPPLY_CHAIN_SECTION_KEYS: &[&str] = &[
         "binaries",
         "checksums",
+        "dependency_manifests",
         "executables",
         "external_urls",
         "licenses",
@@ -572,7 +574,7 @@ mod tests {
         assert_eq!(first_report.summary.package_count, 1);
         assert_eq!(first_report.summary.finding_count, 0);
         assert!(!json_contains_path(&first_json, &workspace_root()));
-        assert!(!first_json.contains("timestamp"));
+        assert_json_audit_timestamp_null(&first_json);
         assert!(!first_json.contains("generated_at"));
 
         let value: serde_json::Value = serde_json::from_str(&first_json).expect("parse e2e JSON");
@@ -677,7 +679,7 @@ mod tests {
         let reparsed: serde_json::Value = serde_json::from_str(&json).expect("parse JSON");
         assert_eq!(reparsed["summary"]["package_count"], 30);
         assert!(!json_contains_path(&json, &workspace_root()));
-        assert!(!json.contains("timestamp"));
+        assert_json_audit_timestamp_null(&json);
         assert!(!json.contains("generated_at"));
 
         let summary = render_summary(&report);
@@ -727,7 +729,7 @@ mod tests {
 
         assert_eq!(first_json.as_bytes(), second_json.as_bytes());
         assert_eq!(first_json, expected_json);
-        assert!(!first_json.contains("timestamp"));
+        assert_json_audit_timestamp_null(&first_json);
         assert!(!first_json.contains("generated_at"));
         assert!(!json_contains_path(&first_json, &workspace_root()));
 
@@ -741,6 +743,51 @@ mod tests {
         let mut sorted_finding_keys = finding_keys.clone();
         sorted_finding_keys.sort();
         assert_eq!(finding_keys, sorted_finding_keys);
+    }
+
+    #[test]
+    fn finding_fingerprints_repeat_and_survive_different_temp_roots() {
+        let first_workspace = TestWorkspace::new("fingerprints-a");
+        let second_workspace = TestWorkspace::new("fingerprints-b");
+        write_fingerprint_portability_fixture(&first_workspace);
+        write_fingerprint_portability_fixture(&second_workspace);
+
+        let first_report =
+            scan_path(first_workspace.root(), &ScanOptions::default()).expect("scan first root");
+        let second_report =
+            scan_path(second_workspace.root(), &ScanOptions::default()).expect("scan second root");
+
+        let first_fingerprints = finding_fingerprints(&first_report);
+        let second_fingerprints = finding_fingerprints(&second_report);
+        assert!(!first_fingerprints.is_empty());
+        assert_eq!(first_fingerprints, second_fingerprints);
+        assert_eq!(
+            group_fingerprints(&first_report),
+            group_fingerprints(&second_report)
+        );
+
+        let first_json = render_json(&first_report).expect("render first JSON");
+        let second_json = render_json(&second_report).expect("render second JSON");
+        let first_value: serde_json::Value =
+            serde_json::from_str(&first_json).expect("parse first JSON");
+        let second_value: serde_json::Value =
+            serde_json::from_str(&second_json).expect("parse second JSON");
+        assert_eq!(
+            json_fingerprints(&first_value, "findings", "fingerprint"),
+            json_fingerprints(&second_value, "findings", "fingerprint")
+        );
+        assert_eq!(
+            json_fingerprints(&first_value, "finding_groups", "group_fingerprint"),
+            json_fingerprints(&second_value, "finding_groups", "group_fingerprint")
+        );
+
+        let sarif: serde_json::Value =
+            serde_json::from_str(&render_sarif(&first_report).expect("render SARIF"))
+                .expect("parse SARIF");
+        assert_eq!(
+            sarif["runs"][0]["results"][0]["partialFingerprints"]["agentAuditFindingFingerprint"],
+            first_value["findings"][0]["fingerprint"]
+        );
     }
 
     #[test]
@@ -769,7 +816,7 @@ mod tests {
 
         let rendered = render_json(&first_report).expect("render JSON");
         assert!(!json_contains_path(&rendered, &workspace_root()));
-        assert!(!rendered.contains("timestamp"));
+        assert_json_audit_timestamp_null(&rendered);
         assert!(!rendered.contains("generated_at"));
     }
 
@@ -963,7 +1010,7 @@ mod tests {
 
         assert_eq!(first_json.as_bytes(), second_json.as_bytes());
         assert_eq!(first_json, expected_json);
-        assert!(!first_json.contains("timestamp"));
+        assert_json_audit_timestamp_null(&first_json);
         assert!(!first_json.contains("generated_at"));
         assert!(!json_contains_path(&first_json, &workspace_root()));
 
@@ -988,13 +1035,13 @@ mod tests {
 
         assert_eq!(first_json.as_bytes(), second_json.as_bytes());
         assert_eq!(first_json, expected_json);
-        assert!(!first_json.contains("timestamp"));
+        assert_json_audit_timestamp_null(&first_json);
         assert!(!first_json.contains("generated_at"));
         assert!(!json_contains_path(&first_json, &workspace_root()));
 
         let value: serde_json::Value =
             serde_json::from_str(&first_json).expect("parse security corpus JSON");
-        assert_eq!(value["summary"]["package_count"], 16);
+        assert_eq!(value["summary"]["package_count"], 17);
         assert_eq!(value["summary"]["finding_count"], 38);
         assert_eq!(value["summary"]["suppressed_finding_count"], 0);
 
@@ -1024,6 +1071,36 @@ mod tests {
         assert!(finding_paths
             .iter()
             .any(|path| path == &"multi-language/scripts/write.ts"));
+        assert!(!finding_paths
+            .iter()
+            .any(|path| path.starts_with("heredoc-embedded-code/")));
+
+        let heredoc_permissions = value["supply_chain"]["permissions"]
+            .as_array()
+            .expect("permissions array")
+            .iter()
+            .filter(|permission| {
+                permission["path"].as_str() == Some("heredoc-embedded-code/scripts/generate.sh")
+                    && permission["kind"].as_str() == Some("filesystem-write")
+            })
+            .map(|permission| {
+                (
+                    permission["line"].as_u64().expect("permission line"),
+                    permission["normalized"]
+                        .as_str()
+                        .expect("permission normalized"),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            heredoc_permissions,
+            vec![
+                (6, "filesystem_write=generated/snippet.js"),
+                (11, "filesystem_write=generated/snippet.py"),
+                (16, "filesystem_write=generated/status.txt"),
+                (17, "filesystem_write=rm -rf"),
+            ]
+        );
     }
 
     #[test]
@@ -1046,7 +1123,7 @@ mod tests {
 
         assert_eq!(first_json.as_bytes(), second_json.as_bytes());
         assert_eq!(first_json, expected_json);
-        assert!(!first_json.contains("timestamp"));
+        assert_json_audit_timestamp_null(&first_json);
         assert!(!first_json.contains("generated_at"));
         assert!(!json_contains_path(&first_json, &workspace_root()));
 
@@ -1109,6 +1186,7 @@ mod tests {
                 "trust_manifests",
                 "external_urls",
                 "remote_dependencies",
+                "dependency_manifests",
                 "package_managers",
                 "lockfiles",
                 "executables",
@@ -1134,6 +1212,7 @@ mod tests {
                 "inline-code",
                 "code-block",
                 "script",
+                "dependency-manifest",
                 "package-manifest",
                 "lockfile",
                 "trust-manifest",
@@ -1175,6 +1254,7 @@ mod tests {
             string_array(&schema["$defs"]["findingGroup"]["required"]),
             vec![
                 "rule_id",
+                "group_fingerprint",
                 "severity",
                 "category",
                 "title",
@@ -1198,9 +1278,14 @@ mod tests {
             "#/$defs/findingConfidence"
         );
         assert_eq!(
+            schema["$defs"]["findingGroup"]["properties"]["group_fingerprint"]["type"],
+            "string"
+        );
+        assert_eq!(
             string_array(&schema["$defs"]["skillFinding"]["required"]),
             vec![
                 "rule_id",
+                "fingerprint",
                 "severity",
                 "category",
                 "title",
@@ -1214,6 +1299,10 @@ mod tests {
         assert_eq!(
             schema["$defs"]["skillFinding"]["properties"]["confidence"]["$ref"],
             "#/$defs/findingConfidence"
+        );
+        assert_eq!(
+            schema["$defs"]["skillFinding"]["properties"]["fingerprint"]["type"],
+            "string"
         );
 
         let report = scan_compatibility_fixture("matrix", ScanOptions::default());
@@ -1273,6 +1362,7 @@ mod tests {
             legacy_report.finding_groups[0].confidence,
             FindingConfidence::Medium
         );
+        assert_eq!(legacy_report.finding_groups[0].group_fingerprint, "");
         assert!(legacy_report.supply_chain.licenses.is_empty());
     }
 
@@ -1295,7 +1385,7 @@ mod tests {
                 "<h2 id=\"broken-references\">Broken References</h2>",
                 "<h2 id=\"external-urls\">External URLs</h2>",
                 "<h2 id=\"secret-usage\">Secret Usage</h2>",
-                "<h2 id=\"offline-readiness\">Offline Readiness</h2>",
+                "<h2 id=\"offline-readiness\">Offline Audit Readiness</h2>",
                 "<h2 id=\"packages\">Packages</h2>",
                 "<h2 id=\"findings\">Finding Groups</h2>",
                 "<h2 id=\"skill-details\">Skill Details</h2>",
@@ -1319,7 +1409,7 @@ mod tests {
         let second_html = render_html(&second_report);
 
         assert_eq!(first_html.as_bytes(), second_html.as_bytes());
-        assert!(!first_html.contains("timestamp"));
+        assert!(first_html.contains("<th>Timestamp</th><td>null</td>"));
         assert!(!first_html.contains("generated_at"));
         assert!(!html_contains_path(&first_html, workspace.root()));
         assert!(!html_contains_path(&first_html, &workspace_root()));
@@ -1540,6 +1630,7 @@ Bootstrap with scripts/install.sh.
             vec![
                 "binaries".to_owned(),
                 "checksums".to_owned(),
+                "dependency_manifests".to_owned(),
                 "executables".to_owned(),
                 "external_urls".to_owned(),
                 "licenses".to_owned(),
@@ -1657,13 +1748,27 @@ Bootstrap with scripts/install.sh.
             "{} should not contain an absolute workspace path",
             path.display()
         );
-        for forbidden in ["timestamp", "generated_at", "C:\\", "C:/"] {
+        if text.contains("\"timestamp\"") {
+            assert!(
+                text.contains("\"timestamp\": null"),
+                "{} should only contain a deterministic null timestamp",
+                path.display()
+            );
+        }
+
+        for forbidden in ["generated_at", "C:\\", "C:/"] {
             assert!(
                 !text.contains(forbidden),
                 "{} should not contain nondeterministic or host-specific text: {forbidden}",
                 path.display()
             );
         }
+    }
+
+    fn assert_json_audit_timestamp_null(json: &str) {
+        let value: serde_json::Value =
+            serde_json::from_str(json).expect("parse rendered JSON report");
+        assert_eq!(value["audit"]["timestamp"], serde_json::Value::Null);
     }
 
     fn expected_source_line_fragments(
@@ -1862,12 +1967,15 @@ Bootstrap with scripts/install.sh.
         let finding_groups = build_finding_groups(&packages, &findings, &compatibility);
 
         ScanReport {
+            audit: AuditMetadata::default(),
             summary: ScanSummary {
                 package_count: packages.len(),
                 finding_count: findings.len(),
                 suppressed_finding_count: 0,
                 invalid_manifest_count: 0,
                 broken_reference_count: 0,
+                actual_secret_evidence_count: 0,
+                prompt_secret_exposure_count: 0,
             },
             packages,
             findings,
@@ -1913,6 +2021,7 @@ Bootstrap with scripts/install.sh.
     ) -> SkillFinding {
         SkillFinding {
             rule_id: rule_id.to_owned(),
+            fingerprint: String::new(),
             severity,
             confidence: FindingConfidence::Medium,
             category,
@@ -2127,6 +2236,55 @@ Bootstrap with scripts/install.sh.
                     finding["rule_id"].as_str().expect("rule id").to_owned(),
                     finding["message"].as_str().expect("message").to_owned(),
                 )
+            })
+            .collect()
+    }
+
+    fn write_fingerprint_portability_fixture(workspace: &TestWorkspace) {
+        workspace.write_file(
+            "skill/SKILL.md",
+            r#"---
+name: portable-fingerprint
+description: Portable fingerprint fixture.
+---
+
+# Portable Fingerprint
+
+Review [missing guidance](references/missing.md).
+"#,
+        );
+    }
+
+    fn finding_fingerprints(report: &ScanReport) -> Vec<String> {
+        report
+            .findings
+            .iter()
+            .map(|finding| finding.fingerprint.clone())
+            .collect()
+    }
+
+    fn group_fingerprints(report: &ScanReport) -> Vec<String> {
+        report
+            .finding_groups
+            .iter()
+            .map(|group| group.group_fingerprint.clone())
+            .collect()
+    }
+
+    fn json_fingerprints(value: &serde_json::Value, section: &str, field: &str) -> Vec<String> {
+        value[section]
+            .as_array()
+            .unwrap_or_else(|| panic!("{section} array"))
+            .iter()
+            .map(|entry| {
+                let fingerprint = entry[field]
+                    .as_str()
+                    .unwrap_or_else(|| panic!("{section}.{field} string"));
+                assert!(
+                    fingerprint.starts_with("fnv1a64:"),
+                    "{section}.{field} should use stable hash prefix"
+                );
+                fingerprint.to_owned()
             })
             .collect()
     }

@@ -1,4 +1,46 @@
 {
+  "audit": {
+    "output_schema_version": "1",
+    "scanner": {
+      "name": "agent-audit",
+      "version": "0.6.0"
+    },
+    "ruleset": {
+      "version": "0.6.0",
+      "hash": "fnv1a64:7ac7c4a42a4430de"
+    },
+    "host_profiles": {
+      "selected": [
+        "agent-skills-spec",
+        "claude-code",
+        "codex",
+        "github-copilot",
+        "vscode-copilot",
+        "generic"
+      ],
+      "version": "0.6.0",
+      "hash": "fnv1a64:381004ac00e7640f"
+    },
+    "config": {
+      "path": null,
+      "hash": null
+    },
+    "scan": {
+      "root": null
+    },
+    "command": {
+      "name": null,
+      "format": null,
+      "mode": null,
+      "profiles": [],
+      "fail_on": [],
+      "supply_chain": false,
+      "strict_supply_chain": false
+    },
+    "platform": null,
+    "repository": null,
+    "timestamp": null
+  },
   "packages": [
     {
       "root": "",
@@ -42,21 +84,23 @@
   "findings": [
     {
       "rule_id": "SUPPLY003",
+      "fingerprint": "fnv1a64:17ecf2454bee5b1b",
       "severity": "medium",
       "confidence": "medium",
       "category": "reproducibility",
-      "title": "Install command without matching lockfile",
-      "message": "The skill runs a npm install command without matching lockfile evidence, so dependency resolution may change between audits.",
+      "title": "Install command without matching reproducibility evidence",
+      "message": "The skill runs a npm install command without matching lockfile or exact-pinned dependency manifest evidence, so dependency resolution may change between audits.",
       "location": {
         "path": "scripts/install.sh",
         "line": 3
       },
-      "rationale": "Package installation without a matching lockfile can resolve different dependency graphs over time and weakens reproducible offline review.",
-      "remediation": "Commit the package manager lockfile for the install command, switch to a lockfile-backed install mode, or remove package installation from the skill workflow.",
-      "suppression": "Suppress `SUPPLY003` only for a reviewed install path whose dependency set is pinned or controlled by another documented local mechanism."
+      "rationale": "Package installation without a matching lockfile or exact-pinned dependency manifest can resolve different dependency graphs over time and weakens reproducible offline review.",
+      "remediation": "Commit the package manager lockfile for the install command, use an exact-pinned dependency manifest that the command actually installs from, switch to a reproducible install mode, or remove package installation from the skill workflow.",
+      "suppression": "Suppress `SUPPLY003` only for a reviewed install path whose dependency set is pinned by matching local reproducibility evidence or controlled by another documented local mechanism."
     },
     {
       "rule_id": "SUPPLY004",
+      "fingerprint": "fnv1a64:177753f16ffaea70",
       "severity": "medium",
       "confidence": "medium",
       "category": "reproducibility",
@@ -74,13 +118,14 @@
   "finding_groups": [
     {
       "rule_id": "SUPPLY003",
+      "group_fingerprint": "fnv1a64:e0c54926861b81b0",
       "severity": "medium",
       "confidence": "medium",
       "category": "reproducibility",
-      "title": "Install command without matching lockfile",
-      "rationale": "Package installation without a matching lockfile can resolve different dependency graphs over time and weakens reproducible offline review.",
-      "remediation": "Commit the package manager lockfile for the install command, switch to a lockfile-backed install mode, or remove package installation from the skill workflow.",
-      "suppression": "Suppress `SUPPLY003` only for a reviewed install path whose dependency set is pinned or controlled by another documented local mechanism.",
+      "title": "Install command without matching reproducibility evidence",
+      "rationale": "Package installation without a matching lockfile or exact-pinned dependency manifest can resolve different dependency graphs over time and weakens reproducible offline review.",
+      "remediation": "Commit the package manager lockfile for the install command, use an exact-pinned dependency manifest that the command actually installs from, switch to a reproducible install mode, or remove package installation from the skill workflow.",
+      "suppression": "Suppress `SUPPLY003` only for a reviewed install path whose dependency set is pinned by matching local reproducibility evidence or controlled by another documented local mechanism.",
       "evidence_key": "command_pattern=npm install|package_manager=npm",
       "dimensions": {
         "command_pattern": "npm install",
@@ -97,12 +142,13 @@
             "path": "scripts/install.sh",
             "line": 3
           },
-          "message": "The skill runs a npm install command without matching lockfile evidence, so dependency resolution may change between audits."
+          "message": "The skill runs a npm install command without matching lockfile or exact-pinned dependency manifest evidence, so dependency resolution may change between audits."
         }
       ]
     },
     {
       "rule_id": "SUPPLY004",
+      "group_fingerprint": "fnv1a64:0f5bd2e941a17813",
       "severity": "medium",
       "confidence": "medium",
       "category": "reproducibility",
@@ -132,6 +178,7 @@
     {
       "finding": {
         "rule_id": "SEC009",
+        "fingerprint": "fnv1a64:d40381b25002c001",
         "severity": "low",
         "confidence": "medium",
         "category": "security",
@@ -157,7 +204,9 @@
     "finding_count": 2,
     "suppressed_finding_count": 1,
     "invalid_manifest_count": 0,
-    "broken_reference_count": 0
+    "broken_reference_count": 0,
+    "actual_secret_evidence_count": 0,
+    "prompt_secret_exposure_count": 0
   },
   "supply_chain": {
     "licenses": [],
@@ -178,6 +227,7 @@
         "pinned": false
       }
     ],
+    "dependency_manifests": [],
     "package_managers": [
       {
         "path": "scripts/install.sh",
@@ -225,10 +275,15 @@
         "status": "partial",
         "score": 65,
         "reasons": [
-          "1 package install command has no matching lockfile",
+          "1 package install command has no matching reproducibility evidence",
           "1 unpinned package dependencies",
           "no local license evidence found"
-        ]
+        ],
+        "remote_fetch_dependency": {
+          "detected": true,
+          "evidence_count": 1,
+          "reason": "1 remote fetch dependency signal detected"
+        }
       }
     ]
   },

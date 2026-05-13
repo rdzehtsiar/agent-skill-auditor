@@ -32,7 +32,7 @@ Rule status is explicit: `active` rules may emit findings and be suppressed, whi
 | [SKILL050](#skill050-ignored-host-specific-metadata) | `active` | `low` | `compatibility` | Ignored host-specific metadata |
 | [SUPPLY001](#supply001-missing-repository-license-evidence) | `active` | `low` | `reproducibility` | Missing repository license evidence |
 | [SUPPLY002](#supply002-missing-or-unknown-skill-local-license-evidence) | `active` | `low` | `reproducibility` | Missing or unknown skill-local license evidence |
-| [SUPPLY003](#supply003-install-command-without-matching-lockfile) | `active` | `medium` | `reproducibility` | Install command without matching lockfile |
+| [SUPPLY003](#supply003-install-command-without-matching-reproducibility-evidence) | `active` | `medium` | `reproducibility` | Install command without matching reproducibility evidence |
 | [SUPPLY004](#supply004-unpinned-package-dependency) | `active` | `medium` | `reproducibility` | Unpinned package dependency |
 | [SUPPLY005](#supply005-unpinned-remote-url-reference) | `active` | `medium` | `security` | Unpinned remote URL reference |
 | [SUPPLY006](#supply006-downloaded-executable-without-checksum) | `active` | `high` | `security` | Downloaded executable without checksum |
@@ -874,7 +874,7 @@ Compliant:
 skills/review/SKILL.md declares `license: Apache-2.0` or ships a recognizable `skills/review/LICENSE.txt`.
 ```
 
-## SUPPLY003: Install command without matching lockfile
+## SUPPLY003: Install command without matching reproducibility evidence
 
 - Status: `active`
 - Severity: `medium`
@@ -884,19 +884,19 @@ skills/review/SKILL.md declares `license: Apache-2.0` or ships a recognizable `s
 
 ### Why It Matters
 
-Package installation without a matching lockfile can resolve different dependency graphs over time and weakens reproducible offline review.
+Package installation without a matching lockfile or exact-pinned dependency manifest can resolve different dependency graphs over time and weakens reproducible offline review.
 
 ### How To Fix
 
-Commit the package manager lockfile for the install command, switch to a lockfile-backed install mode, or remove package installation from the skill workflow.
+Commit the package manager lockfile for the install command, use an exact-pinned dependency manifest that the command actually installs from, switch to a reproducible install mode, or remove package installation from the skill workflow.
 
 ### Safe Suppression
 
-Suppress `SUPPLY003` only for a reviewed install path whose dependency set is pinned or controlled by another documented local mechanism.
+Suppress `SUPPLY003` only for a reviewed install path whose dependency set is pinned by matching local reproducibility evidence or controlled by another documented local mechanism.
 
 ### Examples
 
-Back package installation commands with a matching lockfile.
+Back package installation commands with matching reproducibility evidence.
 
 Non-compliant:
 

@@ -111,6 +111,20 @@
         "pinned": true
       }
     ],
+    "dependency_manifests": [
+      {
+        "path": "e2e-representative/package.json",
+        "line": 1,
+        "source": "dependency-manifest",
+        "manager": "npm",
+        "normalized": "package.json",
+        "raw": "package.json",
+        "confidence": "high",
+        "dependency_count": 1,
+        "unpinned_dependency_count": 0,
+        "pinning": "exact-pinned"
+      }
+    ],
     "package_managers": [
       {
         "path": "e2e-representative/package.json",
@@ -203,7 +217,12 @@
         "score": 100,
         "reasons": [
           "local package evidence has no remote or install blockers"
-        ]
+        ],
+        "remote_fetch_dependency": {
+          "detected": true,
+          "evidence_count": 3,
+          "reason": "3 remote fetch dependency signal detected"
+        }
       }
     ]
   },

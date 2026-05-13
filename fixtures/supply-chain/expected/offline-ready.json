@@ -1,6 +1,6 @@
 {
   "fixture": "offline-ready",
-  "description": "Package has local evidence needed for ready offline status.",
+  "description": "Package has local evidence needed for ready offline audit readiness.",
   "supply_chain": {
     "licenses": [
       {
@@ -57,6 +57,7 @@
     ],
     "external_urls": [],
     "remote_dependencies": [],
+    "dependency_manifests": [],
     "package_managers": [],
     "lockfiles": [],
     "executables": [

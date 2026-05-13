@@ -46,6 +46,32 @@
         "pinned": false
       }
     ],
+    "dependency_manifests": [
+      {
+        "path": "unpinned-package-version/package.json",
+        "line": 1,
+        "source": "dependency-manifest",
+        "manager": "npm",
+        "normalized": "package.json",
+        "raw": "package.json",
+        "confidence": "high",
+        "dependency_count": 1,
+        "unpinned_dependency_count": 1,
+        "pinning": "range-based"
+      },
+      {
+        "path": "unpinned-package-version/requirements.txt",
+        "line": 1,
+        "source": "dependency-manifest",
+        "manager": "pip",
+        "normalized": "requirements.txt",
+        "raw": "requirements.txt",
+        "confidence": "high",
+        "dependency_count": 2,
+        "unpinned_dependency_count": 2,
+        "pinning": "range-based"
+      }
+    ],
     "package_managers": [
       {
         "path": "unpinned-package-version/package.json",
@@ -68,17 +94,7 @@
         "confidence": "high"
       }
     ],
-    "lockfiles": [
-      {
-        "path": "unpinned-package-version/requirements.txt",
-        "line": 1,
-        "source": "lockfile",
-        "manager": "pip",
-        "normalized": "requirements.txt",
-        "raw": "requirements.txt",
-        "confidence": "high"
-      }
-    ],
+    "lockfiles": [],
     "executables": [],
     "binaries": [],
     "checksums": [],
@@ -91,7 +107,12 @@
         "reasons": [
           "3 unpinned package dependencies",
           "no local license evidence found"
-        ]
+        ],
+        "remote_fetch_dependency": {
+          "detected": true,
+          "evidence_count": 3,
+          "reason": "3 remote fetch dependency signal detected"
+        }
       }
     ]
   },

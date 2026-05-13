@@ -458,7 +458,7 @@ const SUPPLY002_EXAMPLES: &[RuleExample] = &[RuleExample {
 }];
 
 const SUPPLY003_EXAMPLES: &[RuleExample] = &[RuleExample {
-    summary: "Back package installation commands with a matching lockfile.",
+    summary: "Back package installation commands with matching reproducibility evidence.",
     non_compliant: "npm install left-pad@1.3.0",
     compliant: "npm ci\n# package-lock.json is present in the skill package.",
 }];
@@ -822,15 +822,15 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
     RuleMetadata {
         id: RuleId::Supply003,
         status: RuleStatus::Active,
-        title: "Install command without matching lockfile",
+        title: "Install command without matching reproducibility evidence",
         severity: RuleSeverity::Medium,
         category: RuleCategory::Reproducibility,
         applicable_profiles: ALL_HOST_PROFILES,
         input_node_types: SUPPLY_CHAIN_INPUT,
-        rationale: "Package installation without a matching lockfile can resolve different dependency graphs over time and weakens reproducible offline review.",
-        remediation: "Commit the package manager lockfile for the install command, switch to a lockfile-backed install mode, or remove package installation from the skill workflow.",
+        rationale: "Package installation without a matching lockfile or exact-pinned dependency manifest can resolve different dependency graphs over time and weakens reproducible offline review.",
+        remediation: "Commit the package manager lockfile for the install command, use an exact-pinned dependency manifest that the command actually installs from, switch to a reproducible install mode, or remove package installation from the skill workflow.",
         suppression_guidance:
-            "Suppress `SUPPLY003` only for a reviewed install path whose dependency set is pinned or controlled by another documented local mechanism.",
+            "Suppress `SUPPLY003` only for a reviewed install path whose dependency set is pinned by matching local reproducibility evidence or controlled by another documented local mechanism.",
         examples: SUPPLY003_EXAMPLES,
     },
     RuleMetadata {
@@ -971,11 +971,19 @@ pub struct RulePackageInstallContext {
     pub package_root: String,
     pub manifest_path: String,
     pub files: Vec<RulePackageFileFact>,
+    pub dependency_manifests: Vec<RulePackageDependencyManifestFact>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RulePackageFileFact {
     pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RulePackageDependencyManifestFact {
+    pub path: String,
+    pub manager: RuleSupplyChainPackageManagerKind,
+    pub pinning: RuleDependencyManifestPinningKind,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -986,6 +994,7 @@ pub struct RuleSupplyChainFacts {
     pub trust_manifests: Vec<RuleSupplyChainTrustManifestFact>,
     pub external_urls: Vec<RuleSupplyChainUrlFact>,
     pub remote_dependencies: Vec<RuleSupplyChainRemoteDependencyFact>,
+    pub dependency_manifests: Vec<RuleSupplyChainDependencyManifestFact>,
     pub package_managers: Vec<RuleSupplyChainPackageManagerFact>,
     pub lockfiles: Vec<RuleSupplyChainLockfileFact>,
     pub binaries: Vec<RuleSupplyChainBinaryFact>,
@@ -1088,6 +1097,21 @@ pub struct RuleSupplyChainPackageManagerFact {
     pub line: Option<usize>,
     pub source: RuleSupplyChainSourceKind,
     pub manager: RuleSupplyChainPackageManagerKind,
+    pub raw: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleSupplyChainDependencyManifestFact {
+    pub path: String,
+    pub manager: RuleSupplyChainPackageManagerKind,
+    pub pinning: RuleDependencyManifestPinningKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuleDependencyManifestPinningKind {
+    ExactPinned,
+    RangeBased,
+    Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1378,7 +1402,7 @@ fn add_install_without_lockfile_findings(
         .iter()
         .filter(|manager| scope.contains(&manager.path))
         .filter(|manager| manager.source == RuleSupplyChainSourceKind::Script)
-        .filter(|manager| !has_matching_lockfile(facts, scope, manager.manager))
+        .filter(|manager| !has_matching_reproducibility_evidence(facts, scope, manager))
     {
         findings.insert(
             supply_dedup_key(RuleId::Supply003, &manager.path, manager.line, ""),
@@ -1632,6 +1656,15 @@ fn is_path_within_supply_root(path: &str, root: &str) -> bool {
             .is_some_and(|remainder| remainder.starts_with('/'))
 }
 
+fn has_matching_reproducibility_evidence(
+    facts: &RuleSupplyChainFacts,
+    scope: &SupplyPackageScope<'_>,
+    manager: &RuleSupplyChainPackageManagerFact,
+) -> bool {
+    has_matching_lockfile(facts, scope, manager.manager)
+        || has_matching_exact_dependency_manifest_for_manager(facts, scope, manager)
+}
+
 fn has_matching_lockfile(
     facts: &RuleSupplyChainFacts,
     scope: &SupplyPackageScope<'_>,
@@ -1641,6 +1674,43 @@ fn has_matching_lockfile(
         .lockfiles
         .iter()
         .any(|lockfile| scope.contains(&lockfile.path) && lockfile.manager == manager)
+}
+
+fn has_matching_exact_dependency_manifest_for_manager(
+    facts: &RuleSupplyChainFacts,
+    scope: &SupplyPackageScope<'_>,
+    manager: &RuleSupplyChainPackageManagerFact,
+) -> bool {
+    let Some(raw) = manager.raw.as_deref() else {
+        return false;
+    };
+    let Some(install) = package_install_for_manager(manager.manager) else {
+        return false;
+    };
+    let Some(command_relative_path) = package_relative_path(&manager.path, scope.root) else {
+        return false;
+    };
+
+    facts.dependency_manifests.iter().any(|manifest| {
+        if !scope.contains(&manifest.path)
+            || manifest.pinning != RuleDependencyManifestPinningKind::ExactPinned
+            || !dependency_manifest_matches_manager(manifest.manager, manager.manager)
+        {
+            return false;
+        }
+
+        let Some(manifest_relative_path) = package_relative_path(&manifest.path, scope.root) else {
+            return false;
+        };
+
+        lockfile_scope_covers_signal(&manifest_relative_path, &command_relative_path)
+            && command_matches_dependency_manifest(
+                install,
+                raw,
+                &manifest_relative_path,
+                &command_relative_path,
+            )
+    })
 }
 
 fn has_repository_license(facts: &RuleSupplyChainFacts) -> bool {
@@ -1809,7 +1879,7 @@ fn install_without_lockfile_supply_finding(
     EvaluatedRuleFinding {
         rule_id: RuleId::Supply003,
         message: format!(
-            "The skill runs a {} install command without matching lockfile evidence, so dependency resolution may change between audits.",
+            "The skill runs a {} install command without matching lockfile or exact-pinned dependency manifest evidence, so dependency resolution may change between audits.",
             package_manager_label(manager.manager)
         ),
         location: RuleFindingLocation {
@@ -2044,6 +2114,12 @@ fn package_install_has_reproducibility_evidence(
         || command_has_exact_package_pin(install, &signal.evidence)
         || context.is_some_and(|context| {
             context_has_relevant_lockfile(install, context, &signal.location.path)
+                || context_has_relevant_exact_dependency_manifest(
+                    install,
+                    &signal.evidence,
+                    context,
+                    &signal.location.path,
+                )
         })
 }
 
@@ -2069,6 +2145,179 @@ fn command_has_exact_package_pin(install: PackageInstall, evidence: &str) -> boo
         }),
         PackageInstall::System => tokens.iter().any(|token| system_spec_is_pinned(token)),
     }
+}
+
+fn package_install_for_manager(
+    manager: RuleSupplyChainPackageManagerKind,
+) -> Option<PackageInstall> {
+    match manager {
+        RuleSupplyChainPackageManagerKind::Npm
+        | RuleSupplyChainPackageManagerKind::Yarn
+        | RuleSupplyChainPackageManagerKind::Pnpm => Some(PackageInstall::JavaScript),
+        RuleSupplyChainPackageManagerKind::Pip
+        | RuleSupplyChainPackageManagerKind::Poetry
+        | RuleSupplyChainPackageManagerKind::Uv => Some(PackageInstall::Python),
+        RuleSupplyChainPackageManagerKind::Cargo => Some(PackageInstall::Cargo),
+        RuleSupplyChainPackageManagerKind::Gem => Some(PackageInstall::Gem),
+        RuleSupplyChainPackageManagerKind::Go
+        | RuleSupplyChainPackageManagerKind::Composer
+        | RuleSupplyChainPackageManagerKind::Unknown => None,
+    }
+}
+
+fn command_matches_dependency_manifest(
+    install: PackageInstall,
+    evidence: &str,
+    manifest_relative_path: &str,
+    command_relative_path: &str,
+) -> bool {
+    let tokens = shellish_tokens(evidence);
+    match install {
+        PackageInstall::Python => python_install_references_manifest(
+            &tokens,
+            manifest_relative_path,
+            command_relative_path,
+        ),
+        PackageInstall::JavaScript => {
+            path_basename(manifest_relative_path) == "package.json"
+                && javascript_install_implies_package_json_manifest(&tokens)
+        }
+        PackageInstall::Cargo => {
+            path_basename(manifest_relative_path) == "cargo.toml"
+                && tokens.windows(2).any(|window| {
+                    window[0] == "cargo" && matches!(window[1].as_str(), "build" | "check" | "test")
+                })
+        }
+        PackageInstall::Gem => {
+            path_basename(manifest_relative_path).eq_ignore_ascii_case("gemfile")
+                && tokens
+                    .windows(2)
+                    .any(|window| window[0] == "bundle" && window[1] == "install")
+        }
+        PackageInstall::System => false,
+    }
+}
+
+fn python_install_references_manifest(
+    tokens: &[String],
+    manifest_relative_path: &str,
+    command_relative_path: &str,
+) -> bool {
+    python_requirement_references(tokens)
+        .iter()
+        .any(|reference| {
+            command_reference_matches_manifest(
+                reference,
+                manifest_relative_path,
+                command_relative_path,
+            )
+        })
+}
+
+fn python_requirement_references(tokens: &[String]) -> Vec<String> {
+    let mut references = Vec::new();
+
+    for (index, token) in tokens.iter().enumerate() {
+        if matches!(token.as_str(), "-r" | "--requirement") {
+            if let Some(reference) = tokens.get(index + 1) {
+                references.push(reference.clone());
+            }
+        } else if let Some(reference) = token.strip_prefix("--requirement=") {
+            references.push(reference.to_owned());
+        } else if let Some(reference) = token.strip_prefix("-r") {
+            if !reference.is_empty() {
+                references.push(reference.to_owned());
+            }
+        }
+    }
+
+    references
+}
+
+fn javascript_install_implies_package_json_manifest(tokens: &[String]) -> bool {
+    tokens
+        .windows(2)
+        .any(|window| is_javascript_package_manager(&window[0]) && window[1] == "ci")
+        || tokens.windows(2).any(|window| {
+            is_javascript_package_manager(&window[0])
+                && matches!(window[1].as_str(), "install" | "i")
+                && install_command_has_no_package_args(tokens, &window[0], &window[1])
+        })
+}
+
+fn is_javascript_package_manager(token: &str) -> bool {
+    matches!(token, "npm" | "pnpm" | "yarn" | "bun")
+}
+
+fn install_command_has_no_package_args(tokens: &[String], manager: &str, command: &str) -> bool {
+    let Some(command_index) = tokens
+        .windows(2)
+        .position(|window| window[0] == manager && window[1] == command)
+        .map(|index| index + 1)
+    else {
+        return false;
+    };
+
+    !tokens[command_index + 1..]
+        .iter()
+        .take_while(|token| !is_shell_command_separator(token))
+        .any(|token| !is_package_manager_option_token(token))
+}
+
+fn is_package_manager_option_token(token: &str) -> bool {
+    token.starts_with('-')
+        || matches!(
+            token,
+            "true" | "false" | "always" | "auto" | "never" | "production" | "development"
+        )
+}
+
+fn is_shell_command_separator(token: &str) -> bool {
+    matches!(token, "&&" | "||" | "|" | "&")
+}
+
+fn command_reference_matches_manifest(
+    reference: &str,
+    manifest_relative_path: &str,
+    command_relative_path: &str,
+) -> bool {
+    let Some(manifest_relative_path) = normalize_relative_reference(manifest_relative_path) else {
+        return false;
+    };
+    if normalize_relative_reference(reference).is_some_and(|package_relative_reference| {
+        package_relative_reference == manifest_relative_path
+    }) {
+        return true;
+    }
+
+    let command_dir = path_parent(command_relative_path);
+    if command_dir.is_empty() {
+        return false;
+    }
+
+    normalize_relative_reference(&format!("{command_dir}/{reference}")).is_some_and(
+        |script_relative_reference| script_relative_reference == manifest_relative_path,
+    )
+}
+
+fn normalize_relative_reference(path: &str) -> Option<String> {
+    let path = normalize_rule_path(strip_quotes(path));
+    if path.starts_with('/') || path.contains(":/") {
+        return None;
+    }
+
+    let mut segments = Vec::new();
+    for segment in path.split('/') {
+        match segment {
+            "" | "." => {}
+            ".." => {
+                segments.pop()?;
+            }
+            _ => segments.push(segment),
+        }
+    }
+
+    Some(segments.join("/"))
 }
 
 fn context_has_relevant_lockfile(
@@ -2111,6 +2360,68 @@ fn context_has_relevant_lockfile(
         lockfile_matches_install
             && lockfile_scope_covers_signal(&lockfile_relative_path, &signal_relative_path)
     })
+}
+
+fn context_has_relevant_exact_dependency_manifest(
+    install: PackageInstall,
+    evidence: &str,
+    context: &RulePackageInstallContext,
+    signal_path: &str,
+) -> bool {
+    let Some(signal_relative_path) =
+        package_relative_path(signal_path, context.package_root.as_str())
+    else {
+        return false;
+    };
+
+    context.dependency_manifests.iter().any(|manifest| {
+        if manifest.pinning != RuleDependencyManifestPinningKind::ExactPinned
+            || !dependency_manifest_matches_manager(
+                manifest.manager,
+                package_install_manager(install),
+            )
+        {
+            return false;
+        }
+
+        let Some(manifest_relative_path) =
+            package_relative_path(manifest.path.as_str(), context.package_root.as_str())
+        else {
+            return false;
+        };
+
+        lockfile_scope_covers_signal(&manifest_relative_path, &signal_relative_path)
+            && command_matches_dependency_manifest(
+                install,
+                evidence,
+                &manifest_relative_path,
+                &signal_relative_path,
+            )
+    })
+}
+
+fn dependency_manifest_matches_manager(
+    manifest_manager: RuleSupplyChainPackageManagerKind,
+    install_manager: RuleSupplyChainPackageManagerKind,
+) -> bool {
+    manifest_manager == install_manager
+        || (manifest_manager == RuleSupplyChainPackageManagerKind::Npm
+            && matches!(
+                install_manager,
+                RuleSupplyChainPackageManagerKind::Npm
+                    | RuleSupplyChainPackageManagerKind::Pnpm
+                    | RuleSupplyChainPackageManagerKind::Yarn
+            ))
+}
+
+fn package_install_manager(install: PackageInstall) -> RuleSupplyChainPackageManagerKind {
+    match install {
+        PackageInstall::JavaScript => RuleSupplyChainPackageManagerKind::Npm,
+        PackageInstall::Python => RuleSupplyChainPackageManagerKind::Pip,
+        PackageInstall::Cargo => RuleSupplyChainPackageManagerKind::Cargo,
+        PackageInstall::Gem => RuleSupplyChainPackageManagerKind::Gem,
+        PackageInstall::System => RuleSupplyChainPackageManagerKind::Unknown,
+    }
 }
 
 fn package_relative_path(path: &str, package_root: &str) -> Option<String> {
@@ -4114,6 +4425,121 @@ mod tests {
     }
 
     #[test]
+    fn sec009_accepts_relevant_exact_pinned_dependency_manifests() {
+        let signals = vec![
+            package_install_signal_at(
+                "python/scripts/install.sh",
+                1,
+                "pip install -r requirements.txt",
+                "pip install",
+            ),
+            package_install_signal_at("js/scripts/install.sh", 2, "pnpm install", "pnpm install"),
+        ];
+        let contexts = vec![
+            package_install_context_with_manifests(
+                "python",
+                &[],
+                &[(
+                    "requirements.txt",
+                    RuleSupplyChainPackageManagerKind::Pip,
+                    RuleDependencyManifestPinningKind::ExactPinned,
+                )],
+            ),
+            package_install_context_with_manifests(
+                "js",
+                &[],
+                &[(
+                    "package.json",
+                    RuleSupplyChainPackageManagerKind::Npm,
+                    RuleDependencyManifestPinningKind::ExactPinned,
+                )],
+            ),
+        ];
+
+        let findings = evaluate_package_install_rules(&signals, &contexts);
+
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn sec009_reports_range_based_dependency_manifest_installs() {
+        let signals = vec![package_install_signal_at(
+            "python/scripts/install.sh",
+            1,
+            "pip install -r requirements.txt",
+            "pip install",
+        )];
+        let contexts = vec![package_install_context_with_manifests(
+            "python",
+            &[],
+            &[(
+                "requirements.txt",
+                RuleSupplyChainPackageManagerKind::Pip,
+                RuleDependencyManifestPinningKind::RangeBased,
+            )],
+        )];
+
+        let findings = evaluate_package_install_rules(&signals, &contexts);
+
+        assert_eq!(
+            finding_projection(&findings),
+            vec![(RuleId::Sec009, "python/scripts/install.sh", Some(1))]
+        );
+    }
+
+    #[test]
+    fn sec009_reports_mismatched_python_requirement_file_names() {
+        let signals = vec![package_install_signal_at(
+            "python/scripts/install.sh",
+            1,
+            "pip install -r other.txt",
+            "pip install",
+        )];
+        let contexts = vec![package_install_context_with_manifests(
+            "python",
+            &[],
+            &[(
+                "requirements.txt",
+                RuleSupplyChainPackageManagerKind::Pip,
+                RuleDependencyManifestPinningKind::ExactPinned,
+            )],
+        )];
+
+        let findings = evaluate_package_install_rules(&signals, &contexts);
+
+        assert_eq!(
+            finding_projection(&findings),
+            vec![(RuleId::Sec009, "python/scripts/install.sh", Some(1))]
+        );
+    }
+
+    #[test]
+    fn sec009_reports_direct_installs_not_backed_by_exact_dependency_manifests() {
+        let signals = vec![package_install_signal_at(
+            "js/scripts/install.sh",
+            1,
+            "npm install left-pad",
+            "npm install",
+        )];
+        let contexts = vec![package_install_context_with_manifests(
+            "js",
+            &[],
+            &[(
+                "package.json",
+                RuleSupplyChainPackageManagerKind::Npm,
+                RuleDependencyManifestPinningKind::ExactPinned,
+            )],
+        )];
+
+        let findings = evaluate_package_install_rules(&signals, &contexts);
+
+        assert_eq!(
+            finding_projection(&findings),
+            vec![(RuleId::Sec009, "js/scripts/install.sh", Some(1))]
+        );
+    }
+
+    #[test]
     fn sec009_accepts_root_lockfile_for_package_scripts() {
         let signals = vec![
             package_install_signal_at(
@@ -5008,6 +5434,7 @@ mod tests {
                 line: Some(2),
                 source: RuleSupplyChainSourceKind::Script,
                 manager: RuleSupplyChainPackageManagerKind::Npm,
+                raw: Some("npm install".to_owned()),
             }],
             binaries: vec![RuleSupplyChainBinaryFact {
                 path: "skill/bin/helper.exe".to_owned(),
@@ -5107,6 +5534,7 @@ mod tests {
                 line: Some(2),
                 source: RuleSupplyChainSourceKind::Script,
                 manager: RuleSupplyChainPackageManagerKind::Npm,
+                raw: Some("npm install".to_owned()),
             }],
             lockfiles: vec![RuleSupplyChainLockfileFact {
                 path: "skill/package-lock.json".to_owned(),
@@ -5144,6 +5572,150 @@ mod tests {
         assert_eq!(
             finding_projection(&evaluate_supply_chain_rules(&facts)),
             Vec::<(RuleId, &str, Option<usize>)>::new()
+        );
+    }
+
+    #[test]
+    fn supply003_accepts_exact_pinned_dependency_manifests_without_counting_them_as_lockfiles() {
+        let facts = RuleSupplyChainFacts {
+            packages: vec![RuleSupplyChainPackageFact {
+                root: "skill".to_owned(),
+                manifest_path: "skill/SKILL.md".to_owned(),
+            }],
+            dependency_manifests: vec![RuleSupplyChainDependencyManifestFact {
+                path: "skill/requirements.txt".to_owned(),
+                manager: RuleSupplyChainPackageManagerKind::Pip,
+                pinning: RuleDependencyManifestPinningKind::ExactPinned,
+            }],
+            package_managers: vec![RuleSupplyChainPackageManagerFact {
+                path: "skill/scripts/install.sh".to_owned(),
+                line: Some(2),
+                source: RuleSupplyChainSourceKind::Script,
+                manager: RuleSupplyChainPackageManagerKind::Pip,
+                raw: Some("pip install -r requirements.txt".to_owned()),
+            }],
+            lockfiles: Vec::new(),
+            ..RuleSupplyChainFacts::default()
+        };
+
+        assert_eq!(
+            finding_projection(&evaluate_supply_chain_rules(&facts)),
+            Vec::<(RuleId, &str, Option<usize>)>::new()
+        );
+    }
+
+    #[test]
+    fn supply003_reports_range_based_dependency_manifest_installs() {
+        let facts = RuleSupplyChainFacts {
+            packages: vec![RuleSupplyChainPackageFact {
+                root: "skill".to_owned(),
+                manifest_path: "skill/SKILL.md".to_owned(),
+            }],
+            dependency_manifests: vec![RuleSupplyChainDependencyManifestFact {
+                path: "skill/requirements.txt".to_owned(),
+                manager: RuleSupplyChainPackageManagerKind::Pip,
+                pinning: RuleDependencyManifestPinningKind::RangeBased,
+            }],
+            package_managers: vec![RuleSupplyChainPackageManagerFact {
+                path: "skill/scripts/install.sh".to_owned(),
+                line: Some(2),
+                source: RuleSupplyChainSourceKind::Script,
+                manager: RuleSupplyChainPackageManagerKind::Pip,
+                raw: Some("pip install -r requirements.txt".to_owned()),
+            }],
+            ..RuleSupplyChainFacts::default()
+        };
+
+        assert_eq!(
+            finding_projection(&evaluate_supply_chain_rules(&facts)),
+            vec![(RuleId::Supply003, "skill/scripts/install.sh", Some(2))]
+        );
+    }
+
+    #[test]
+    fn supply003_reports_mismatched_python_requirement_file_names() {
+        let facts = RuleSupplyChainFacts {
+            packages: vec![RuleSupplyChainPackageFact {
+                root: "skill".to_owned(),
+                manifest_path: "skill/SKILL.md".to_owned(),
+            }],
+            dependency_manifests: vec![RuleSupplyChainDependencyManifestFact {
+                path: "skill/requirements.txt".to_owned(),
+                manager: RuleSupplyChainPackageManagerKind::Pip,
+                pinning: RuleDependencyManifestPinningKind::ExactPinned,
+            }],
+            package_managers: vec![RuleSupplyChainPackageManagerFact {
+                path: "skill/scripts/install.sh".to_owned(),
+                line: Some(2),
+                source: RuleSupplyChainSourceKind::Script,
+                manager: RuleSupplyChainPackageManagerKind::Pip,
+                raw: Some("pip install -r other.txt".to_owned()),
+            }],
+            lockfiles: Vec::new(),
+            ..RuleSupplyChainFacts::default()
+        };
+
+        assert_eq!(
+            finding_projection(&evaluate_supply_chain_rules(&facts)),
+            vec![(RuleId::Supply003, "skill/scripts/install.sh", Some(2))]
+        );
+    }
+
+    #[test]
+    fn supply003_reports_exact_manifest_when_manifest_scope_does_not_cover_install_command() {
+        let facts = RuleSupplyChainFacts {
+            packages: vec![RuleSupplyChainPackageFact {
+                root: "skill".to_owned(),
+                manifest_path: "skill/SKILL.md".to_owned(),
+            }],
+            dependency_manifests: vec![RuleSupplyChainDependencyManifestFact {
+                path: "skill/nested/package.json".to_owned(),
+                manager: RuleSupplyChainPackageManagerKind::Npm,
+                pinning: RuleDependencyManifestPinningKind::ExactPinned,
+            }],
+            package_managers: vec![RuleSupplyChainPackageManagerFact {
+                path: "skill/scripts/install.sh".to_owned(),
+                line: Some(2),
+                source: RuleSupplyChainSourceKind::Script,
+                manager: RuleSupplyChainPackageManagerKind::Npm,
+                raw: Some("npm install".to_owned()),
+            }],
+            lockfiles: Vec::new(),
+            ..RuleSupplyChainFacts::default()
+        };
+
+        assert_eq!(
+            finding_projection(&evaluate_supply_chain_rules(&facts)),
+            vec![(RuleId::Supply003, "skill/scripts/install.sh", Some(2))]
+        );
+    }
+
+    #[test]
+    fn supply003_reports_direct_installs_not_backed_by_exact_dependency_manifests() {
+        let facts = RuleSupplyChainFacts {
+            packages: vec![RuleSupplyChainPackageFact {
+                root: "skill".to_owned(),
+                manifest_path: "skill/SKILL.md".to_owned(),
+            }],
+            dependency_manifests: vec![RuleSupplyChainDependencyManifestFact {
+                path: "skill/package.json".to_owned(),
+                manager: RuleSupplyChainPackageManagerKind::Npm,
+                pinning: RuleDependencyManifestPinningKind::ExactPinned,
+            }],
+            package_managers: vec![RuleSupplyChainPackageManagerFact {
+                path: "skill/scripts/install.sh".to_owned(),
+                line: Some(2),
+                source: RuleSupplyChainSourceKind::Script,
+                manager: RuleSupplyChainPackageManagerKind::Npm,
+                raw: Some("npm install left-pad@1.3.0".to_owned()),
+            }],
+            lockfiles: Vec::new(),
+            ..RuleSupplyChainFacts::default()
+        };
+
+        assert_eq!(
+            finding_projection(&evaluate_supply_chain_rules(&facts)),
+            vec![(RuleId::Supply003, "skill/scripts/install.sh", Some(2))]
         );
     }
 
@@ -5438,6 +6010,18 @@ mod tests {
     }
 
     fn package_install_context(root: &str, files: &[&str]) -> RulePackageInstallContext {
+        package_install_context_with_manifests(root, files, &[])
+    }
+
+    fn package_install_context_with_manifests(
+        root: &str,
+        files: &[&str],
+        dependency_manifests: &[(
+            &str,
+            RuleSupplyChainPackageManagerKind,
+            RuleDependencyManifestPinningKind,
+        )],
+    ) -> RulePackageInstallContext {
         RulePackageInstallContext {
             package_root: root.to_owned(),
             manifest_path: if root.is_empty() {
@@ -5450,6 +6034,16 @@ mod tests {
                 .map(|path| RulePackageFileFact {
                     path: (*path).to_owned(),
                 })
+                .collect(),
+            dependency_manifests: dependency_manifests
+                .iter()
+                .map(
+                    |(path, manager, pinning)| RulePackageDependencyManifestFact {
+                        path: (*path).to_owned(),
+                        manager: *manager,
+                        pinning: *pinning,
+                    },
+                )
                 .collect(),
         }
     }

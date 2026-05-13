@@ -1,6 +1,6 @@
 ---
 name: offline-partial
-description: Demonstrates partial offline readiness from remote and package evidence.
+description: Demonstrates partial offline audit readiness from remote and package evidence.
 ---
 
 # Offline Partial

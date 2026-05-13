@@ -2,13 +2,17 @@
 
 use std::path::Path;
 
-use agent_audit_security::{AnalyzerConfidence, SecuritySignal, SecuritySignalKind};
+use agent_audit_security::{
+    read_security_artifact_bytes, AnalyzerConfidence, SecurityArtifactReadError,
+    SecurityArtifactReadPolicy, SecuritySignal, SecuritySignalKind,
+};
 
 use crate::error::{AuditError, AuditResult};
 use crate::model::{
-    EvidenceConfidence, LockfileEvidence, PackageManagerEvidence, PackageManagerKind,
-    RemoteDependency, RemoteDependencyKind, SkillArtifactKind, SkillFileKind, SkillGraph,
-    SupplyChainInventory, SupplyChainSourceKind,
+    DependencyManifestEvidence, DependencyManifestPinningKind, EvidenceConfidence,
+    LockfileEvidence, PackageManagerEvidence, PackageManagerKind, RemoteDependency,
+    RemoteDependencyKind, SkillArtifactKind, SkillFileKind, SkillGraph, SupplyChainInventory,
+    SupplyChainSourceKind,
 };
 use crate::path_utils::{collect_skill_package_files, display_path, filename};
 
@@ -75,6 +79,16 @@ fn inventory_manifest(
         return Ok(());
     };
 
+    let dependencies = package_manifest_dependencies(path, filename)?;
+
+    inventory
+        .dependency_manifests
+        .push(dependency_manifest_evidence(
+            display,
+            manager,
+            filename,
+            &dependencies,
+        ));
     inventory.package_managers.push(package_manager_evidence(
         display,
         Some(1),
@@ -84,11 +98,11 @@ fn inventory_manifest(
         manager_label(manager),
         Some(filename.to_owned()),
     ));
-    inventory
-        .remote_dependencies
-        .extend(package_manifest_dependencies(
-            path, display, filename, manager,
-        )?);
+    inventory.remote_dependencies.extend(
+        dependencies
+            .into_iter()
+            .map(|dependency| dependency.into_remote_dependency(display, manager)),
+    );
 
     Ok(())
 }
@@ -175,15 +189,17 @@ pub fn inventory_package_installs_from_scripts(
     }) {
         let path = skill_root.join(&file.path);
         let display = display_path(scan_root, &path);
-        let content = std::fs::read_to_string(&path).map_err(|source| AuditError::Read {
-            path: path.clone(),
-            source,
-        })?;
-        for (index, line) in content.lines().enumerate() {
-            let Some(command) = InstallCommand::from_line(line) else {
+        let read =
+            read_security_artifact_bytes(&path, &display, SecurityArtifactReadPolicy::default())
+                .map_err(|error| security_read_error(&path, error))?;
+        let Some(content) = read.utf8_text() else {
+            continue;
+        };
+        for (line, text) in shell_logical_lines(content) {
+            let Some(command) = InstallCommand::from_line(&text) else {
                 continue;
             };
-            let line = Some(index + 1);
+            let line = Some(line);
             inventory.package_managers.push(package_manager_evidence(
                 &display,
                 line,
@@ -203,30 +219,38 @@ pub fn inventory_package_installs_from_scripts(
     Ok(inventory)
 }
 
+fn security_read_error(path: &Path, error: SecurityArtifactReadError) -> AuditError {
+    let kind = match &error {
+        SecurityArtifactReadError::OpenFailed { kind, .. }
+        | SecurityArtifactReadError::ReadFailed { kind, .. } => *kind,
+        SecurityArtifactReadError::InvalidDisplayPath { .. }
+        | SecurityArtifactReadError::NotFile { .. } => std::io::ErrorKind::InvalidData,
+    };
+    AuditError::Read {
+        path: path.to_path_buf(),
+        source: std::io::Error::new(kind, error),
+    }
+}
+
 fn package_manifest_dependencies(
     path: &Path,
-    display: &str,
     filename: &str,
-    manager: PackageManagerKind,
-) -> AuditResult<Vec<RemoteDependency>> {
+) -> AuditResult<Vec<ParsedDependency>> {
     let content = std::fs::read_to_string(path).map_err(|source| AuditError::Read {
         path: path.to_path_buf(),
         source,
     })?;
 
     let dependencies = match filename {
-        "package.json" => package_json_dependencies(display, &content),
-        "requirements.txt" => requirements_dependencies(display, &content),
-        "Cargo.toml" => cargo_toml_dependencies(display, &content),
-        "go.mod" => go_mod_dependencies(display, &content),
-        "composer.json" => composer_json_dependencies(display, &content),
+        "package.json" => package_json_dependencies(filename, &content),
+        "requirements.txt" => requirements_dependencies(filename, &content),
+        "Cargo.toml" => cargo_toml_dependencies(filename, &content),
+        "go.mod" => go_mod_dependencies(filename, &content),
+        "composer.json" => composer_json_dependencies(filename, &content),
         _ => Vec::new(),
     };
 
-    Ok(dependencies
-        .into_iter()
-        .map(|dependency| dependency.into_remote_dependency(display, manager))
-        .collect())
+    Ok(dependencies)
 }
 
 fn package_json_dependencies(path: &str, content: &str) -> Vec<ParsedDependency> {
@@ -499,12 +523,15 @@ impl InstallCommand {
     }
 
     fn from_text(text: &str) -> Option<Self> {
-        let tokens = shellish_tokens(text);
-        let (index, manager, command_len) = install_command_start(&tokens)?;
+        let normalized_text = collapse_shell_line_continuations(text);
+        let tokens = shellish_tokens(&normalized_text);
+        let Some((index, manager, command_len)) = install_command_start(&tokens) else {
+            return nested_quoted_install_command(&normalized_text, &tokens);
+        };
         let packages = command_packages(manager, &tokens[index + command_len..]);
         Some(Self {
             manager,
-            raw: text.trim().to_owned(),
+            raw: normalized_text.trim().to_owned(),
             packages,
         })
     }
@@ -647,19 +674,36 @@ fn command_packages(manager: PackageManagerKind, tokens: &[String]) -> Vec<Comma
 }
 
 fn javascript_command_packages(tokens: &[String]) -> Vec<CommandPackage> {
-    tokens
-        .iter()
-        .filter(|token| !token.starts_with('-') && !matches!(token.as_str(), "install" | "add"))
-        .filter_map(|token| javascript_package_spec(token))
-        .collect()
+    let mut packages = Vec::new();
+    let mut skip_next = false;
+
+    for token in tokens {
+        let token = strip_quotes(token);
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if is_shell_continuation_token(token) || matches!(token, "install" | "add") {
+            continue;
+        }
+        if token.starts_with('-') {
+            skip_next = javascript_option_consumes_value(token);
+            continue;
+        }
+        if let Some(package) = javascript_package_spec(token) {
+            packages.push(package);
+        }
+    }
+
+    packages
 }
 
 fn javascript_package_spec(token: &str) -> Option<CommandPackage> {
-    let token = strip_quotes(token);
+    let token = clean_command_package_token(token);
     if token.is_empty() || token == "." || token.starts_with('.') {
         return None;
     }
-    let (name, version) = javascript_name_version(token);
+    let (name, version) = javascript_name_version(token)?;
     Some(CommandPackage {
         name,
         version: version.clone(),
@@ -668,46 +712,136 @@ fn javascript_package_spec(token: &str) -> Option<CommandPackage> {
     })
 }
 
-fn javascript_name_version(token: &str) -> (String, Option<String>) {
-    if let Some(scoped_name) = token.strip_prefix('@') {
-        let Some(scope_end) = scoped_name.find('/') else {
-            return (token.to_owned(), None);
-        };
-        let package_start = scope_end + 2;
-        let rest = &token[package_start..];
-        if let Some(version_at) = rest.rfind('@') {
-            let version_index = package_start + version_at;
-            return (
-                token[..version_index].to_owned(),
-                Some(token[version_index + 1..].to_owned()),
-            );
-        }
-        return (token.to_owned(), None);
+fn javascript_name_version(token: &str) -> Option<(String, Option<String>)> {
+    if token.contains("://") || token.starts_with("git+") || token.contains(':') {
+        return None;
     }
 
-    token
+    if token.starts_with('@') {
+        return scoped_javascript_name_version(token);
+    }
+
+    let (name, version) = token
         .rsplit_once('@')
-        .filter(|(name, version)| !name.is_empty() && !version.is_empty())
-        .map_or_else(
-            || (token.to_owned(), None),
-            |(name, version)| (name.to_owned(), Some(version.to_owned())),
-        )
+        .map_or((token, None), |(name, version)| (name, Some(version)));
+    if !valid_npm_name_part(name) || version.is_some_and(str::is_empty) {
+        return None;
+    }
+
+    Some((name.to_owned(), version.map(str::to_owned)))
+}
+
+fn scoped_javascript_name_version(token: &str) -> Option<(String, Option<String>)> {
+    let scoped_name = token.strip_prefix('@')?;
+    let scope_end = scoped_name.find('/')?;
+    let scope = &scoped_name[..scope_end];
+    let package_and_version = &scoped_name[scope_end + 1..];
+    if scope.is_empty() || package_and_version.is_empty() {
+        return None;
+    }
+
+    let (package, version) = package_and_version
+        .rsplit_once('@')
+        .map_or((package_and_version, None), |(package, version)| {
+            (package, Some(version))
+        });
+    if !valid_npm_name_part(scope)
+        || !valid_npm_name_part(package)
+        || version.is_some_and(str::is_empty)
+    {
+        return None;
+    }
+
+    Some((format!("@{scope}/{package}"), version.map(str::to_owned)))
+}
+
+fn valid_npm_name_part(value: &str) -> bool {
+    !value.is_empty()
+        && value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')
+        })
+}
+
+fn javascript_option_consumes_value(token: &str) -> bool {
+    if token.contains('=') {
+        return false;
+    }
+
+    matches!(
+        token,
+        "--cache"
+            | "--config"
+            | "--cwd"
+            | "--filter"
+            | "--global-dir"
+            | "--modules-dir"
+            | "--prefix"
+            | "--registry"
+            | "--save-prefix"
+            | "--store-dir"
+            | "--tag"
+            | "--target"
+            | "--userconfig"
+            | "--workspace"
+    )
 }
 
 fn pip_command_packages(tokens: &[String]) -> Vec<CommandPackage> {
-    tokens
-        .iter()
-        .filter(|token| !token.starts_with('-'))
-        .filter_map(|token| {
-            let dependency = parse_requirement_line(token)?;
-            Some(CommandPackage {
+    let mut packages = Vec::new();
+    let mut skip_next = false;
+
+    for token in tokens {
+        let token = strip_quotes(token);
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if is_shell_continuation_token(token) {
+            continue;
+        }
+        if token.starts_with('-') {
+            skip_next = pip_option_consumes_value(token);
+            continue;
+        }
+        if let Some(dependency) = parse_requirement_line(token) {
+            let package = CommandPackage {
                 name: dependency.name,
                 version: dependency.version,
                 raw: dependency.raw,
                 pinned: dependency.pinned,
-            })
-        })
-        .collect()
+            };
+            packages.push(package);
+        }
+    }
+
+    packages
+}
+
+fn pip_option_consumes_value(token: &str) -> bool {
+    if token.contains('=') {
+        return false;
+    }
+
+    matches!(
+        token,
+        "-r" | "--requirement"
+            | "-c"
+            | "--constraint"
+            | "-i"
+            | "--index-url"
+            | "--extra-index-url"
+            | "-f"
+            | "--find-links"
+            | "--trusted-host"
+            | "--platform"
+            | "--python-version"
+            | "--implementation"
+            | "--abi"
+            | "--target"
+            | "--prefix"
+            | "--root"
+            | "--src"
+    )
 }
 
 fn cargo_command_packages(tokens: &[String]) -> Vec<CommandPackage> {
@@ -747,8 +881,12 @@ fn single_package_without_version_flag(tokens: &[String]) -> Vec<CommandPackage>
 fn first_command_package_token<'a>(tokens: &'a [String], version: Option<&str>) -> Option<&'a str> {
     tokens
         .iter()
-        .find(|token| !token.starts_with('-') && version != Some(token.as_str()))
         .map(|token| strip_quotes(token))
+        .find(|token| {
+            !token.starts_with('-')
+                && !is_shell_continuation_token(token)
+                && version != Some(*token)
+        })
 }
 
 fn versioned_command_package(
@@ -771,6 +909,7 @@ fn go_command_packages(tokens: &[String]) -> Vec<CommandPackage> {
     tokens
         .iter()
         .filter(|token| !token.starts_with('-'))
+        .filter(|token| !is_shell_continuation_token(strip_quotes(token)))
         .map(|token| {
             let token = strip_quotes(token);
             let (name, version) = token.rsplit_once('@').map_or_else(
@@ -808,7 +947,42 @@ fn package_manager_evidence(
     }
 }
 
+fn dependency_manifest_evidence(
+    path: &str,
+    manager: PackageManagerKind,
+    filename: &str,
+    dependencies: &[ParsedDependency],
+) -> DependencyManifestEvidence {
+    DependencyManifestEvidence {
+        path: path.to_owned(),
+        line: Some(1),
+        source: SupplyChainSourceKind::DependencyManifest,
+        manager,
+        normalized: filename.to_owned(),
+        raw: Some(filename.to_owned()),
+        confidence: EvidenceConfidence::High,
+        dependency_count: dependencies.len(),
+        unpinned_dependency_count: dependencies
+            .iter()
+            .filter(|dependency| !dependency.pinned)
+            .count(),
+        pinning: dependency_manifest_pinning(dependencies),
+    }
+}
+
+fn dependency_manifest_pinning(dependencies: &[ParsedDependency]) -> DependencyManifestPinningKind {
+    if dependencies.is_empty() {
+        DependencyManifestPinningKind::Unknown
+    } else if dependencies.iter().any(|dependency| !dependency.pinned) {
+        DependencyManifestPinningKind::RangeBased
+    } else {
+        DependencyManifestPinningKind::ExactPinned
+    }
+}
+
 fn dedup_package_inventory(inventory: &mut SupplyChainInventory) {
+    inventory.dependency_manifests.sort();
+    inventory.dependency_manifests.dedup();
     inventory.package_managers.sort();
     inventory.package_managers.dedup();
     inventory.remote_dependencies.sort();
@@ -832,7 +1006,6 @@ fn lockfile_manager(filename: &str) -> Option<PackageManagerKind> {
         "poetry.lock" => Some(PackageManagerKind::Poetry),
         "pipfile.lock" => Some(PackageManagerKind::Pip),
         "uv.lock" => Some(PackageManagerKind::Uv),
-        "requirements.txt" => Some(PackageManagerKind::Pip),
         "gemfile.lock" => Some(PackageManagerKind::Gem),
         "go.sum" => Some(PackageManagerKind::Go),
         "composer.lock" => Some(PackageManagerKind::Composer),
@@ -923,6 +1096,76 @@ fn exact_version(version: &str) -> bool {
     saw_digit && saw_dot
 }
 
+fn shell_logical_lines(content: &str) -> Vec<(usize, String)> {
+    let mut logical_lines = Vec::new();
+    let mut current = String::new();
+    let mut start_line = None;
+
+    for (index, line) in content.lines().enumerate() {
+        let line_number = index + 1;
+        let (segment, continues) = shell_line_continuation_segment(line);
+        if start_line.is_none() {
+            start_line = Some(line_number);
+        }
+        if !current.is_empty() && !segment.trim().is_empty() {
+            current.push(' ');
+        }
+        current.push_str(segment.trim());
+
+        if continues {
+            continue;
+        }
+
+        if let Some(start_line) = start_line.take() {
+            logical_lines.push((start_line, std::mem::take(&mut current)));
+        }
+    }
+
+    if !current.trim().is_empty() {
+        logical_lines.push((start_line.unwrap_or(1), current));
+    }
+
+    logical_lines
+}
+
+fn collapse_shell_line_continuations(text: &str) -> String {
+    shell_logical_lines(text)
+        .into_iter()
+        .map(|(_, line)| line)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn shell_line_continuation_segment(line: &str) -> (&str, bool) {
+    let trimmed = line.trim_end();
+    let trailing_backslashes = trimmed
+        .chars()
+        .rev()
+        .take_while(|character| *character == '\\')
+        .count();
+    if trailing_backslashes % 2 == 1 {
+        (&trimmed[..trimmed.len() - 1], true)
+    } else {
+        (line, false)
+    }
+}
+
+fn nested_quoted_install_command(text: &str, tokens: &[String]) -> Option<InstallCommand> {
+    let trimmed = text.trim();
+    tokens
+        .iter()
+        .filter(|token| token.contains(char::is_whitespace) && token.trim() != trimmed)
+        .find_map(|token| InstallCommand::from_text(token))
+}
+
+fn is_shell_continuation_token(token: &str) -> bool {
+    token == "\\"
+}
+
+fn clean_command_package_token(token: &str) -> &str {
+    strip_quotes(token).trim_matches([',', ';'])
+}
+
 fn shellish_tokens(text: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut current = String::new();
@@ -999,7 +1242,9 @@ fn dependency_line(_path: &str, content: &str, name: &str) -> Option<usize> {
 mod tests {
     use super::{install_command_start, shellish_tokens};
 
-    use crate::model::PackageManagerKind;
+    use std::path::Path;
+
+    use crate::model::{BinaryArtifactKind, DependencyManifestPinningKind, PackageManagerKind};
     use crate::scan::{scan_path, ScanOptions};
     use crate::test_support::TestWorkspace;
 
@@ -1016,13 +1261,13 @@ mod tests {
             "Poetry.lock",
             "Pipfile.lock",
             "uv.lock",
-            "requirements.txt",
             "Gemfile.lock",
             "go.sum",
             "composer.lock",
         ] {
             workspace.write_file(filename, "{}\n");
         }
+        workspace.write_file("requirements.txt", "requests==2.32.0\n");
         workspace.write_file("lowercase-poetry/poetry.lock", "{}\n");
 
         let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
@@ -1045,9 +1290,83 @@ mod tests {
                 "npm-shrinkwrap.json",
                 "package-lock.json",
                 "pnpm-lock.yaml",
-                "requirements.txt",
                 "uv.lock",
                 "yarn.lock",
+            ]
+        );
+        assert_eq!(
+            report
+                .supply_chain
+                .dependency_manifests
+                .iter()
+                .map(|manifest| (manifest.path.as_str(), manifest.pinning))
+                .collect::<Vec<_>>(),
+            vec![(
+                "requirements.txt",
+                DependencyManifestPinningKind::ExactPinned
+            )]
+        );
+    }
+
+    #[test]
+    fn classifies_dependency_manifests_separately_from_lockfiles() {
+        let workspace = TestWorkspace::new("package-inventory-manifest-lockfile-split");
+        workspace.write_file("SKILL.md", "# Root\n\nUseful skill.\n");
+        workspace.write_file("requirements.txt", "requests==2.32.0\nclick==8.1.7\n");
+        workspace.write_file("range-requirements/requirements.txt", "requests>=2\n");
+        workspace.write_file("package-lock.json", "{}\n");
+        workspace.write_file("pnpm-lock.yaml", "lockfileVersion: '9.0'\n");
+        workspace.write_file("Cargo.lock", "# lock\n");
+        workspace.write_file("poetry.lock", "# lock\n");
+        workspace.write_file("uv.lock", "# lock\n");
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_eq!(
+            report
+                .supply_chain
+                .dependency_manifests
+                .iter()
+                .map(|manifest| {
+                    (
+                        manifest.path.as_str(),
+                        manifest.manager,
+                        manifest.dependency_count,
+                        manifest.unpinned_dependency_count,
+                        manifest.pinning,
+                    )
+                })
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    "range-requirements/requirements.txt",
+                    PackageManagerKind::Pip,
+                    1,
+                    1,
+                    DependencyManifestPinningKind::RangeBased
+                ),
+                (
+                    "requirements.txt",
+                    PackageManagerKind::Pip,
+                    2,
+                    0,
+                    DependencyManifestPinningKind::ExactPinned
+                ),
+            ]
+        );
+        assert_eq!(
+            report
+                .supply_chain
+                .lockfiles
+                .iter()
+                .map(|lockfile| (lockfile.path.as_str(), lockfile.manager))
+                .collect::<Vec<_>>(),
+            vec![
+                ("Cargo.lock", PackageManagerKind::Cargo),
+                ("package-lock.json", PackageManagerKind::Npm),
+                ("pnpm-lock.yaml", PackageManagerKind::Pnpm),
+                ("poetry.lock", PackageManagerKind::Poetry),
+                ("uv.lock", PackageManagerKind::Uv),
             ]
         );
     }
@@ -1100,6 +1419,110 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    #[test]
+    fn skips_binary_script_artifacts_while_preserving_text_installs() {
+        let workspace = TestWorkspace::new("binary-script-artifact-package-inventory");
+        workspace.write_file(
+            "SKILL.md",
+            "# Binary Script Artifact\n\nUse scripts/install.sh and scripts/shadcn-components.tar.gz.\n",
+        );
+        workspace.write_file(
+            "scripts/install.sh",
+            "#!/usr/bin/env sh\nnpm install left-pad@1.3.0\n",
+        );
+        std::fs::write(
+            workspace.root().join("scripts/shadcn-components.tar.gz"),
+            [0xff, 0xfe, 0xfd, 0x00],
+        )
+        .expect("write binary archive");
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert!(report
+            .supply_chain
+            .binaries
+            .iter()
+            .any(|binary| binary.path == "scripts/shadcn-components.tar.gz"
+                && binary.kind == BinaryArtifactKind::Archive));
+        assert!(report
+            .supply_chain
+            .remote_dependencies
+            .iter()
+            .any(|dependency| {
+                dependency.path == "scripts/install.sh"
+                    && dependency.normalized == "npm:left-pad@1.3.0"
+            }));
+        assert!(!report
+            .supply_chain
+            .remote_dependencies
+            .iter()
+            .any(|dependency| dependency.path == "scripts/shadcn-components.tar.gz"));
+    }
+
+    #[test]
+    fn inventories_long_scoped_javascript_install_commands_without_scope_fragments() {
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("fixtures")
+            .join("behavior")
+            .join("scoped-package-install");
+
+        let report = scan_path(&fixture_root, &ScanOptions::default()).expect("scan path");
+        let dependencies = report
+            .supply_chain
+            .remote_dependencies
+            .iter()
+            .map(|dependency| dependency.normalized.as_str())
+            .collect::<Vec<_>>();
+        let names = report
+            .supply_chain
+            .remote_dependencies
+            .iter()
+            .filter_map(|dependency| dependency.name.as_deref())
+            .collect::<Vec<_>>();
+
+        for expected in [
+            "npm:@radix-ui/react-slot@1.1.0",
+            "npm:@radix-ui/react-tooltip@1.1.7",
+            "npm:@types/react@18.2.79",
+            "npm:@types/testing-library__jest-dom@6.4.2",
+            "npm:lucide-react@0.468.0",
+            "pnpm:@hookform/resolvers@3.9.1",
+            "pnpm:@radix-ui/react-dialog@1.1.15",
+            "pnpm:@radix-ui/react-popover@1.1.6",
+            "pnpm:@types/node@20.11.30",
+            "pnpm:zod@3.23.8",
+        ] {
+            assert!(dependencies.contains(&expected), "missing {expected}");
+        }
+
+        for unexpected in [
+            "pnpm:@rad",
+            "pnpm:@hoo",
+            "pnpm:@types",
+            "npm:@rad",
+            "npm:@types",
+        ] {
+            assert!(
+                !dependencies.contains(&unexpected),
+                "unexpected partial dependency {unexpected}"
+            );
+        }
+        for name in names {
+            assert!(
+                !matches!(name, "@rad" | "@hoo" | "@types"),
+                "unexpected partial dependency name {name}"
+            );
+            if name.starts_with('@') {
+                assert!(
+                    name.contains('/'),
+                    "scoped package dependency was split before package name: {name}"
+                );
+            }
+        }
     }
 
     #[test]

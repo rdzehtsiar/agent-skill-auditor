@@ -5,6 +5,10 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 
+use agent_audit_core::model::{
+    stable_audit_hash, AuditCommandMetadata, AuditConfigMetadata, AuditPlatformMetadata,
+    AuditRepositoryMetadata,
+};
 use agent_audit_core::{
     parse_audit_config, parse_severity, report_matches_fail_on, scan_path, AuditConfig, AuditError,
     ScanOptions, ScanReport, Severity, SupplyChainPolicy,
@@ -121,22 +125,35 @@ fn run_scan_with_writer_and_opener(
 ) -> Result<()> {
     validate_output_options(&command)?;
 
-    let config = command
+    let loaded_config = command
         .config
         .as_deref()
         .map(load_explicit_config)
         .transpose()?;
     let _supply_chain_requested = command.supply_chain;
-    let fail_on = effective_fail_on(&command.fail_on, config.as_ref()).to_vec();
-    let config = effective_config(config, &command.profiles, command.strict_supply_chain);
+    let fail_on = effective_fail_on(
+        &command.fail_on,
+        loaded_config.as_ref().map(|loaded| &loaded.config),
+    )
+    .to_vec();
+    let config_metadata = loaded_config
+        .as_ref()
+        .map(|loaded| loaded.metadata.clone())
+        .unwrap_or_default();
+    let config = effective_config(
+        loaded_config.map(|loaded| loaded.config),
+        &command.profiles,
+        command.strict_supply_chain,
+    );
 
-    let report = scan_path(
+    let mut report = scan_path(
         &command.path,
         &ScanOptions {
             config,
             ..ScanOptions::default()
         },
     )?;
+    enrich_report_audit_metadata(&mut report, &command, &fail_on, config_metadata);
     write_report_apply_fail_on_and_maybe_open(&report, &command, &fail_on, writer, opener)
 }
 
@@ -330,11 +347,26 @@ fn all_supported_profiles() -> Vec<String> {
         .collect()
 }
 
-fn load_explicit_config(config_path: &Path) -> Result<AuditConfig> {
+#[derive(Debug)]
+struct LoadedAuditConfig {
+    config: AuditConfig,
+    metadata: AuditConfigMetadata,
+}
+
+fn load_explicit_config(config_path: &Path) -> Result<LoadedAuditConfig> {
     let content = fs::read_to_string(config_path)
         .with_context(|| format!("failed to read config {}", config_path.display()))?;
 
-    parse_audit_config(&content).map_err(|error| config_error_with_path(config_path, error))
+    let config =
+        parse_audit_config(&content).map_err(|error| config_error_with_path(config_path, error))?;
+
+    Ok(LoadedAuditConfig {
+        config,
+        metadata: AuditConfigMetadata {
+            path: Some(path_metadata_string(config_path)),
+            hash: Some(stable_audit_hash(&content)),
+        },
+    })
 }
 
 fn config_error_with_path(config_path: &Path, error: AuditError) -> anyhow::Error {
@@ -381,6 +413,104 @@ fn canonical_scan_profile(profile: &str) -> Option<&'static str> {
         "all" => Some("all"),
         profile => canonical_host_profile(profile),
     }
+}
+
+fn enrich_report_audit_metadata(
+    report: &mut ScanReport,
+    command: &ScanCommand,
+    effective_fail_on: &[Severity],
+    config: AuditConfigMetadata,
+) {
+    report.audit.config = config;
+    report.audit.scan.root = Some(path_metadata_string(&command.path));
+    report.audit.command = AuditCommandMetadata {
+        name: Some("scan".to_owned()),
+        format: Some(command.format.as_str().to_owned()),
+        mode: Some(command.mode.as_str().to_owned()),
+        profiles: command.profiles.clone(),
+        fail_on: effective_fail_on.iter().map(severity_label).collect(),
+        supply_chain: command.supply_chain,
+        strict_supply_chain: command.strict_supply_chain,
+    };
+    report.audit.platform = Some(AuditPlatformMetadata {
+        os: std::env::consts::OS.to_owned(),
+        arch: std::env::consts::ARCH.to_owned(),
+        family: std::env::consts::FAMILY.to_owned(),
+    });
+    report.audit.repository = detect_repository_metadata(&command.path);
+}
+
+fn detect_repository_metadata(scan_root: &Path) -> Option<AuditRepositoryMetadata> {
+    let worktree_root = git_output(scan_root, &["rev-parse", "--show-toplevel"])?;
+    if !paths_match(scan_root, Path::new(&worktree_root)) {
+        return None;
+    }
+
+    let remote_url = git_output(scan_root, &["config", "--get", "remote.origin.url"]);
+    let commit = git_output(scan_root, &["rev-parse", "HEAD"]);
+    let dirty = git_output(scan_root, &["status", "--porcelain"]).map(|status| !status.is_empty());
+
+    if remote_url.is_none() && commit.is_none() && dirty.is_none() {
+        return None;
+    }
+
+    Some(AuditRepositoryMetadata {
+        remote_url,
+        commit,
+        dirty,
+    })
+}
+
+fn paths_match(left: &Path, right: &Path) -> bool {
+    let Ok(left) = left.canonicalize() else {
+        return false;
+    };
+    let Ok(right) = right.canonicalize() else {
+        return false;
+    };
+
+    left == right
+}
+
+fn git_output(scan_root: &Path, args: &[&str]) -> Option<String> {
+    let output = ProcessCommand::new("git")
+        .args(["-C"])
+        .arg(scan_root)
+        .args(args)
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let value = String::from_utf8(output.stdout).ok()?.trim().to_owned();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+fn path_metadata_string(path: &Path) -> String {
+    let value = path.to_string_lossy().replace('\\', "/");
+
+    if value.is_empty() {
+        ".".to_owned()
+    } else {
+        value
+    }
+}
+
+fn severity_label(severity: &Severity) -> String {
+    match severity {
+        Severity::Info => "info",
+        Severity::Low => "low",
+        Severity::Medium => "medium",
+        Severity::High => "high",
+        Severity::Critical => "critical",
+    }
+    .to_owned()
 }
 
 #[cfg(test)]
@@ -913,6 +1043,8 @@ description: Summary output fixture.
             .expect("run summary scan");
 
         assert!(output.starts_with("Agent Skill Auditor scan summary\n"));
+        assert!(output.contains("Audit: "));
+        assert!(output.contains("timestamp=null"));
         assert!(output.contains("Packages: 1\n"));
         assert!(output.contains("Findings: "));
         assert!(output.contains("Compatibility:\n"));
@@ -945,6 +1077,55 @@ description: JSON output fixture.
         assert!(output.contains("\"summary\""));
         assert!(output.contains("\"json-output\""));
         assert!(output.ends_with('\n'));
+
+        let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
+        assert_eq!(value["audit"]["output_schema_version"], "1");
+        assert_eq!(
+            value["audit"]["scanner"]["version"],
+            env!("CARGO_PKG_VERSION")
+        );
+        assert_eq!(value["audit"]["timestamp"], serde_json::Value::Null);
+        assert_eq!(
+            value["audit"]["command"]["format"],
+            serde_json::json!("json")
+        );
+        assert_eq!(
+            value["audit"]["command"]["mode"],
+            serde_json::json!("default")
+        );
+        assert_audit_path_metadata_present(&value["audit"]["scan"]["root"]);
+        assert_eq!(value["audit"]["repository"], serde_json::Value::Null);
+        assert_platform_metadata_shape(&value["audit"]["platform"]);
+        assert_eq!(
+            value["audit"]["host_profiles"]["selected"],
+            serde_json::json!(HOST_PROFILES)
+        );
+    }
+
+    #[test]
+    fn run_scan_audit_paths_preserve_user_provided_relative_paths() {
+        let scan_root = PathBuf::from("../../fixtures/compatibility/valid/spec-basic");
+        let config_path =
+            PathBuf::from("../../fixtures/spec/phase2/config/valid/empty.agent-audit.yaml");
+
+        let output = run_scan_output(ScanCommand {
+            path: scan_root.clone(),
+            config: Some(config_path.clone()),
+            format: ReportFormat::Json,
+            ..scan_path_command(scan_root.clone(), ReportFormat::Json)
+        })
+        .expect("run scan with relative paths");
+        let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
+
+        assert_eq!(
+            value["audit"]["scan"]["root"],
+            path_metadata_string(&scan_root)
+        );
+        assert_eq!(
+            value["audit"]["config"]["path"],
+            path_metadata_string(&config_path)
+        );
+        assert_eq!(value["audit"]["repository"], serde_json::Value::Null);
     }
 
     #[test]
@@ -967,6 +1148,8 @@ description: SARIF output fixture.
         assert!(output.starts_with("{\n"));
         assert!(output.contains("\"version\": \"2.1.0\""));
         assert!(output.contains("\"Agent Skill Auditor\""));
+        assert!(output.contains("\"invocations\""));
+        assert!(output.contains("\"agentAudit\""));
         assert!(output.ends_with('\n'));
     }
 
@@ -989,6 +1172,8 @@ description: HTML output fixture.
 
         assert!(output.starts_with("<!doctype html>\n"));
         assert!(output.contains("<h1>Agent Skill Auditor Report</h1>"));
+        assert!(output.contains("<h2 id=\"audit-metadata\">Audit Metadata</h2>"));
+        assert!(output.contains("<th>Timestamp</th><td>null</td>"));
         assert!(output.contains("html-output"));
         assert!(output.ends_with('\n'));
     }
@@ -1050,7 +1235,7 @@ description: HTML output fixture.
 
         assert!(stdout.is_empty());
         assert!(message.contains("--output target is an existing directory"));
-        assert!(message.contains(&workspace.root.display().to_string()));
+        assert!(message.contains("directory-output-target"));
     }
 
     #[test]
@@ -1408,6 +1593,7 @@ ignore:
     #[test]
     fn write_report_ignores_suppressed_high_findings_for_fail_on() {
         let report = ScanReport {
+            audit: agent_audit_core::model::AuditMetadata::default(),
             packages: Vec::new(),
             summary: ScanSummary {
                 package_count: 0,
@@ -1415,6 +1601,8 @@ ignore:
                 suppressed_finding_count: 1,
                 invalid_manifest_count: 0,
                 broken_reference_count: 0,
+                actual_secret_evidence_count: 0,
+                prompt_secret_exposure_count: 0,
             },
             findings: Vec::new(),
             finding_groups: Vec::new(),
@@ -1495,12 +1683,17 @@ fail_on:
         );
 
         let mut command =
-            configured_scan_command(&workspace, ReportFormat::Summary, "agent-audit.yaml");
+            configured_scan_command(&workspace, ReportFormat::Json, "agent-audit.yaml");
         command.fail_on = vec![Severity::High];
         let output =
             run_scan_output(command).expect("CLI fail_on high should override config fail_on low");
+        let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
 
-        assert!(output.contains("SKILL001 [low/high/spec] x1 packages=1"));
+        assert_eq!(value["findings"][0]["rule_id"], "SKILL001");
+        assert_eq!(
+            value["audit"]["command"]["fail_on"],
+            serde_json::json!(["high"])
+        );
     }
 
     #[test]
@@ -1959,6 +2152,11 @@ ignore:
             value["suppressed_findings"][0]["suppression"]["reason"],
             "Name omitted for CLI suppression regression."
         );
+        assert_audit_path_metadata_present(&value["audit"]["config"]["path"]);
+        assert!(value["audit"]["config"]["hash"]
+            .as_str()
+            .expect("config hash")
+            .starts_with("fnv1a64:"));
     }
 
     #[test]
@@ -2334,6 +2532,7 @@ Run scripts/install.sh during setup.
     fn test_finding(rule_id: &str, severity: Severity) -> SkillFinding {
         SkillFinding {
             rule_id: rule_id.to_owned(),
+            fingerprint: String::new(),
             severity,
             confidence: agent_audit_core::FindingConfidence::Medium,
             category: FindingCategory::Security,
@@ -2376,6 +2575,24 @@ Run scripts/install.sh during setup.
             .expect("findings array")
             .iter()
             .any(|finding| finding["rule_id"] == rule_id)
+    }
+
+    fn assert_audit_path_metadata_present(value: &serde_json::Value) {
+        let path = value.as_str().expect("audit path metadata string");
+        assert!(!path.is_empty());
+    }
+
+    fn assert_platform_metadata_shape(value: &serde_json::Value) {
+        let platform = value.as_object().expect("platform metadata object");
+        for field in ["os", "arch", "family"] {
+            assert!(
+                platform
+                    .get(field)
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|value| !value.is_empty()),
+                "platform metadata should include non-empty {field}"
+            );
+        }
     }
 
     struct CliTestWorkspace {

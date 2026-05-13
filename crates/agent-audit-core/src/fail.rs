@@ -112,6 +112,7 @@ mod tests {
         suppressed_findings: Vec<SuppressedFinding>,
     ) -> ScanReport {
         ScanReport {
+            audit: crate::model::AuditMetadata::default(),
             packages: Vec::new(),
             summary: ScanSummary {
                 package_count: 0,
@@ -119,6 +120,8 @@ mod tests {
                 suppressed_finding_count: suppressed_findings.len(),
                 invalid_manifest_count: 0,
                 broken_reference_count: 0,
+                actual_secret_evidence_count: 0,
+                prompt_secret_exposure_count: 0,
             },
             findings,
             finding_groups: Vec::new(),
@@ -131,6 +134,7 @@ mod tests {
     fn finding(rule_id: &str, severity: Severity) -> SkillFinding {
         SkillFinding {
             rule_id: rule_id.to_owned(),
+            fingerprint: String::new(),
             severity,
             confidence: FindingConfidence::Medium,
             category: FindingCategory::Spec,

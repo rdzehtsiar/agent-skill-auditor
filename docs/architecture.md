@@ -39,19 +39,19 @@ Inventory collection lives in `agent-audit-core`:
 - Trust manifest parsing reads `agent-audit.trust.yaml`, `.agent-audit.trust.yaml`, or trust-shaped `agent-audit.yaml` files next to each skill.
 - License inventory records repository-level and skill-local license evidence.
 - URL and remote dependency inventory extracts external references from manifests, Markdown, scripts, and package files.
-- Package inventory records package managers, lockfiles, install commands, and version pinning evidence.
+- Package inventory records dependency manifests, package managers, lockfiles, install commands, and version pinning evidence.
 - Artifact inventory records executable scripts, executable-looking binaries, opaque assets, and checksums.
 - Permission reconciliation merges trust manifest declarations with observed static security evidence.
-- Offline readiness calculation derives a transparent status, score, and reason list from the local evidence.
+- Offline audit readiness calculation derives a transparent auditability status, score, and reason list from the local evidence. It does not claim that a skill can run offline at runtime unless a future analyzer records strong runtime evidence.
 
 `agent-audit-core` converts the inventory into rule facts with relative portable paths and stable ordering. `agent-audit-rules` evaluates active `SUPPLY` rules from those facts. Default policy avoids missing optional metadata findings; strict policy requires local trust manifest and license evidence.
 
 Rendering lives in `agent-audit-report`:
 
 - JSON serializes the full `supply_chain` inventory from `ScanReport`.
-- Summary output renders compact supply-chain counts and offline readiness status.
+- Summary output renders compact supply-chain counts and offline audit readiness status.
 - SARIF renders supply-chain findings as normal rule results.
-- HTML renders a self-contained offline report without hosted assets. It is responsible for the executive summary, risk distribution, host support, top risky skills, broken references, external URLs, secret usage, offline readiness, package inventory, findings, and per-skill detail sections. External URLs are rendered as text and are not fetched or embedded.
+- HTML renders a self-contained offline report without hosted assets. It is responsible for the executive summary, risk distribution, host support, top risky skills, broken references, external URLs, secret usage, offline audit readiness, package inventory, findings, and per-skill detail sections. External URLs are rendered as text and are not fetched or embedded. Secret usage distinguishes actual secret evidence from prompt-risk text that mentions secret exposure.
 
 ## Trust Manifest Boundary
 
@@ -73,6 +73,8 @@ compatibility
 ```
 
 The JSON schema in `docs/report.schema.json` documents the supply-chain inventory shape. SARIF intentionally carries supply-chain findings as normal rule results rather than embedding the full inventory.
+
+The `summary` object includes separate `actual_secret_evidence_count` and `prompt_secret_exposure_count` fields. Prompt-injection findings such as `SEC011` remain visible as findings, but they do not increase the actual secret evidence count.
 
 The CLI chooses the requested format, writes `--output PATH` when provided, and owns the `--open` workflow. Opening is only valid for explicit HTML output files and happens after rendering and after `fail_on` checks pass.
 

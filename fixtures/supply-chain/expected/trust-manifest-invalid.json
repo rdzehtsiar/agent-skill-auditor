@@ -33,6 +33,7 @@
     ],
     "external_urls": [],
     "remote_dependencies": [],
+    "dependency_manifests": [],
     "package_managers": [],
     "lockfiles": [],
     "executables": [],

@@ -4,12 +4,16 @@
   "title": "Agent Skill Auditor JSON report",
   "type": "object",
   "required": [
+    "audit",
     "packages",
     "findings",
     "suppressed_findings",
     "summary"
   ],
   "properties": {
+    "audit": {
+      "$ref": "#/$defs/auditMetadata"
+    },
     "packages": {
       "type": "array",
       "items": {
@@ -35,7 +39,7 @@
       }
     },
     "summary": {
-      "type": "object"
+      "$ref": "#/$defs/scanSummary"
     },
     "supply_chain": {
       "$ref": "#/$defs/supplyChainInventory"
@@ -46,6 +50,236 @@
   },
   "additionalProperties": false,
   "$defs": {
+    "auditMetadata": {
+      "type": "object",
+      "required": [
+        "output_schema_version",
+        "scanner",
+        "ruleset",
+        "host_profiles",
+        "config",
+        "scan",
+        "command",
+        "platform",
+        "repository",
+        "timestamp"
+      ],
+      "properties": {
+        "output_schema_version": {
+          "type": "string"
+        },
+        "scanner": {
+          "$ref": "#/$defs/auditScannerMetadata"
+        },
+        "ruleset": {
+          "$ref": "#/$defs/auditRulesetMetadata"
+        },
+        "host_profiles": {
+          "$ref": "#/$defs/auditHostProfileMetadata"
+        },
+        "config": {
+          "$ref": "#/$defs/auditConfigMetadata"
+        },
+        "scan": {
+          "$ref": "#/$defs/auditScanMetadata"
+        },
+        "command": {
+          "$ref": "#/$defs/auditCommandMetadata"
+        },
+        "platform": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/auditPlatformMetadata"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "repository": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/auditRepositoryMetadata"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "timestamp": {
+          "$ref": "#/$defs/optionalString"
+        }
+      },
+      "additionalProperties": false
+    },
+    "auditScannerMetadata": {
+      "type": "object",
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "auditRulesetMetadata": {
+      "type": "object",
+      "required": [
+        "version",
+        "hash"
+      ],
+      "properties": {
+        "version": {
+          "type": "string"
+        },
+        "hash": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "auditHostProfileMetadata": {
+      "type": "object",
+      "required": [
+        "selected",
+        "version",
+        "hash"
+      ],
+      "properties": {
+        "selected": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "version": {
+          "type": "string"
+        },
+        "hash": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "auditConfigMetadata": {
+      "type": "object",
+      "required": [
+        "path",
+        "hash"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "hash": {
+          "$ref": "#/$defs/optionalString"
+        }
+      },
+      "additionalProperties": false
+    },
+    "auditScanMetadata": {
+      "type": "object",
+      "required": [
+        "root"
+      ],
+      "properties": {
+        "root": {
+          "$ref": "#/$defs/optionalString"
+        }
+      },
+      "additionalProperties": false
+    },
+    "auditCommandMetadata": {
+      "type": "object",
+      "required": [
+        "name",
+        "format",
+        "mode",
+        "profiles",
+        "fail_on",
+        "supply_chain",
+        "strict_supply_chain"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "format": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "mode": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "profiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "fail_on": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "supply_chain": {
+          "type": "boolean"
+        },
+        "strict_supply_chain": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "auditPlatformMetadata": {
+      "type": "object",
+      "required": [
+        "os",
+        "arch",
+        "family"
+      ],
+      "properties": {
+        "os": {
+          "type": "string"
+        },
+        "arch": {
+          "type": "string"
+        },
+        "family": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "auditRepositoryMetadata": {
+      "type": "object",
+      "required": [
+        "remote_url",
+        "commit",
+        "dirty"
+      ],
+      "properties": {
+        "remote_url": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "commit": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "dirty": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "supplyChainInventory": {
       "type": "object",
       "required": [
@@ -53,6 +287,7 @@
         "trust_manifests",
         "external_urls",
         "remote_dependencies",
+        "dependency_manifests",
         "package_managers",
         "lockfiles",
         "executables",
@@ -84,6 +319,12 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/remoteDependency"
+          }
+        },
+        "dependency_manifests": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/dependencyManifestEvidence"
           }
         },
         "package_managers": {
@@ -127,6 +368,51 @@
           "items": {
             "$ref": "#/$defs/offlineReadiness"
           }
+        }
+      },
+      "additionalProperties": false
+    },
+    "scanSummary": {
+      "type": "object",
+      "required": [
+        "package_count",
+        "finding_count",
+        "suppressed_finding_count",
+        "invalid_manifest_count",
+        "broken_reference_count",
+        "actual_secret_evidence_count",
+        "prompt_secret_exposure_count"
+      ],
+      "properties": {
+        "package_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "finding_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "suppressed_finding_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "invalid_manifest_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "broken_reference_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "actual_secret_evidence_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of actual secret evidence signals such as secret-like environment reads, secret-bearing data exfiltration findings, and declared or observed secret permissions."
+        },
+        "prompt_secret_exposure_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of prompt-risk findings that mention exposing secrets. These are not counted as actual secret usage evidence."
         }
       },
       "additionalProperties": false
@@ -494,6 +780,56 @@
       },
       "additionalProperties": false
     },
+    "dependencyManifestEvidence": {
+      "type": "object",
+      "required": [
+        "path",
+        "line",
+        "source",
+        "manager",
+        "normalized",
+        "raw",
+        "confidence",
+        "dependency_count",
+        "unpinned_dependency_count",
+        "pinning"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "$ref": "#/$defs/optionalLine"
+        },
+        "source": {
+          "$ref": "#/$defs/supplyChainSourceKind"
+        },
+        "manager": {
+          "$ref": "#/$defs/packageManagerKind"
+        },
+        "normalized": {
+          "type": "string"
+        },
+        "raw": {
+          "$ref": "#/$defs/optionalString"
+        },
+        "confidence": {
+          "$ref": "#/$defs/evidenceConfidence"
+        },
+        "dependency_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unpinned_dependency_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pinning": {
+          "$ref": "#/$defs/dependencyManifestPinningKind"
+        }
+      },
+      "additionalProperties": false
+    },
     "packageManagerEvidence": {
       "type": "object",
       "required": [
@@ -760,7 +1096,8 @@
           "type": "string"
         },
         "status": {
-          "$ref": "#/$defs/offlineReadinessStatus"
+          "$ref": "#/$defs/offlineReadinessStatus",
+          "description": "Static offline auditability status derived from local evidence. This is not a claim that the skill can run offline."
         },
         "score": {
           "type": [
@@ -768,13 +1105,84 @@
             "null"
           ],
           "minimum": 0,
-          "maximum": 100
+          "maximum": 100,
+          "description": "Static offline auditability score derived from local review evidence."
         },
         "reasons": {
           "type": "array",
           "items": {
             "type": "string"
           }
+        },
+        "runtime_offline_capability": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/runtimeOfflineCapability"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Runtime offline capability evidence. Omitted or null means the scanner does not have strong evidence and makes no runtime offline claim."
+        },
+        "external_service_dependency": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/offlineDependencyEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Evidence-backed external service dependency signal, present only when detected."
+        },
+        "remote_fetch_dependency": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/offlineDependencyEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Evidence-backed remote fetch dependency signal, present only when detected."
+        }
+      },
+      "additionalProperties": false
+    },
+    "runtimeOfflineCapability": {
+      "type": "object",
+      "required": [
+        "status",
+        "reason"
+      ],
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/runtimeOfflineCapabilityStatus"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "offlineDependencyEvidence": {
+      "type": "object",
+      "required": [
+        "detected",
+        "evidence_count",
+        "reason"
+      ],
+      "properties": {
+        "detected": {
+          "type": "boolean"
+        },
+        "evidence_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "reason": {
+          "type": "string"
         }
       },
       "additionalProperties": false
@@ -800,6 +1208,7 @@
         "inline-code",
         "code-block",
         "script",
+        "dependency-manifest",
         "package-manifest",
         "lockfile",
         "trust-manifest",
@@ -813,6 +1222,14 @@
         "low",
         "medium",
         "high"
+      ]
+    },
+    "dependencyManifestPinningKind": {
+      "type": "string",
+      "enum": [
+        "exact-pinned",
+        "range-based",
+        "unknown"
       ]
     },
     "licenseScope": {
@@ -938,10 +1355,19 @@
         "unknown"
       ]
     },
+    "runtimeOfflineCapabilityStatus": {
+      "type": "string",
+      "enum": [
+        "supported",
+        "unsupported",
+        "unknown"
+      ]
+    },
     "findingGroup": {
       "type": "object",
       "required": [
         "rule_id",
+        "group_fingerprint",
         "severity",
         "category",
         "title",
@@ -957,6 +1383,9 @@
       ],
       "properties": {
         "rule_id": {
+          "type": "string"
+        },
+        "group_fingerprint": {
           "type": "string"
         },
         "severity": {
@@ -1016,6 +1445,7 @@
       "type": "object",
       "required": [
         "rule_id",
+        "fingerprint",
         "severity",
         "category",
         "title",
@@ -1027,6 +1457,9 @@
       ],
       "properties": {
         "rule_id": {
+          "type": "string"
+        },
+        "fingerprint": {
           "type": "string"
         },
         "severity": {

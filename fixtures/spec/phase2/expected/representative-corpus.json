@@ -1,4 +1,46 @@
 {
+  "audit": {
+    "output_schema_version": "1",
+    "scanner": {
+      "name": "agent-audit",
+      "version": "0.6.0"
+    },
+    "ruleset": {
+      "version": "0.6.0",
+      "hash": "fnv1a64:7ac7c4a42a4430de"
+    },
+    "host_profiles": {
+      "selected": [
+        "agent-skills-spec",
+        "claude-code",
+        "codex",
+        "github-copilot",
+        "vscode-copilot",
+        "generic"
+      ],
+      "version": "0.6.0",
+      "hash": "fnv1a64:381004ac00e7640f"
+    },
+    "config": {
+      "path": null,
+      "hash": null
+    },
+    "scan": {
+      "root": null
+    },
+    "command": {
+      "name": null,
+      "format": null,
+      "mode": null,
+      "profiles": [],
+      "fail_on": [],
+      "supply_chain": false,
+      "strict_supply_chain": false
+    },
+    "platform": null,
+    "repository": null,
+    "timestamp": null
+  },
   "packages": [
     {
       "root": ".agents/skills/artifacts",
@@ -994,6 +1036,7 @@
   "findings": [
     {
       "rule_id": "SKILL010",
+      "fingerprint": "fnv1a64:eeebab71a6cab53d",
       "severity": "low",
       "confidence": "high",
       "category": "spec",
@@ -1009,6 +1052,7 @@
     },
     {
       "rule_id": "SKILL002",
+      "fingerprint": "fnv1a64:c3679941cee68276",
       "severity": "low",
       "confidence": "high",
       "category": "spec",
@@ -1024,6 +1068,7 @@
     },
     {
       "rule_id": "SKILL030",
+      "fingerprint": "fnv1a64:0c9bac6a6debe4fd",
       "severity": "low",
       "confidence": "high",
       "category": "compatibility",
@@ -1039,6 +1084,7 @@
     },
     {
       "rule_id": "SKILL030",
+      "fingerprint": "fnv1a64:4dacbd1497c8c8a9",
       "severity": "low",
       "confidence": "high",
       "category": "compatibility",
@@ -1054,6 +1100,7 @@
     },
     {
       "rule_id": "SKILL040",
+      "fingerprint": "fnv1a64:46850e18eb0399c4",
       "severity": "low",
       "confidence": "high",
       "category": "compatibility",
@@ -1069,6 +1116,7 @@
     },
     {
       "rule_id": "SKILL010",
+      "fingerprint": "fnv1a64:d4d7fcce0b6401cc",
       "severity": "low",
       "confidence": "high",
       "category": "spec",
@@ -1084,6 +1132,7 @@
     },
     {
       "rule_id": "SKILL001",
+      "fingerprint": "fnv1a64:be6487206e8dd660",
       "severity": "low",
       "confidence": "high",
       "category": "spec",
@@ -1099,6 +1148,7 @@
     },
     {
       "rule_id": "SKILL010",
+      "fingerprint": "fnv1a64:5828dc131918c8dd",
       "severity": "low",
       "confidence": "high",
       "category": "spec",
@@ -1114,6 +1164,7 @@
     },
     {
       "rule_id": "SKILL030",
+      "fingerprint": "fnv1a64:22f4232fff4167a4",
       "severity": "low",
       "confidence": "high",
       "category": "compatibility",
@@ -1129,6 +1180,7 @@
     },
     {
       "rule_id": "SKILL030",
+      "fingerprint": "fnv1a64:8e1613dd3b3d00d4",
       "severity": "low",
       "confidence": "high",
       "category": "compatibility",
@@ -1144,6 +1196,7 @@
     },
     {
       "rule_id": "SKILL002",
+      "fingerprint": "fnv1a64:90ab7685044b7d7c",
       "severity": "low",
       "confidence": "high",
       "category": "spec",
@@ -1159,6 +1212,7 @@
     },
     {
       "rule_id": "SKILL001",
+      "fingerprint": "fnv1a64:f1183bd20c1574f3",
       "severity": "low",
       "confidence": "high",
       "category": "spec",
@@ -1174,6 +1228,7 @@
     },
     {
       "rule_id": "SKILL040",
+      "fingerprint": "fnv1a64:44e61bf147474d7c",
       "severity": "low",
       "confidence": "high",
       "category": "compatibility",
@@ -1189,6 +1244,7 @@
     },
     {
       "rule_id": "SKILL001",
+      "fingerprint": "fnv1a64:5893fb1f4b115343",
       "severity": "low",
       "confidence": "high",
       "category": "spec",
@@ -1204,6 +1260,7 @@
     },
     {
       "rule_id": "SKILL040",
+      "fingerprint": "fnv1a64:aa83fb16a3b57d3c",
       "severity": "low",
       "confidence": "high",
       "category": "compatibility",
@@ -1219,6 +1276,7 @@
     },
     {
       "rule_id": "SKILL010",
+      "fingerprint": "fnv1a64:982333ebdf749d16",
       "severity": "low",
       "confidence": "high",
       "category": "spec",
@@ -1236,6 +1294,7 @@
   "finding_groups": [
     {
       "rule_id": "SKILL001",
+      "group_fingerprint": "fnv1a64:6c3da7af2d36deb5",
       "severity": "low",
       "confidence": "high",
       "category": "spec",
@@ -1280,6 +1339,7 @@
     },
     {
       "rule_id": "SKILL002",
+      "group_fingerprint": "fnv1a64:846266d12f7e80e8",
       "severity": "low",
       "confidence": "high",
       "category": "spec",
@@ -1316,6 +1376,7 @@
     },
     {
       "rule_id": "SKILL010",
+      "group_fingerprint": "fnv1a64:5b6331b70eaec49f",
       "severity": "low",
       "confidence": "high",
       "category": "spec",
@@ -1361,6 +1422,7 @@
     },
     {
       "rule_id": "SKILL030",
+      "group_fingerprint": "fnv1a64:0b15203c4d5649ea",
       "severity": "low",
       "confidence": "high",
       "category": "compatibility",
@@ -1406,6 +1468,7 @@
     },
     {
       "rule_id": "SKILL040",
+      "group_fingerprint": "fnv1a64:ddda4205713f0217",
       "severity": "low",
       "confidence": "high",
       "category": "compatibility",
@@ -1435,6 +1498,7 @@
     },
     {
       "rule_id": "SKILL040",
+      "group_fingerprint": "fnv1a64:18036a90900fd927",
       "severity": "low",
       "confidence": "high",
       "category": "compatibility",
@@ -1464,6 +1528,7 @@
     },
     {
       "rule_id": "SKILL040",
+      "group_fingerprint": "fnv1a64:5bdfdf722774e08b",
       "severity": "low",
       "confidence": "high",
       "category": "compatibility",
@@ -1498,13 +1563,16 @@
     "finding_count": 16,
     "suppressed_finding_count": 0,
     "invalid_manifest_count": 5,
-    "broken_reference_count": 4
+    "broken_reference_count": 4,
+    "actual_secret_evidence_count": 0,
+    "prompt_secret_exposure_count": 0
   },
   "supply_chain": {
     "licenses": [],
     "trust_manifests": [],
     "external_urls": [],
     "remote_dependencies": [],
+    "dependency_manifests": [],
     "package_managers": [],
     "lockfiles": [],
     "executables": [
