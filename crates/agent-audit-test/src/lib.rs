@@ -1980,6 +1980,7 @@ Bootstrap with scripts/install.sh.
             packages,
             findings,
             finding_groups,
+            patterns: Vec::new(),
             suppressed_findings: Vec::new(),
             supply_chain: Default::default(),
             compatibility,

@@ -13,6 +13,7 @@ filesystem scan
 -> normalized package model and rule facts
 -> deterministic rule evaluation
 -> suppression and compatibility matrix
+-> ecosystem pattern aggregation
 -> summary, JSON, SARIF, or HTML rendering
 ```
 
@@ -23,7 +24,7 @@ The scanner does not execute skill scripts, install packages, call remote regist
 The workspace keeps responsibilities separated:
 
 - `agent-audit-cli` owns command-line parsing, explicit config loading, CLI override behavior, report rendering selection, output file writing, `fail_on` exit behavior, and opening written HTML reports when requested.
-- `agent-audit-core` owns filesystem discovery, manifest parsing, artifact inventory, config validation, supply-chain inventory collection, security signal orchestration, suppression application, compatibility matrix construction, and the public `ScanReport` model.
+- `agent-audit-core` owns filesystem discovery, manifest parsing, artifact inventory, config validation, supply-chain inventory collection, security signal orchestration, suppression application, compatibility matrix construction, ecosystem pattern aggregation, and the public `ScanReport` model.
 - `agent-audit-rules` owns rule metadata, active/reserved rule status, deterministic rule evaluation, and generated rule documentation inputs.
 - `agent-audit-hosts` owns host profile definitions and compatibility assumptions.
 - `agent-audit-security` owns static security analyzers for local skill artifacts.
@@ -48,10 +49,10 @@ Inventory collection lives in `agent-audit-core`:
 
 Rendering lives in `agent-audit-report`:
 
-- JSON serializes the full `supply_chain` inventory from `ScanReport`.
-- Summary output renders compact supply-chain counts and offline audit readiness status.
+- JSON serializes the full `supply_chain` inventory and structured `patterns` from `ScanReport`.
+- Summary output renders compact supply-chain counts, offline audit readiness status, and concise observed ecosystem patterns when evidence supports them.
 - SARIF renders supply-chain findings as normal rule results.
-- HTML renders a self-contained offline report without hosted assets. It is responsible for the executive summary, risk distribution, host support, top risky skills, broken references, external URLs, secret usage, offline audit readiness, package inventory, findings, and per-skill detail sections. External URLs are rendered as text and are not fetched or embedded. Secret usage distinguishes actual secret evidence from prompt-risk text that mentions secret exposure.
+- HTML renders a self-contained offline report without hosted assets. It is responsible for the executive summary, observed ecosystem patterns, risk distribution, host support, top risky skills, broken references, external URLs, secret usage, offline audit readiness, package inventory, findings, and per-skill detail sections. External URLs are rendered as text and are not fetched or embedded. Secret usage distinguishes actual secret evidence from prompt-risk text that mentions secret exposure.
 
 ## Trust Manifest Boundary
 
@@ -66,13 +67,15 @@ The scanner can report that `provenance.source`, `provenance.commit`, or `proven
 ```text
 packages
 findings
+finding_groups
+patterns
 suppressed_findings
 summary
 supply_chain
 compatibility
 ```
 
-The JSON schema in `docs/report.schema.json` documents the supply-chain inventory shape. SARIF intentionally carries supply-chain findings as normal rule results rather than embedding the full inventory.
+The JSON schema in `docs/report.schema.json` documents the supply-chain inventory and ecosystem pattern shapes. SARIF intentionally carries supply-chain findings as normal rule results rather than embedding the full inventory.
 
 The `summary` object includes separate `actual_secret_evidence_count` and `prompt_secret_exposure_count` fields. Prompt-injection findings such as `SEC011` remain visible as findings, but they do not increase the actual secret evidence count.
 

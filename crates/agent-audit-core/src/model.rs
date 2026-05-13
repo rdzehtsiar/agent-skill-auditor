@@ -17,6 +17,8 @@ pub struct ScanReport {
     pub findings: Vec<SkillFinding>,
     #[serde(default)]
     pub finding_groups: Vec<FindingGroup>,
+    #[serde(default)]
+    pub patterns: Vec<EcosystemPattern>,
     pub suppressed_findings: Vec<SuppressedFinding>,
     pub summary: ScanSummary,
     #[serde(default)]
@@ -876,6 +878,23 @@ pub struct FindingEvidenceSample {
     pub message: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EcosystemPattern {
+    pub id: String,
+    pub title: String,
+    pub summary: String,
+    pub count: usize,
+    pub affected_package_count: usize,
+    pub affected_package_percent: u8,
+    pub evidence: Vec<EcosystemPatternEvidence>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EcosystemPatternEvidence {
+    pub kind: String,
+    pub count: usize,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SuppressedFinding {
     pub finding: SkillFinding,
@@ -923,6 +942,7 @@ pub enum FindingCategory {
 }
 
 pub const FINDING_GROUP_EVIDENCE_SAMPLE_LIMIT: usize = 3;
+pub const ECOSYSTEM_PATTERN_LIMIT: usize = 7;
 
 pub fn populate_finding_fingerprints(findings: &mut [SkillFinding]) {
     for finding in findings {
@@ -1014,6 +1034,358 @@ pub fn build_finding_groups(
         .into_values()
         .map(FindingGroupAccumulator::into_group)
         .collect()
+}
+
+pub fn build_ecosystem_patterns(
+    packages: &[SkillPackage],
+    findings: &[SkillFinding],
+    finding_groups: &[FindingGroup],
+    supply_chain: &SupplyChainInventory,
+) -> Vec<EcosystemPattern> {
+    if packages.is_empty() {
+        return Vec::new();
+    }
+
+    let mut patterns = Vec::new();
+
+    push_finding_pattern(
+        &mut patterns,
+        FindingPatternSpec {
+            id: "host-specific-metadata-extensions",
+            title: "Host-specific metadata extensions",
+            template:
+                "Host-specific or unknown metadata appears in {affected} of {total} packages ({percent}%).",
+            rule_ids: &["SKILL040", "SKILL050"],
+        },
+        packages,
+        findings,
+        finding_groups,
+    );
+    push_finding_pattern(
+        &mut patterns,
+        FindingPatternSpec {
+            id: "dependency-reproducibility-gaps",
+            title: "Dependency reproducibility gaps in executable skills",
+            template:
+                "Executable dependency setup has reproducibility gaps in {affected} of {total} packages ({percent}%).",
+            rule_ids: &["SEC009", "SUPPLY003", "SUPPLY004", "SUPPLY009"],
+        },
+        packages,
+        findings,
+        finding_groups,
+    );
+    push_mutable_remote_pattern(&mut patterns, packages, supply_chain);
+    push_finding_pattern(
+        &mut patterns,
+        FindingPatternSpec {
+            id: "prompt-injection-review-signals",
+            title: "Prompt-injection-like review signals",
+            template:
+                "Prompt-injection-like review signals appear in {affected} of {total} packages ({percent}%).",
+            rule_ids: &["SEC011"],
+        },
+        packages,
+        findings,
+        finding_groups,
+    );
+    push_finding_pattern(
+        &mut patterns,
+        FindingPatternSpec {
+            id: "hidden-prompt-like-instructions",
+            title: "Hidden prompt-like instructions in inert contexts",
+            template:
+                "Hidden prompt-like instructions appear in comments or code blocks in {affected} of {total} packages ({percent}%).",
+            rule_ids: &["SEC012"],
+        },
+        packages,
+        findings,
+        finding_groups,
+    );
+    push_trust_manifest_adoption_pattern(&mut patterns, packages, supply_chain);
+    push_checksum_evidence_pattern(&mut patterns, packages, supply_chain);
+
+    patterns.sort_by(|left, right| {
+        (
+            std::cmp::Reverse(left.affected_package_count),
+            std::cmp::Reverse(left.count),
+            left.id.as_str(),
+        )
+            .cmp(&(
+                std::cmp::Reverse(right.affected_package_count),
+                std::cmp::Reverse(right.count),
+                right.id.as_str(),
+            ))
+    });
+    patterns.truncate(ECOSYSTEM_PATTERN_LIMIT);
+    patterns
+}
+
+struct FindingPatternSpec<'a> {
+    id: &'a str,
+    title: &'a str,
+    template: &'a str,
+    rule_ids: &'a [&'a str],
+}
+
+fn push_finding_pattern(
+    patterns: &mut Vec<EcosystemPattern>,
+    spec: FindingPatternSpec<'_>,
+    packages: &[SkillPackage],
+    findings: &[SkillFinding],
+    finding_groups: &[FindingGroup],
+) {
+    let matching = findings
+        .iter()
+        .filter(|finding| spec.rule_ids.contains(&finding.rule_id.as_str()))
+        .collect::<Vec<_>>();
+    if matching.is_empty() {
+        return;
+    }
+
+    let mut affected_packages = BTreeSet::new();
+    for finding in &matching {
+        if let Some(package) = package_for_finding(packages, finding) {
+            affected_packages.insert(package.manifest_path.as_str());
+        }
+    }
+
+    let affected = affected_packages.len();
+    let percent = package_percent(affected, packages.len());
+    patterns.push(EcosystemPattern {
+        id: spec.id.to_owned(),
+        title: spec.title.to_owned(),
+        summary: pattern_summary(spec.template, affected, packages.len(), percent),
+        count: matching.len(),
+        affected_package_count: affected,
+        affected_package_percent: percent,
+        evidence: finding_pattern_evidence(finding_groups, spec.rule_ids),
+    });
+}
+
+fn push_mutable_remote_pattern(
+    patterns: &mut Vec<EcosystemPattern>,
+    packages: &[SkillPackage],
+    supply_chain: &SupplyChainInventory,
+) {
+    let mutable_urls = supply_chain
+        .external_urls
+        .iter()
+        .filter(|url| url.pinned == Some(false))
+        .collect::<Vec<_>>();
+    let mutable_dependencies = supply_chain
+        .remote_dependencies
+        .iter()
+        .filter(|dependency| dependency.pinned == Some(false))
+        .collect::<Vec<_>>();
+    let count = mutable_urls.len() + mutable_dependencies.len();
+    if count == 0 {
+        return;
+    }
+
+    let mut affected_packages = BTreeSet::new();
+    for url in &mutable_urls {
+        if let Some(package) = package_for_report_path(packages, &url.path) {
+            affected_packages.insert(package.manifest_path.as_str());
+        }
+    }
+    for dependency in &mutable_dependencies {
+        if let Some(package) = package_for_report_path(packages, &dependency.path) {
+            affected_packages.insert(package.manifest_path.as_str());
+        }
+    }
+
+    let affected = affected_packages.len();
+    let percent = package_percent(affected, packages.len());
+    patterns.push(EcosystemPattern {
+        id: "mutable-remote-references".to_owned(),
+        title: "Mutable remote references".to_owned(),
+        summary: pattern_summary(
+            "Mutable remote references appear in {affected} of {total} packages ({percent}%).",
+            affected,
+            packages.len(),
+            percent,
+        ),
+        count,
+        affected_package_count: affected,
+        affected_package_percent: percent,
+        evidence: vec![
+            EcosystemPatternEvidence {
+                kind: "mutable_external_urls".to_owned(),
+                count: mutable_urls.len(),
+            },
+            EcosystemPatternEvidence {
+                kind: "mutable_remote_dependencies".to_owned(),
+                count: mutable_dependencies.len(),
+            },
+        ],
+    });
+}
+
+fn push_trust_manifest_adoption_pattern(
+    patterns: &mut Vec<EcosystemPattern>,
+    packages: &[SkillPackage],
+    supply_chain: &SupplyChainInventory,
+) {
+    if packages.len() < 3 && supply_chain.trust_manifests.is_empty() {
+        return;
+    }
+
+    let adopted = package_paths_with_evidence(
+        packages,
+        supply_chain
+            .trust_manifests
+            .iter()
+            .map(|manifest| manifest.path.as_str()),
+    );
+    let missing = packages.len().saturating_sub(adopted.len());
+    if missing == 0 {
+        return;
+    }
+
+    let percent = package_percent(missing, packages.len());
+    patterns.push(EcosystemPattern {
+        id: "low-trust-manifest-adoption".to_owned(),
+        title: "Low trust-manifest adoption".to_owned(),
+        summary: pattern_summary(
+            "Trust manifest evidence is missing for {affected} of {total} packages ({percent}%).",
+            missing,
+            packages.len(),
+            percent,
+        ),
+        count: missing,
+        affected_package_count: missing,
+        affected_package_percent: percent,
+        evidence: vec![
+            EcosystemPatternEvidence {
+                kind: "trust_manifests".to_owned(),
+                count: supply_chain.trust_manifests.len(),
+            },
+            EcosystemPatternEvidence {
+                kind: "packages_without_trust_manifest".to_owned(),
+                count: missing,
+            },
+        ],
+    });
+}
+
+fn push_checksum_evidence_pattern(
+    patterns: &mut Vec<EcosystemPattern>,
+    packages: &[SkillPackage],
+    supply_chain: &SupplyChainInventory,
+) {
+    let artifact_count = supply_chain.executables.len() + supply_chain.binaries.len();
+    let missing_checksum_count = artifact_count.saturating_sub(supply_chain.checksums.len());
+    if artifact_count == 0
+        || supply_chain.checksums.len() >= artifact_count
+        || (!supply_chain.checksums.is_empty() && missing_checksum_count < 2)
+    {
+        return;
+    }
+
+    let artifact_packages = package_paths_with_evidence(
+        packages,
+        supply_chain
+            .executables
+            .iter()
+            .map(|artifact| artifact.path.as_str())
+            .chain(
+                supply_chain
+                    .binaries
+                    .iter()
+                    .map(|artifact| artifact.path.as_str()),
+            ),
+    );
+    if artifact_packages.is_empty() {
+        return;
+    }
+
+    let percent = package_percent(artifact_packages.len(), packages.len());
+    patterns.push(EcosystemPattern {
+        id: "low-checksum-evidence".to_owned(),
+        title: "Low checksum evidence".to_owned(),
+        summary: pattern_summary(
+            "Executable or binary artifact evidence exceeds checksum evidence across {affected} of {total} packages ({percent}%).",
+            artifact_packages.len(),
+            packages.len(),
+            percent,
+        ),
+        count: missing_checksum_count,
+        affected_package_count: artifact_packages.len(),
+        affected_package_percent: percent,
+        evidence: vec![
+            EcosystemPatternEvidence {
+                kind: "executable_or_binary_artifacts".to_owned(),
+                count: artifact_count,
+            },
+            EcosystemPatternEvidence {
+                kind: "checksums".to_owned(),
+                count: supply_chain.checksums.len(),
+            },
+        ],
+    });
+}
+
+fn finding_pattern_evidence(
+    finding_groups: &[FindingGroup],
+    rule_ids: &[&str],
+) -> Vec<EcosystemPatternEvidence> {
+    rule_ids
+        .iter()
+        .filter_map(|rule_id| {
+            let count = finding_groups
+                .iter()
+                .filter(|group| group.rule_id == *rule_id)
+                .map(|group| group.finding_count)
+                .sum::<usize>();
+            (count > 0).then(|| EcosystemPatternEvidence {
+                kind: (*rule_id).to_owned(),
+                count,
+            })
+        })
+        .collect()
+}
+
+fn package_paths_with_evidence<'a>(
+    packages: &'a [SkillPackage],
+    paths: impl Iterator<Item = &'a str>,
+) -> BTreeSet<&'a str> {
+    let mut package_paths = BTreeSet::new();
+    for path in paths {
+        if let Some(package) = package_for_report_path(packages, path) {
+            package_paths.insert(package.manifest_path.as_str());
+        }
+    }
+    package_paths
+}
+
+fn package_for_report_path<'a>(
+    packages: &'a [SkillPackage],
+    path: &str,
+) -> Option<&'a SkillPackage> {
+    packages
+        .iter()
+        .filter(|package| {
+            package.root.is_empty()
+                || path == package.manifest_path
+                || path == package.root
+                || path.starts_with(&format!("{}/", package.root))
+        })
+        .max_by_key(|package| package.root.len())
+}
+
+fn pattern_summary(template: &str, affected: usize, total: usize, percent: u8) -> String {
+    template
+        .replace("{affected}", &affected.to_string())
+        .replace("{total}", &total.to_string())
+        .replace("{percent}", &percent.to_string())
+}
+
+fn package_percent(count: usize, total: usize) -> u8 {
+    if total == 0 {
+        return 0;
+    }
+
+    ((count * 100 + total / 2) / total).min(100) as u8
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -1373,6 +1745,7 @@ mod tests {
                 "packages": [],
                 "findings": [],
                 "finding_groups": [],
+                "patterns": [],
                 "suppressed_findings": [],
                 "summary": {
                     "package_count": 0,
@@ -2045,12 +2418,106 @@ mod tests {
         );
     }
 
+    #[test]
+    fn ecosystem_patterns_are_structured_and_deterministically_ordered() {
+        let packages = vec![
+            test_package("skills/alpha", "skills/alpha/SKILL.md", "alpha"),
+            test_package("skills/beta", "skills/beta/SKILL.md", "beta"),
+            test_package("skills/gamma", "skills/gamma/SKILL.md", "gamma"),
+        ];
+        let findings = vec![
+            test_finding(
+                "SEC009",
+                Severity::Medium,
+                FindingCategory::Security,
+                "Package install without lockfile",
+                "The artifact runs a JavaScript package install without nearby lockfile evidence.",
+                "skills/alpha/scripts/install.sh",
+                Some(2),
+            ),
+            test_finding(
+                "SEC011",
+                Severity::Medium,
+                FindingCategory::Security,
+                "Prompt-injection-like instruction",
+                "The skill contains prompt-injection-like review text.",
+                "skills/beta/SKILL.md",
+                Some(8),
+            ),
+            test_finding(
+                "SEC012",
+                Severity::Medium,
+                FindingCategory::Security,
+                "Hidden instruction in inert context",
+                "The skill contains prompt-like text in a code block.",
+                "skills/beta/SKILL.md",
+                Some(12),
+            ),
+            test_finding(
+                "SKILL040",
+                Severity::Low,
+                FindingCategory::Compatibility,
+                "Unknown frontmatter field",
+                "The skill manifest declares the unknown frontmatter field `x-owner`.",
+                "skills/alpha/SKILL.md",
+                Some(3),
+            ),
+        ];
+        let finding_groups =
+            build_finding_groups(&packages, &findings, &CompatibilityMatrix::default());
+        let supply_chain = SupplyChainInventory {
+            external_urls: vec![ExternalUrl {
+                path: "skills/alpha/SKILL.md".to_owned(),
+                line: Some(9),
+                source: SupplyChainSourceKind::MarkdownLink,
+                kind: ExternalUrlKind::GithubRaw,
+                normalized: "https://raw.githubusercontent.com/example/repo/main/install.sh"
+                    .to_owned(),
+                raw: None,
+                confidence: EvidenceConfidence::Medium,
+                pinned: Some(false),
+            }],
+            executables: vec![ExecutableArtifact {
+                path: "skills/alpha/scripts/install.sh".to_owned(),
+                line: None,
+                source: SupplyChainSourceKind::Filesystem,
+                kind: ExecutableKind::Script,
+                language: Some("shell".to_owned()),
+                reason: "script extension".to_owned(),
+                referenced: true,
+                normalized: "skills/alpha/scripts/install.sh".to_owned(),
+                raw: None,
+                confidence: EvidenceConfidence::High,
+            }],
+            ..SupplyChainInventory::default()
+        };
+
+        let patterns =
+            build_ecosystem_patterns(&packages, &findings, &finding_groups, &supply_chain);
+
+        assert!((3..=ECOSYSTEM_PATTERN_LIMIT).contains(&patterns.len()));
+        let pattern_ids = patterns
+            .iter()
+            .map(|pattern| pattern.id.as_str())
+            .collect::<Vec<_>>();
+        assert!(pattern_ids.contains(&"low-trust-manifest-adoption"));
+        assert!(pattern_ids.contains(&"dependency-reproducibility-gaps"));
+        assert!(pattern_ids.contains(&"mutable-remote-references"));
+        assert_eq!(pattern_ids.first(), Some(&"low-trust-manifest-adoption"));
+        assert_eq!(patterns[0].affected_package_count, 3);
+        assert_eq!(patterns[0].affected_package_percent, 100);
+        assert!(patterns
+            .iter()
+            .all(|pattern| !pattern.summary.contains("attack")));
+    }
+
     fn empty_report() -> ScanReport {
         ScanReport {
             audit: AuditMetadata::default(),
             packages: Vec::new(),
             findings: Vec::new(),
             finding_groups: Vec::new(),
+            patterns: Vec::new(),
             suppressed_findings: Vec::new(),
             summary: ScanSummary {
                 package_count: 0,

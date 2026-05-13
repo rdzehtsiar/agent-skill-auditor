@@ -125,6 +125,7 @@ mod tests {
             },
             findings,
             finding_groups: Vec::new(),
+            patterns: Vec::new(),
             suppressed_findings,
             supply_chain: SupplyChainInventory::default(),
             compatibility: CompatibilityMatrix::default(),

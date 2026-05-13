@@ -8,10 +8,11 @@ use std::str::FromStr;
 
 use agent_audit_core::model::AuditMetadata;
 use agent_audit_core::{
-    build_finding_groups, CompatibilityMatrix, DependencyManifestPinningKind, ExternalUrl,
-    FindingCategory, FindingConfidence, FindingGroup, OfflineReadinessStatus, PermissionEvidence,
-    PermissionKind, ScanReport, Severity, SkillCompatibilityRow, SkillFinding, SkillPackage,
-    SupplyChainInventory, SupplyChainSourceKind,
+    build_ecosystem_patterns, build_finding_groups, CompatibilityMatrix,
+    DependencyManifestPinningKind, EcosystemPattern, ExternalUrl, FindingCategory,
+    FindingConfidence, FindingGroup, OfflineReadinessStatus, PermissionEvidence, PermissionKind,
+    ScanReport, Severity, SkillCompatibilityRow, SkillFinding, SkillPackage, SupplyChainInventory,
+    SupplyChainSourceKind,
 };
 use agent_audit_rules::{active_rule_metadata, RuleMetadata, RuleSeverity};
 use serde_json::{json, Value};
@@ -201,6 +202,7 @@ fn render_default_summary(report: &ScanReport) -> String {
 
     extend_supply_chain_summary(&mut lines, report);
     extend_compatibility_summary(&mut lines, &report.compatibility);
+    extend_ecosystem_patterns_summary(&mut lines, report);
 
     let finding_groups = effective_finding_groups(report);
     if finding_groups.is_empty() {
@@ -241,6 +243,7 @@ fn render_verbose_summary(report: &ScanReport) -> String {
 
     extend_supply_chain_summary(&mut lines, report);
     extend_compatibility_summary(&mut lines, &report.compatibility);
+    extend_ecosystem_patterns_summary(&mut lines, report);
     extend_full_findings_summary(&mut lines, report, false);
 
     lines.join("\n")
@@ -251,6 +254,7 @@ fn render_research_summary(report: &ScanReport) -> String {
 
     extend_supply_chain_summary(&mut lines, report);
     extend_compatibility_summary(&mut lines, &report.compatibility);
+    extend_ecosystem_patterns_summary(&mut lines, report);
     extend_research_finding_groups_summary(&mut lines, report);
     extend_full_findings_summary(&mut lines, report, true);
 
@@ -701,6 +705,22 @@ fn extend_compatibility_summary(lines: &mut Vec<String>, compatibility: &Compati
     }
 }
 
+fn extend_ecosystem_patterns_summary(lines: &mut Vec<String>, report: &ScanReport) {
+    let patterns = effective_ecosystem_patterns(report);
+    if patterns.is_empty() {
+        return;
+    }
+
+    lines.push(String::new());
+    lines.push("Observed ecosystem patterns:".to_owned());
+    for pattern in patterns.iter() {
+        lines.push(format!(
+            "- {}: {} count={} packages={}%",
+            pattern.title, pattern.summary, pattern.count, pattern.affected_package_percent
+        ));
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct CompatibilityStatusCounts {
     pass: usize,
@@ -806,6 +826,7 @@ tbody tr:nth-child(even){background:var(--soft)}
     if mode == ReportMode::Ci {
         extend_html_audit_metadata(&mut html, &report.audit);
         extend_html_executive_summary(&mut html, report, &view_model);
+        extend_html_ecosystem_patterns(&mut html, report);
         extend_html_ci_summary(&mut html, report, &view_model);
         html.push_str("</main>\n</body>\n</html>\n");
         return html;
@@ -813,6 +834,7 @@ tbody tr:nth-child(even){background:var(--soft)}
 
     extend_html_audit_metadata(&mut html, &report.audit);
     extend_html_executive_summary(&mut html, report, &view_model);
+    extend_html_ecosystem_patterns(&mut html, report);
     extend_html_risk_distribution(&mut html, &view_model);
     extend_html_compatibility(&mut html, report, &view_model);
     extend_html_top_risky_skills(&mut html, &view_model);
@@ -845,6 +867,20 @@ fn effective_finding_groups(report: &ScanReport) -> Cow<'_, [FindingGroup]> {
         ))
     } else {
         Cow::Borrowed(&report.finding_groups)
+    }
+}
+
+fn effective_ecosystem_patterns(report: &ScanReport) -> Cow<'_, [EcosystemPattern]> {
+    if report.patterns.is_empty() && !report.packages.is_empty() {
+        let finding_groups = effective_finding_groups(report);
+        Cow::Owned(build_ecosystem_patterns(
+            &report.packages,
+            &report.findings,
+            finding_groups.as_ref(),
+            &report.supply_chain,
+        ))
+    } else {
+        Cow::Borrowed(&report.patterns)
     }
 }
 
@@ -1011,6 +1047,39 @@ fn extend_html_executive_summary(
         report.summary.prompt_secret_exposure_count,
     ));
     html.push_str("</div></section>\n");
+}
+
+fn extend_html_ecosystem_patterns(html: &mut String, report: &ScanReport) {
+    let patterns = effective_ecosystem_patterns(report);
+    if patterns.is_empty() {
+        return;
+    }
+
+    html.push_str("<section aria-labelledby=\"ecosystem-patterns\"><h2 id=\"ecosystem-patterns\">Observed Ecosystem Patterns</h2><table><thead><tr><th>Pattern</th><th>Summary</th><th>Count</th><th>Affected packages</th><th>Evidence</th></tr></thead><tbody>");
+    for pattern in patterns.iter() {
+        html.push_str("<tr><td>");
+        html.push_str(&escape_html(&pattern.title));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&pattern.summary));
+        html.push_str("</td><td>");
+        html.push_str(&pattern.count.to_string());
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&format!(
+            "{} ({}%)",
+            pattern.affected_package_count, pattern.affected_package_percent
+        )));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(
+            &pattern
+                .evidence
+                .iter()
+                .map(|evidence| format!("{}={}", evidence.kind, evidence.count))
+                .collect::<Vec<_>>()
+                .join(", "),
+        ));
+        html.push_str("</td></tr>");
+    }
+    html.push_str("</tbody></table></section>\n");
 }
 
 fn extend_html_risk_distribution(html: &mut String, view_model: &HtmlReportViewModel<'_>) {
@@ -4110,6 +4179,27 @@ mod tests {
     }
 
     #[test]
+    fn default_summary_includes_observed_ecosystem_patterns_when_present() {
+        let mut report = repeated_finding_report(4);
+        report.patterns = vec![EcosystemPattern {
+            id: "dependency-reproducibility-gaps".to_owned(),
+            title: "Dependency reproducibility gaps in executable skills".to_owned(),
+            summary:
+                "Executable dependency setup has reproducibility gaps in 4 of 4 packages (100%)."
+                    .to_owned(),
+            count: 4,
+            affected_package_count: 4,
+            affected_package_percent: 100,
+            evidence: vec![],
+        }];
+
+        let summary = render_summary(&report);
+
+        assert!(summary.contains("Observed ecosystem patterns:"));
+        assert!(summary.contains("- Dependency reproducibility gaps in executable skills: Executable dependency setup has reproducibility gaps in 4 of 4 packages (100%). count=4 packages=100%"));
+    }
+
+    #[test]
     fn verbose_summary_mode_expands_all_findings() {
         let report = repeated_finding_report(4);
 
@@ -4251,6 +4341,39 @@ mod tests {
         assert!(html.contains("SKILL010"));
         assert!(html.contains("Broken relative reference"));
         assert!(html.contains("The referenced file could not be found."));
+    }
+
+    #[test]
+    fn html_output_places_ecosystem_patterns_near_top() {
+        let mut report = repeated_finding_report(2);
+        report.patterns = vec![EcosystemPattern {
+            id: "dependency-reproducibility-gaps".to_owned(),
+            title: "Dependency reproducibility gaps in executable skills".to_owned(),
+            summary:
+                "Executable dependency setup has reproducibility gaps in 2 of 2 packages (100%)."
+                    .to_owned(),
+            count: 2,
+            affected_package_count: 2,
+            affected_package_percent: 100,
+            evidence: vec![agent_audit_core::EcosystemPatternEvidence {
+                kind: "SEC009".to_owned(),
+                count: 2,
+            }],
+        }];
+
+        let html = render_html(&report);
+
+        assert_in_order(
+            &html,
+            &[
+                "<h2 id=\"summary\">Executive Summary</h2>",
+                "<h2 id=\"ecosystem-patterns\">Observed Ecosystem Patterns</h2>",
+                "<h2 id=\"risk-distribution\">Risk Distribution</h2>",
+            ],
+        );
+        assert!(html.contains("<td>Dependency reproducibility gaps in executable skills</td>"));
+        assert!(html.contains("<td>2 (100%)</td>"));
+        assert!(html.contains("SEC009=2"));
     }
 
     #[test]
@@ -6169,6 +6292,7 @@ mod tests {
             },
             findings: Vec::new(),
             finding_groups: Vec::new(),
+            patterns: Vec::new(),
             suppressed_findings: Vec::new(),
             supply_chain: SupplyChainInventory::default(),
             compatibility: CompatibilityMatrix::default(),
@@ -6207,6 +6331,7 @@ mod tests {
             },
             findings,
             finding_groups,
+            patterns: Vec::new(),
             suppressed_findings: Vec::new(),
             supply_chain: SupplyChainInventory::default(),
             compatibility,

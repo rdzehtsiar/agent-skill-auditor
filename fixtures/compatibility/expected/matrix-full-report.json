@@ -334,6 +334,58 @@
       ]
     }
   ],
+  "patterns": [
+    {
+      "id": "low-trust-manifest-adoption",
+      "title": "Low trust-manifest adoption",
+      "summary": "Trust manifest evidence is missing for 6 of 6 packages (100%).",
+      "count": 6,
+      "affected_package_count": 6,
+      "affected_package_percent": 100,
+      "evidence": [
+        {
+          "kind": "trust_manifests",
+          "count": 0
+        },
+        {
+          "kind": "packages_without_trust_manifest",
+          "count": 6
+        }
+      ]
+    },
+    {
+      "id": "low-checksum-evidence",
+      "title": "Low checksum evidence",
+      "summary": "Executable or binary artifact evidence exceeds checksum evidence across 3 of 6 packages (50%).",
+      "count": 4,
+      "affected_package_count": 3,
+      "affected_package_percent": 50,
+      "evidence": [
+        {
+          "kind": "executable_or_binary_artifacts",
+          "count": 4
+        },
+        {
+          "kind": "checksums",
+          "count": 0
+        }
+      ]
+    },
+    {
+      "id": "host-specific-metadata-extensions",
+      "title": "Host-specific metadata extensions",
+      "summary": "Host-specific or unknown metadata appears in 1 of 6 packages (17%).",
+      "count": 1,
+      "affected_package_count": 1,
+      "affected_package_percent": 17,
+      "evidence": [
+        {
+          "kind": "SKILL040",
+          "count": 1
+        }
+      ]
+    }
+  ],
   "suppressed_findings": [],
   "summary": {
     "package_count": 6,

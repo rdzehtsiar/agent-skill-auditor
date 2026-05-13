@@ -2067,6 +2067,112 @@
       ]
     }
   ],
+  "patterns": [
+    {
+      "id": "low-trust-manifest-adoption",
+      "title": "Low trust-manifest adoption",
+      "summary": "Trust manifest evidence is missing for 17 of 17 packages (100%).",
+      "count": 17,
+      "affected_package_count": 17,
+      "affected_package_percent": 100,
+      "evidence": [
+        {
+          "kind": "trust_manifests",
+          "count": 0
+        },
+        {
+          "kind": "packages_without_trust_manifest",
+          "count": 17
+        }
+      ]
+    },
+    {
+      "id": "low-checksum-evidence",
+      "title": "Low checksum evidence",
+      "summary": "Executable or binary artifact evidence exceeds checksum evidence across 12 of 17 packages (71%).",
+      "count": 14,
+      "affected_package_count": 12,
+      "affected_package_percent": 71,
+      "evidence": [
+        {
+          "kind": "executable_or_binary_artifacts",
+          "count": 14
+        },
+        {
+          "kind": "checksums",
+          "count": 0
+        }
+      ]
+    },
+    {
+      "id": "dependency-reproducibility-gaps",
+      "title": "Dependency reproducibility gaps in executable skills",
+      "summary": "Executable dependency setup has reproducibility gaps in 5 of 17 packages (29%).",
+      "count": 20,
+      "affected_package_count": 5,
+      "affected_package_percent": 29,
+      "evidence": [
+        {
+          "kind": "SEC009",
+          "count": 7
+        },
+        {
+          "kind": "SUPPLY003",
+          "count": 9
+        },
+        {
+          "kind": "SUPPLY004",
+          "count": 4
+        }
+      ]
+    },
+    {
+      "id": "mutable-remote-references",
+      "title": "Mutable remote references",
+      "summary": "Mutable remote references appear in 3 of 17 packages (18%).",
+      "count": 6,
+      "affected_package_count": 3,
+      "affected_package_percent": 18,
+      "evidence": [
+        {
+          "kind": "mutable_external_urls",
+          "count": 1
+        },
+        {
+          "kind": "mutable_remote_dependencies",
+          "count": 5
+        }
+      ]
+    },
+    {
+      "id": "hidden-prompt-like-instructions",
+      "title": "Hidden prompt-like instructions in inert contexts",
+      "summary": "Hidden prompt-like instructions appear in comments or code blocks in 3 of 17 packages (18%).",
+      "count": 3,
+      "affected_package_count": 3,
+      "affected_package_percent": 18,
+      "evidence": [
+        {
+          "kind": "SEC012",
+          "count": 3
+        }
+      ]
+    },
+    {
+      "id": "prompt-injection-review-signals",
+      "title": "Prompt-injection-like review signals",
+      "summary": "Prompt-injection-like review signals appear in 2 of 17 packages (12%).",
+      "count": 2,
+      "affected_package_count": 2,
+      "affected_package_percent": 12,
+      "evidence": [
+        {
+          "kind": "SEC011",
+          "count": 2
+        }
+      ]
+    }
+  ],
   "suppressed_findings": [],
   "summary": {
     "package_count": 17,

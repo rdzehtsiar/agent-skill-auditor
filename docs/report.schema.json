@@ -8,6 +8,7 @@
     "packages",
     "findings",
     "suppressed_findings",
+    "patterns",
     "summary"
   ],
   "properties": {
@@ -30,6 +31,12 @@
       "type": "array",
       "items": {
         "$ref": "#/$defs/findingGroup"
+      }
+    },
+    "patterns": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ecosystemPattern"
       }
     },
     "suppressed_findings": {
@@ -1437,6 +1444,66 @@
           "items": {
             "$ref": "#/$defs/findingEvidenceSample"
           }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ecosystemPattern": {
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "summary",
+        "count",
+        "affected_package_count",
+        "affected_package_percent",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "affected_package_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "affected_package_percent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ecosystemPatternEvidence"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ecosystemPatternEvidence": {
+      "type": "object",
+      "required": [
+        "kind",
+        "count"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
         }
       },
       "additionalProperties": false

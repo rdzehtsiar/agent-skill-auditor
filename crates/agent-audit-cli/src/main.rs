@@ -1606,6 +1606,7 @@ ignore:
             },
             findings: Vec::new(),
             finding_groups: Vec::new(),
+            patterns: Vec::new(),
             suppressed_findings: vec![SuppressedFinding {
                 finding: test_finding("SEC005", Severity::High),
                 suppression: SuppressionMatch {

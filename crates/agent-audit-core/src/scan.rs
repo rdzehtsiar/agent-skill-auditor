@@ -9,13 +9,14 @@ use crate::discovery::discover_skill_manifests;
 use crate::error::{AuditError, AuditResult};
 use crate::license_inventory::{inventory_license_files, inventory_manifest_license};
 use crate::model::{
-    build_finding_groups, finding_suppression_match_keys, populate_finding_fingerprints,
-    AuditMetadata, BinaryArtifactKind, CompatibilityMatrix, DependencyManifestPinningKind,
-    ExternalUrlKind, FindingConfidence, LicenseScope, PackageManagerKind, PermissionEvidenceKind,
-    PermissionKind, RemoteDependencyKind, ScanReport, ScanSummary, SkillArtifactKind,
-    SkillCompatibilityRow, SkillFile, SkillFileKind, SkillFinding, SkillGraph, SkillManifest,
-    SkillPackage, SkillReference, SupplyChainInventory, SupplyChainSourceKind, SuppressedFinding,
-    SuppressionMatch, TrustManifest, TrustManifestDiagnostic, TrustManifestDiagnosticKind,
+    build_ecosystem_patterns, build_finding_groups, finding_suppression_match_keys,
+    populate_finding_fingerprints, AuditMetadata, BinaryArtifactKind, CompatibilityMatrix,
+    DependencyManifestPinningKind, ExternalUrlKind, FindingConfidence, LicenseScope,
+    PackageManagerKind, PermissionEvidenceKind, PermissionKind, RemoteDependencyKind, ScanReport,
+    ScanSummary, SkillArtifactKind, SkillCompatibilityRow, SkillFile, SkillFileKind, SkillFinding,
+    SkillGraph, SkillManifest, SkillPackage, SkillReference, SupplyChainInventory,
+    SupplyChainSourceKind, SuppressedFinding, SuppressionMatch, TrustManifest,
+    TrustManifestDiagnostic, TrustManifestDiagnosticKind,
 };
 use crate::offline_readiness::populate_offline_readiness;
 use crate::package_inventory::{
@@ -310,6 +311,7 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
     let compatibility =
         compatibility_matrix_for_packages(&packages, &findings, options.config.as_ref());
     let finding_groups = build_finding_groups(&packages, &findings, &compatibility);
+    let patterns = build_ecosystem_patterns(&packages, &findings, &finding_groups, &supply_chain);
 
     Ok(ScanReport {
         audit: AuditMetadata::default().with_selected_profiles(compatibility.profiles.clone()),
@@ -325,6 +327,7 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         packages,
         findings,
         finding_groups,
+        patterns,
         suppressed_findings,
         supply_chain,
         compatibility,
@@ -6926,6 +6929,7 @@ description: JSON stability fixture.
   ],
   "findings": [],
   "finding_groups": [],
+  "patterns": [],
   "suppressed_findings": [],
   "summary": {
     "package_count": 1,

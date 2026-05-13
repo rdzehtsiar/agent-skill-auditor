@@ -152,7 +152,7 @@ cargo run -q -p agent-audit-cli -- scan fixtures/compatibility/host/mixed-profil
 cargo run -q -p agent-audit-cli -- scan fixtures/compatibility/host/mixed-profile-metadata --profile codex,github-copilot --format json > report.json
 ```
 
-Finding objects include `fingerprint`, `severity`, `confidence`, `category`, location, rationale, remediation, and suppression guidance. Finding groups include `group_fingerprint`. Legacy reports that omit `confidence` or fingerprint fields still deserialize with defaults.
+Finding objects include `fingerprint`, `severity`, `confidence`, `category`, location, rationale, remediation, and suppression guidance. Finding groups include `group_fingerprint`. JSON also includes a structured `patterns` array with concise ecosystem-level observations, counts, and affected package percentages when aggregate evidence supports them. Legacy reports that omit `confidence` or fingerprint fields still deserialize with defaults.
 
 JSON reports include stable compatibility matrix data:
 
@@ -201,7 +201,7 @@ JSON reports also include a stable `supply_chain` section. The section is an inv
 
 `offline_readiness[].status`, `score`, and `reasons` describe static offline auditability. Optional `runtime_offline_capability`, `external_service_dependency`, and `remote_fetch_dependency` fields are separate so reports do not imply runtime offline behavior from auditability evidence alone.
 
-Summary output includes concise supply-chain counts and offline audit readiness status. SARIF includes supply-chain rule findings as normal results; the full inventory remains in JSON.
+Summary output includes concise supply-chain counts, offline audit readiness status, and observed ecosystem patterns when applicable. SARIF includes supply-chain rule findings as normal results; the full inventory remains in JSON.
 
 SARIF output is intended for code scanning integrations that accept SARIF:
 
@@ -220,7 +220,7 @@ cargo run -q -p agent-audit-cli -- scan fixtures/compatibility/host/mixed-profil
 
 SARIF stores compatibility matrix data under run properties, adds profile context to compatibility findings, and includes finding confidence as a result property. HTML reports are single files that use no hosted assets and can be reviewed offline. External URLs are rendered as text for review rather than fetched or embedded.
 
-The HTML report renders an executive summary, risk distribution, host support, top risky skills, broken references, external URLs, secret usage, offline audit readiness, packages, findings, and per-skill detail sections. Secret usage separates actual secret evidence, such as secret-like environment access, from prompt-risk text that mentions exposing secrets. `--open` is limited to explicit HTML file output: the CLI writes the report first, evaluates `fail_on`, and opens the file only when the scan result passes.
+The HTML report renders an executive summary, observed ecosystem patterns, risk distribution, host support, top risky skills, broken references, external URLs, secret usage, offline audit readiness, packages, findings, and per-skill detail sections. Secret usage separates actual secret evidence, such as secret-like environment access, from prompt-risk text that mentions exposing secrets. `--open` is limited to explicit HTML file output: the CLI writes the report first, evaluates `fail_on`, and opens the file only when the scan result passes.
 
 ## Current Checks
 
