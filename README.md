@@ -22,7 +22,7 @@ The v0.5.0 supply-chain capability reports local evidence for licenses, trust ma
 
 The v0.7.0 integration work documents CI-ready install and workflow paths for local Cargo builds, the checked-in GitHub Action, local Docker images, the npm wrapper, a Homebrew tap formula template, and mise/asdf guidance. External publication channels are not live unless the corresponding release tags, assets, registries, taps, plugin repositories, and credentials exist.
 
-Policy packs and broader ecosystem reporting are planned work.
+The v0.7.5 public-audit hardening work prepares the scanner for the v0.8 public ecosystem audit by documenting methodology metadata, stable finding and group fingerprints, public-safe dataset output, confidence labels, canonical finding groups, and observed ecosystem pattern reporting. Policy packs remain planned work.
 
 ## Quick Start
 
@@ -157,9 +157,9 @@ cargo run -q -p agent-audit-cli -- scan fixtures/compatibility/host/mixed-profil
 cargo run -q -p agent-audit-cli -- scan fixtures/compatibility/host/mixed-profile-metadata --profile codex,github-copilot --format json > report.json
 ```
 
-Finding objects include `fingerprint`, `severity`, `confidence`, `category`, location, rationale, remediation, and suppression guidance. Finding groups include `group_fingerprint`. JSON also includes a structured `patterns` array with concise ecosystem-level observations, counts, and affected package percentages when aggregate evidence supports them. Legacy reports that omit `confidence` or fingerprint fields still deserialize with defaults.
+Finding objects include `fingerprint`, `severity`, `confidence`, `category`, location, rationale, remediation, and suppression guidance. `severity` is the policy impact; `confidence` is the scanner's evidence certainty. Finding groups cluster repeated findings by rule and normalized evidence dimensions, include `group_fingerprint`, and are used consistently by default summary, research summary, HTML, and JSON output. JSON also includes a structured `patterns` array with concise ecosystem-level observations, counts, and affected package percentages when aggregate evidence supports them. Legacy reports that omit `confidence` or fingerprint fields still deserialize with defaults.
 
-Use `--format public-json` when producing reusable public audit datasets. Public JSON keeps audit metadata, optional methodology metadata, repository metadata, package identifiers, findings, finding groups, fingerprints, metrics, patterns, and bounded evidence snippets, but omits full `SKILL.md` body text, code block bodies, inline code bodies, and other large manifest content by default. The public dataset projection is documented in `docs/report.schema.json` under `$defs.publicDataset`.
+Use `--format public-json` when producing reusable public audit datasets. Public JSON keeps audit metadata, optional methodology metadata, repository metadata, package identifiers, findings, finding groups, fingerprints, metrics, patterns, and bounded evidence snippets, but omits full `SKILL.md` body text, code block bodies, inline code bodies, and other large manifest content by default. This is a public-safe projection for reproducible reporting, not the full internal scan model. The public dataset projection is documented in `docs/report.schema.json` under `$defs.publicDataset`.
 
 JSON reports include stable compatibility matrix data:
 
@@ -232,6 +232,12 @@ SARIF stores compatibility matrix data under run properties, adds profile contex
 
 The HTML report renders an executive summary, observed ecosystem patterns, risk distribution, host support, top risky skills, broken references, external URLs, secret usage, offline audit readiness, packages, findings, and per-skill detail sections. Secret usage separates actual secret evidence, such as secret-like environment access, from prompt-risk text that mentions exposing secrets. `--open` is limited to explicit HTML file output: the CLI writes the report first, evaluates `fail_on`, and opens the file only when the scan result passes.
 
+## Public Audit Methodology
+
+For public audit batches, prefer `--format public-json` with methodology metadata so downstream readers can identify the corpus, entry, inclusion tags, repository classification, methodology version, and scan batch. Public JSON is designed as a public-safe dataset: it preserves stable package identifiers, findings, finding groups, fingerprints, metrics, observed ecosystem patterns, and bounded evidence snippets while omitting full manifest bodies and code bodies.
+
+Finding fingerprints identify individual findings across repeated runs when the rule, path, location, and message remain stable. Group fingerprints identify repeated issue families, such as the same host-specific or unrecognized metadata field appearing across generated packages. These fingerprints support ecosystem pattern reporting without exposing the full private source corpus.
+
 ## Current Checks
 
 The current scanner supports:
@@ -253,12 +259,12 @@ The current scanner supports:
   - `SKILL030`: duplicate skill name.
   - `SKILL040`: host-specific or unrecognized metadata field.
   - `SKILL041`: malformed frontmatter.
-  - `SKILL050`: invalid host-specific metadata.
+  - `SKILL050`: ignored host-specific metadata.
   - Active `SUPPLY` rules: selected v0.5.0 supply-chain and provenance checks documented in the rule registry.
 
 Rule metadata defines each rule's ID, status, severity, category, explanation, remediation, and safe suppression guidance. Rule status is explicit: `active` rules may emit findings and may be suppressed, while `reserved` rules document planned rule IDs and are not emitted or accepted in suppression config. See [Rule Documentation](./docs/rules/README.md) for the generated rule registry.
 
-`SKILL050` is active metadata for host-specific metadata schema violations and ignored host-specific metadata. Some host-specific or otherwise unrecognized frontmatter is also reported as `SKILL040`.
+`SKILL050` is active metadata for host-specific metadata that a selected profile is likely to ignore. Some host-specific or otherwise unrecognized frontmatter is reported as `SKILL040`.
 
 Configuration is documented in [Config](./docs/config.md). Important current behavior:
 

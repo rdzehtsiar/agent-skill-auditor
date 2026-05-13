@@ -16,6 +16,8 @@ The tool is intended to support local review and CI policy decisions before a sk
 
 The output is review evidence. It is not a guarantee that a skill is safe.
 
+Public audit outputs should use the public-safe dataset projection rather than the full private JSON report when reports may be shared outside the reviewing organization. Public datasets keep stable package identifiers, findings, finding groups, fingerprints, metrics, observed ecosystem patterns, and bounded evidence snippets, but omit full manifest bodies and code bodies by default.
+
 ## Trust Boundaries
 
 The scanner trusts only the local filesystem content it is asked to scan and the explicit config file passed with `--config`. It does not trust claims made by a skill package unless they are represented as local evidence and reported as such.
@@ -43,6 +45,8 @@ The v0.5.0 supply-chain pipeline inventories local evidence for:
 - Offline audit readiness status and deterministic reason strings. This is a local auditability signal, not a claim that the skill can run without network access at runtime.
 
 This evidence can show that a package includes reviewable local metadata, carries exact-pinned or range-based dependency manifests, carries lockfiles, or declares permissions that align with observed static behavior.
+
+Offline audit readiness is an explainable review signal derived from this local evidence. Its status, score, and reason strings indicate how much local material is available for static review; they do not prove runtime offline capability.
 
 ## What Local Provenance Checks Can Prove
 
@@ -89,3 +93,5 @@ Strict policy requires local trust manifest and license evidence and emits the c
 Agent Skill Auditor is a static scanner. Skills can contain conditional behavior, generated files, runtime downloads, host-specific behavior, or natural-language instructions that are difficult to classify perfectly. Some findings can be false positives, and some risky behavior can be missed.
 
 Suppressions should be used only for reviewed false positives or accepted risks with clear local rationale. A suppression records an audit decision; it does not make the underlying behavior safe.
+
+Fingerprints are deterministic report identifiers for findings and finding groups. They help compare public audit batches and repeated scans, but they are not cryptographic attestations and should not be treated as proof that two independently sourced packages are equivalent.

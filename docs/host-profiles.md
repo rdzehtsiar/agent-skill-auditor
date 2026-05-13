@@ -52,7 +52,7 @@ Selection behavior is:
 Matrix cells use these stable statuses:
 
 - `pass`: Implemented checks verified the currently modeled requirements for that profile.
-- `warn`: The profile found a concrete portability risk backed by an active finding or explicit profile rule, such as ignored metadata, broken reference, oversized manifest, duplicate name, or unknown frontmatter.
+- `warn`: The profile found a concrete portability risk backed by an active finding or explicit profile rule, such as ignored metadata, broken reference, oversized manifest, duplicate name, or host-specific or unrecognized metadata.
 - `fail`: The skill violates implemented baseline requirements for that profile, currently missing `name`, missing `description`, or malformed frontmatter.
 - `unknown`: The auditor lacks enough profile evidence to make a useful claim. Matrix-only caveats such as non-preferred path layout, script references or artifacts, and unsupported `permissions` metadata use `unknown` when they are not backed by a finding or explicit profile rule.
 - `untested`: The profile was not evaluated by an implemented compatibility evaluator. This is part of the stable report contract for future profile coverage.
@@ -105,7 +105,7 @@ Portable baseline profile for deterministic skill package checks.
 - Scripts: may be packaged, but are treated as inert artifacts by the auditor.
 - Artifacts: `scripts/`, `references/`, and `assets/` are expected package directories when referenced.
 - Failures: missing `name`, missing `description`, malformed frontmatter.
-- Warnings: broken relative references, oversized manifests, duplicate names, unknown frontmatter, and oversized or host-specific metadata that reduces portability.
+- Warnings: broken relative references, oversized manifests, duplicate names, host-specific or unrecognized metadata, and oversized metadata that reduces portability.
 - Limitation: this profile is a portable scanner baseline, not a formal certification that another host accepts the package.
 
 ### `generic`
@@ -121,7 +121,7 @@ Broad local-agent profile for packages that are not targeting a known host.
 - Scripts: do not assume script execution support.
 - Artifacts: optional; core behavior should remain understandable from `SKILL.md`.
 - Failures: missing `name`, missing `description`, malformed frontmatter through the current baseline evaluator.
-- Warnings: broken references, oversized manifests, duplicate names, unknown frontmatter, and behavior that depends on a specific agent host.
+- Warnings: broken references, oversized manifests, duplicate names, host-specific or unrecognized metadata, and behavior that depends on a specific agent host.
 - Limitation: this profile intentionally avoids strict host claims. Host-specific metadata may be ignored by an unspecified local agent.
 
 ### `claude-code`
@@ -138,7 +138,7 @@ Profile for Claude Code-oriented skill packages.
 - Tools: prefer `allowed-tools` when declaring Claude-specific tool allowlists.
 - Scripts: packaged scripts are treated as references; execution is host-mediated and not assumed by the scanner.
 - Failures: missing `name`, missing `description`, malformed frontmatter.
-- Warnings: broken references, oversized manifests, duplicate names, unknown frontmatter, and `SKILL050` for ignored Claude metadata. Matrix-only caveats such as non-preferred path layout, script references or script artifacts, and `permissions` metadata report `unknown` when no finding is emitted.
+- Warnings: broken references, oversized manifests, duplicate names, host-specific or unrecognized metadata, and `SKILL050` for ignored Claude metadata. Matrix-only caveats such as non-preferred path layout, script references or script artifacts, and `permissions` metadata report `unknown` when no finding is emitted.
 - Limitation: the profile models conservative Claude Code packaging expectations and does not guarantee host execution or permission behavior.
 
 ### `codex`
@@ -155,7 +155,7 @@ Profile for Codex-compatible offline skill package review.
 - Tools: document tool needs explicitly; declarations do not imply automatic access.
 - Scripts: scripts can be included as artifacts, but execution is host-mediated and should be reviewed.
 - Failures: missing `name`, missing `description`, malformed frontmatter.
-- Warnings: broken references, oversized manifests, duplicate names, unknown Codex frontmatter, and `SKILL050` for Claude-style `allowed-tools`. Matrix-only caveats such as non-preferred path layout, script references or script artifacts, and `permissions` metadata report `unknown` when no finding is emitted.
+- Warnings: broken references, oversized manifests, duplicate names, host-specific or unrecognized Codex metadata, and `SKILL050` for Claude-style `allowed-tools`. Matrix-only caveats such as non-preferred path layout, script references or script artifacts, and `permissions` metadata report `unknown` when no finding is emitted.
 - Limitation: this profile preserves the auditor's offline, no-script-execution behavior and does not claim live Codex validation.
 
 ### `github-copilot`
@@ -172,7 +172,7 @@ Profile for GitHub-hosted Copilot-oriented skill or instruction packages.
 - Tools: tool expectations are documentation because available tools vary by Copilot surface.
 - Scripts: scripts are reviewable artifacts, not automatically supported actions.
 - Failures: missing `name`, missing `description`, malformed frontmatter.
-- Warnings: broken references, oversized manifests, duplicate names, unknown frontmatter, and `SKILL050` for ignored `allowed-tools`. Matrix-only caveats such as non-preferred path layout, script references or script artifacts, and `permissions` metadata report `unknown` when no finding is emitted.
+- Warnings: broken references, oversized manifests, duplicate names, host-specific or unrecognized metadata, and `SKILL050` for ignored `allowed-tools`. Matrix-only caveats such as non-preferred path layout, script references or script artifacts, and `permissions` metadata report `unknown` when no finding is emitted.
 - Limitation: this profile does not overclaim GitHub Copilot support for local scripts, assets, or explicit host permission metadata.
 
 ### `vscode-copilot`
@@ -189,7 +189,7 @@ Profile for VS Code-local Copilot-oriented skill packages.
 - Tools: local tool expectations should be described rather than assumed.
 - Scripts: scripts are local artifacts and should require explicit user or host action.
 - Failures: missing `name`, missing `description`, malformed frontmatter.
-- Warnings: broken references, oversized manifests, duplicate names, unknown frontmatter, and `SKILL050` for ignored `allowed-tools`. Matrix-only caveats such as non-preferred path layout, script references or script artifacts, and `permissions` metadata report `unknown` when no finding is emitted.
+- Warnings: broken references, oversized manifests, duplicate names, host-specific or unrecognized metadata, and `SKILL050` for ignored `allowed-tools`. Matrix-only caveats such as non-preferred path layout, script references or script artifacts, and `permissions` metadata report `unknown` when no finding is emitted.
 - Limitation: workspace trust, installed extensions, shell availability, and user configuration can change behavior outside what this offline profile can know.
 
 ## Compatibility Findings
@@ -199,7 +199,7 @@ Compatibility findings use the normal finding contract: what happened, where it 
 Current profile-attributed compatibility rules include:
 
 - `SKILL040`: host-specific or unrecognized metadata field.
-- `SKILL050`: invalid or ignored host-specific metadata for the selected profile.
+- `SKILL050`: ignored host-specific metadata for the selected profile.
 
 Baseline structural rules also influence compatibility status:
 

@@ -226,6 +226,8 @@ agent-audit scan ./skills \
   --scan-batch-id batch-2026-05
 ```
 
+Use `--format public-json` for reusable public datasets. The public projection keeps methodology metadata, repository metadata, package identifiers, findings, finding groups, fingerprints, metrics, observed ecosystem patterns, and bounded evidence snippets while omitting full manifest bodies, code block bodies, inline code bodies, and other large manifest content. Normal `json` output remains the fuller deterministic scan report for private review.
+
 ## Suppressions
 
 Use `ignore` entries only for reviewed false positives or accepted risks. Each entry must name one active rule ID, a clear reason, and at least one match target:
@@ -252,7 +254,7 @@ Pattern suppressions use `match`. The value is not a glob or regex; it is compar
 ignore:
   - rule: SKILL040
     match: requires
-    reason: Accepted risk: generated requires metadata is reviewed by the platform team and tracked under SEC-214.
+    reason: Accepted risk: generated requires metadata is reviewed by the platform team and tracked under SEC-214; revisit before publishing the next public dataset.
 ```
 
 The full evidence key form also works:
@@ -332,7 +334,7 @@ ignore:
     reason: Accepted risk: legacy runbook manifest exceeds the current size guidance, security reviewed 2026-05-01, tracked for split under SEC-184.
 ```
 
-Unknown frontmatter that is intentionally retained for one package can suppress `SKILL040` for the exact package path where the field is reviewed and accepted:
+Host-specific or unrecognized frontmatter that is intentionally retained for one package can suppress `SKILL040` for the exact package path where the field is reviewed and accepted:
 
 ```yaml
 ignore:
@@ -341,13 +343,22 @@ ignore:
     reason: Accepted risk: codex-specific frontmatter is reviewed by the platform team and retained for this package.
 ```
 
-Unknown frontmatter generated across many packages can suppress `SKILL040` by the reviewed frontmatter field:
+Host-specific or unrecognized frontmatter generated across many packages can suppress `SKILL040` by the reviewed frontmatter field:
 
 ```yaml
 ignore:
   - rule: SKILL040
     match: requires
-    reason: Accepted risk: generated requires metadata is reviewed by the platform team and tracked under SEC-214.
+    reason: Accepted risk: generated requires metadata is repeated across generated packages, reviewed by the platform team, and tracked under SEC-214; revisit before publishing the next public dataset.
+```
+
+The equivalent full grouped evidence key can make the intended field explicit:
+
+```yaml
+ignore:
+  - rule: SKILL040
+    match: frontmatter_field=requires
+    reason: Accepted risk: repeated requires frontmatter is platform-owned generated metadata, reviewed 2026-05-13, and tracked under SEC-214 for removal or host-profile support.
 ```
 
 Host-specific metadata that a selected profile is likely to ignore can be suppressed with `SKILL050` when the exception is reviewed and intentionally retained:

@@ -58,7 +58,7 @@
   "additionalProperties": false,
   "$defs": {
     "publicDataset": {
-      "description": "Public-safe dataset emitted by --format public-json. This projection keeps audit metadata, repository metadata, package identifiers, findings, groups, metrics, patterns, and bounded evidence snippets while omitting full SKILL.md bodies, code block bodies, inline code bodies, and other large manifest content.",
+      "description": "Public-safe dataset emitted by --format public-json. This projection keeps audit metadata, repository metadata, package identifiers, findings, finding groups, fingerprints, metrics, patterns, and bounded evidence snippets while omitting full SKILL.md bodies, code block bodies, inline code bodies, and other large manifest content.",
       "type": "object",
       "required": [
         "audit",
