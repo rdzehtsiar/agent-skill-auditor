@@ -442,6 +442,13 @@
             "$ref": "#/$defs/externalUrl"
           }
         },
+        "external_url_domains": {
+          "type": "array",
+          "description": "Deterministic domain-level aggregation of external URL evidence. Present when external URLs are observed.",
+          "items": {
+            "$ref": "#/$defs/externalUrlDomainSummary"
+          }
+        },
         "remote_dependencies": {
           "type": "array",
           "items": {
@@ -841,6 +848,52 @@
             "boolean",
             "null"
           ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "externalUrlDomainSummary": {
+      "type": "object",
+      "required": [
+        "domain",
+        "count",
+        "mutable_count",
+        "examples",
+        "affected_packages",
+        "affected_package_count",
+        "classification"
+      ],
+      "properties": {
+        "domain": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mutable_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of URLs on this domain that are explicitly mutable or unpinned."
+        },
+        "examples": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "affected_packages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "affected_package_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "classification": {
+          "$ref": "#/$defs/externalUrlDomainClassification"
         }
       },
       "additionalProperties": false
@@ -1393,6 +1446,16 @@
         "http-endpoint",
         "localhost",
         "internal",
+        "unknown"
+      ]
+    },
+    "externalUrlDomainClassification": {
+      "type": "string",
+      "enum": [
+        "github-raw",
+        "docs",
+        "api",
+        "package-registry",
         "unknown"
       ]
     },

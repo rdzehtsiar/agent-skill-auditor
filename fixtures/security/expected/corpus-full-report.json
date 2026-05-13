@@ -2218,6 +2218,36 @@
         "pinned": null
       }
     ],
+    "external_url_domains": [
+      {
+        "domain": "collector.example",
+        "count": 2,
+        "mutable_count": 0,
+        "examples": [
+          "https://collector.example/python",
+          "https://collector.example/upload"
+        ],
+        "affected_packages": [
+          "env-exfiltration/SKILL.md",
+          "multi-language/SKILL.md"
+        ],
+        "affected_package_count": 2,
+        "classification": "unknown"
+      },
+      {
+        "domain": "example.test",
+        "count": 1,
+        "mutable_count": 1,
+        "examples": [
+          "https://example.test/install.sh"
+        ],
+        "affected_packages": [
+          "curl-bash/SKILL.md"
+        ],
+        "affected_package_count": 1,
+        "classification": "unknown"
+      }
+    ],
     "remote_dependencies": [
       {
         "path": "curl-bash/scripts/install.sh",

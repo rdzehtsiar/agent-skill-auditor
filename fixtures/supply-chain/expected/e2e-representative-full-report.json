@@ -211,6 +211,34 @@
         "pinned": true
       }
     ],
+    "external_url_domains": [
+      {
+        "domain": "raw.githubusercontent.com",
+        "count": 1,
+        "mutable_count": 0,
+        "examples": [
+          "https://raw.githubusercontent.com/example/release-skill/0123456789abcdef0123456789abcdef01234567/scripts/release-helper.sh"
+        ],
+        "affected_packages": [
+          "SKILL.md"
+        ],
+        "affected_package_count": 1,
+        "classification": "github-raw"
+      },
+      {
+        "domain": "registry.npmjs.org",
+        "count": 1,
+        "mutable_count": 0,
+        "examples": [
+          "https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz"
+        ],
+        "affected_packages": [
+          "SKILL.md"
+        ],
+        "affected_package_count": 1,
+        "classification": "package-registry"
+      }
+    ],
     "remote_dependencies": [
       {
         "path": "SKILL.md",

@@ -1205,6 +1205,14 @@ mod tests {
             "#/$defs/offlineReadiness"
         );
         assert_eq!(
+            supply_chain_schema["properties"]["external_url_domains"]["items"]["$ref"],
+            "#/$defs/externalUrlDomainSummary"
+        );
+        assert_eq!(
+            string_array(&schema["$defs"]["externalUrlDomainClassification"]["enum"]),
+            vec!["github-raw", "docs", "api", "package-registry", "unknown"]
+        );
+        assert_eq!(
             string_array(&schema["$defs"]["supplyChainSourceKind"]["enum"]),
             vec![
                 "frontmatter",
@@ -1866,6 +1874,9 @@ Bootstrap with scripts/install.sh.
         let supply_chain = value
             .as_object_mut()
             .expect("serialized supply-chain object");
+        // Domain summaries are corpus-level aggregates. Fixture projections keep
+        // per-evidence sections only so package-level expected files stay local.
+        supply_chain.remove("external_url_domains");
 
         for section_name in SUPPLY_CHAIN_SECTION_KEYS {
             let section = supply_chain

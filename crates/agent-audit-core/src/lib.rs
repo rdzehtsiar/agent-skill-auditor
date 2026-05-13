@@ -26,10 +26,11 @@ pub use discovery::discover_skill_manifests;
 pub use error::{AuditError, AuditResult};
 pub use fail::report_matches_fail_on;
 pub use model::{
-    build_ecosystem_patterns, build_finding_groups, BinaryArtifact, BinaryArtifactKind,
-    ChecksumAlgorithm, ChecksumEvidence, CompatibilityMatrix, DependencyManifestEvidence,
-    DependencyManifestPinningKind, EcosystemPattern, EcosystemPatternEvidence, EvidenceConfidence,
-    ExecutableArtifact, ExecutableKind, ExternalUrl, ExternalUrlKind, FindingCategory,
+    build_ecosystem_patterns, build_external_url_domain_summaries, build_finding_groups,
+    BinaryArtifact, BinaryArtifactKind, ChecksumAlgorithm, ChecksumEvidence, CompatibilityMatrix,
+    DependencyManifestEvidence, DependencyManifestPinningKind, EcosystemPattern,
+    EcosystemPatternEvidence, EvidenceConfidence, ExecutableArtifact, ExecutableKind, ExternalUrl,
+    ExternalUrlDomainClassification, ExternalUrlDomainSummary, ExternalUrlKind, FindingCategory,
     FindingConfidence, FindingEvidenceSample, FindingGroup, FindingLocation, LicenseEvidence,
     LicenseScope, LockfileEvidence, MarkdownCodeBlock, OfflineDependencyEvidence, OfflineReadiness,
     OfflineReadinessScore, OfflineReadinessStatus, PackageManagerEvidence, PackageManagerKind,

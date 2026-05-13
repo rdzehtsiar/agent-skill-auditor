@@ -9,10 +9,10 @@ use std::str::FromStr;
 use agent_audit_core::model::AuditMetadata;
 use agent_audit_core::{
     build_ecosystem_patterns, build_finding_groups, CompatibilityMatrix,
-    DependencyManifestPinningKind, EcosystemPattern, ExternalUrl, FindingCategory,
-    FindingConfidence, FindingGroup, OfflineReadinessStatus, PermissionEvidence, PermissionKind,
-    ScanReport, Severity, SkillCompatibilityRow, SkillFinding, SkillPackage, SupplyChainInventory,
-    SupplyChainSourceKind,
+    DependencyManifestPinningKind, EcosystemPattern, ExternalUrl, ExternalUrlDomainClassification,
+    ExternalUrlDomainSummary, FindingCategory, FindingConfidence, FindingGroup,
+    OfflineReadinessStatus, PermissionEvidence, PermissionKind, ScanReport, Severity,
+    SkillCompatibilityRow, SkillFinding, SkillPackage, SupplyChainInventory, SupplyChainSourceKind,
 };
 use agent_audit_rules::{active_rule_metadata, RuleMetadata, RuleSeverity};
 use serde_json::{json, Value};
@@ -26,7 +26,9 @@ const SUMMARY_COMPATIBILITY_ROW_LIMIT: usize = 5;
 const CI_TOP_GROUP_LIMIT: usize = 5;
 const PUBLIC_DATASET_SNIPPET_LIMIT: usize = 240;
 const HTML_TOP_PACKAGE_LIMIT: usize = 25;
+const HTML_TOP_DOMAIN_LIMIT: usize = 10;
 const HTML_TOP_URL_LIMIT: usize = 25;
+const SUMMARY_TOP_DOMAIN_LIMIT: usize = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReportFormat {
@@ -532,6 +534,7 @@ fn extend_supply_chain_summary(lines: &mut Vec<String>, report: &ScanReport) {
             .filter(|url| url.pinned == Some(false))
             .count()
     ));
+    extend_external_domain_summary(lines, supply_chain);
     lines.push(format!(
         "Dependencies: {} observed, {} unpinned",
         supply_chain.remote_dependencies.len(),
@@ -577,6 +580,28 @@ fn extend_supply_chain_summary(lines: &mut Vec<String>, report: &ScanReport) {
         readiness_counts.not_ready,
         readiness_counts.unknown
     ));
+}
+
+fn extend_external_domain_summary(lines: &mut Vec<String>, supply_chain: &SupplyChainInventory) {
+    if supply_chain.external_url_domains.is_empty() {
+        return;
+    }
+
+    lines.push("Top external domains:".to_owned());
+    for domain in supply_chain
+        .external_url_domains
+        .iter()
+        .take(SUMMARY_TOP_DOMAIN_LIMIT)
+    {
+        lines.push(format!(
+            "- {}: {} URLs, {} mutable, {} packages, {}",
+            domain.domain,
+            domain.count,
+            domain.mutable_count,
+            domain.affected_package_count,
+            external_url_domain_classification_name(domain.classification)
+        ));
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -887,6 +912,7 @@ fn public_metrics(report: &ScanReport) -> Value {
             "licenses": report.supply_chain.licenses.len(),
             "trust_manifests": report.supply_chain.trust_manifests.len(),
             "external_urls": report.supply_chain.external_urls.len(),
+            "external_url_domains": report.supply_chain.external_url_domains.len(),
             "remote_dependencies": report.supply_chain.remote_dependencies.len(),
             "dependency_manifests": report.supply_chain.dependency_manifests.len(),
             "package_managers": report.supply_chain.package_managers.len(),
@@ -977,6 +1003,7 @@ tbody tr:nth-child(even){background:var(--soft)}
 .status-warn{color:var(--warn)}
 .status-fail{color:var(--fail)}
 .status-unknown{color:var(--unknown)}
+.mutable-url{color:var(--medium);font-weight:700}
 .finding-ids{font-size:.875rem;color:var(--muted)}
 .skill-detail{border-top:1px solid var(--border);padding-top:.75rem}
 .nowrap{white-space:nowrap}
@@ -1465,7 +1492,7 @@ fn extend_html_broken_references_content(html: &mut String, view_model: &HtmlRep
 
 fn extend_html_external_urls(html: &mut String, view_model: &HtmlReportViewModel<'_>) {
     html.push_str("<section aria-labelledby=\"external-urls\"><h2 id=\"external-urls\">External URL / Domain Summary</h2>");
-    html.push_str("<p class=\"section-note\">Domain-level aggregation is reserved for the dedicated URL-domain summary pass; this section keeps the report order stable and lists top URL evidence after aggregate counts.</p>");
+    html.push_str("<p class=\"section-note\">Domain counts aggregate local URL evidence only; URLs marked mutable are unpinned or branch-based references that can change between audits.</p>");
     html.push_str("<div class=\"summary\">");
     html.push_str(&summary_count(
         "Total external URLs",
@@ -1480,6 +1507,51 @@ fn extend_html_external_urls(html: &mut String, view_model: &HtmlReportViewModel
             .count(),
     ));
     html.push_str("</div>");
+
+    html.push_str("<h3>Top Domains</h3><table class=\"compact\"><thead><tr><th>Domain</th><th>URLs</th><th>Mutable</th><th>Affected packages</th><th>Classification</th><th>Examples</th></tr></thead><tbody>");
+    let domains = view_model
+        .external_url_domains
+        .iter()
+        .take(HTML_TOP_DOMAIN_LIMIT)
+        .copied()
+        .collect::<Vec<_>>();
+    if domains.is_empty() {
+        html.push_str("<tr><td colspan=\"6\">No external URL domains observed.</td></tr>");
+    }
+    for domain in domains {
+        let mutable_class = if domain.mutable_count > 0 {
+            " class=\"mutable-url\""
+        } else {
+            ""
+        };
+        html.push_str("<tr><td>");
+        html.push_str(&escape_html(&domain.domain));
+        html.push_str("</td><td>");
+        html.push_str(&domain.count.to_string());
+        html.push_str("</td><td");
+        html.push_str(mutable_class);
+        html.push('>');
+        html.push_str(&domain.mutable_count.to_string());
+        html.push_str("</td><td>");
+        html.push_str(&domain.affected_package_count.to_string());
+        html.push_str("</td><td>");
+        html.push_str(external_url_domain_classification_name(
+            domain.classification,
+        ));
+        html.push_str("</td><td>");
+        html.push_str(&escape_html(&domain.examples.join("; ")));
+        html.push_str("</td></tr>");
+    }
+    if view_model.external_url_domains.len() > HTML_TOP_DOMAIN_LIMIT {
+        html.push_str("<tr><td colspan=\"6\">");
+        html.push_str(&escape_html(&format!(
+            "{} additional domains omitted from the default HTML view.",
+            view_model.external_url_domains.len() - HTML_TOP_DOMAIN_LIMIT
+        )));
+        html.push_str("</td></tr>");
+    }
+    html.push_str("</tbody></table>");
+
     html.push_str(
         "<table class=\"compact\"><thead><tr><th>Kind</th><th>URLs</th></tr></thead><tbody>",
     );
@@ -2085,6 +2157,18 @@ fn external_url_kind_name(kind: agent_audit_core::ExternalUrlKind) -> &'static s
     }
 }
 
+fn external_url_domain_classification_name(
+    classification: ExternalUrlDomainClassification,
+) -> &'static str {
+    match classification {
+        ExternalUrlDomainClassification::GithubRaw => "GitHub raw",
+        ExternalUrlDomainClassification::Docs => "docs",
+        ExternalUrlDomainClassification::Api => "API",
+        ExternalUrlDomainClassification::PackageRegistry => "package registry",
+        ExternalUrlDomainClassification::Unknown => "unknown",
+    }
+}
+
 fn package_manager_name(manager: agent_audit_core::PackageManagerKind) -> &'static str {
     match manager {
         agent_audit_core::PackageManagerKind::Npm => "npm",
@@ -2318,6 +2402,7 @@ struct HtmlReportViewModel<'a> {
     offline_readiness_totals: OfflineReadinessCounts,
     broken_references: Vec<&'a SkillFinding>,
     external_urls: Vec<&'a ExternalUrl>,
+    external_url_domains: Vec<&'a ExternalUrlDomainSummary>,
     actual_secret_evidence: Vec<SecretSecurityEvidence<'a>>,
     prompt_secret_exposure_findings: Vec<&'a SkillFinding>,
     finding_groups: Vec<SkillFindingGroup<'a>>,
@@ -2336,6 +2421,7 @@ impl<'a> HtmlReportViewModel<'a> {
             offline_readiness_totals: offline_readiness_counts(&report.supply_chain),
             broken_references: broken_references(&report.findings),
             external_urls: external_urls(&report.supply_chain),
+            external_url_domains: external_url_domains(&report.supply_chain),
             actual_secret_evidence: actual_secret_evidence(report),
             prompt_secret_exposure_findings: prompt_secret_exposure_findings(&report.findings),
             top_risky_skills: top_risky_skills(&finding_groups),
@@ -2426,6 +2512,18 @@ fn external_urls(supply_chain: &SupplyChainInventory) -> Vec<&ExternalUrl> {
     let mut urls = supply_chain.external_urls.iter().collect::<Vec<_>>();
     urls.sort();
     urls
+}
+
+fn external_url_domains(supply_chain: &SupplyChainInventory) -> Vec<&ExternalUrlDomainSummary> {
+    let mut domains = supply_chain.external_url_domains.iter().collect::<Vec<_>>();
+    domains.sort_by(|left, right| {
+        right
+            .count
+            .cmp(&left.count)
+            .then_with(|| right.mutable_count.cmp(&left.mutable_count))
+            .then_with(|| left.domain.cmp(&right.domain))
+    });
+    domains
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -4151,6 +4249,17 @@ mod tests {
                     "pinned": false
                 }
             ],
+            "external_url_domains": [
+                {
+                    "domain": "raw.githubusercontent.com",
+                    "count": 1,
+                    "mutable_count": 1,
+                    "examples": ["https://raw.githubusercontent.com/org/repo/main/install.sh"],
+                    "affected_packages": ["SKILL.md"],
+                    "affected_package_count": 1,
+                    "classification": "github-raw"
+                }
+            ],
             "remote_dependencies": [
                 {
                     "path": "package.json",
@@ -4258,6 +4367,8 @@ mod tests {
                 "Licenses: 0 evidence",
                 "Trust manifests: 1 total, 1 invalid",
                 "External URLs: 1 total, 1 mutable",
+                "Top external domains:",
+                "- raw.githubusercontent.com: 1 URLs, 1 mutable, 1 packages, GitHub raw",
                 "Dependencies: 1 observed, 1 unpinned",
                 "Dependency manifests: 1 total, 0 exact-pinned, 1 range-based",
                 "Lockfiles: 0 evidence",
@@ -5533,6 +5644,17 @@ mod tests {
                     "pinned": true
                 }
             ],
+            "external_url_domains": [
+                {
+                    "domain": "docs.example",
+                    "count": 1,
+                    "mutable_count": 0,
+                    "examples": ["https://docs.example/review"],
+                    "affected_packages": ["skills/review/SKILL.md"],
+                    "affected_package_count": 1,
+                    "classification": "docs"
+                }
+            ],
             "remote_dependencies": [
                 {
                     "path": "skills/review/package.json",
@@ -5580,9 +5702,58 @@ mod tests {
             ],
         );
         assert!(html.contains("<th>Timestamp</th><td>null</td>"));
+        assert!(html.contains("<h3>Top Domains</h3>"));
+        assert!(html.contains("<td>docs.example</td>"));
+        assert!(html.contains("<td>docs</td>"));
         assert!(html.contains("https://docs.example/review"));
         assert!(html.contains("zod@3.22.0"));
         assert!(html.contains("external documentation URL"));
+    }
+
+    #[test]
+    fn html_output_highlights_mutable_external_url_domains() {
+        let mut report = report_with_packages_and_findings(Vec::new(), Vec::new());
+        report.supply_chain = supply_chain_inventory(json!({
+            "licenses": [],
+            "trust_manifests": [],
+            "external_urls": [
+                {
+                    "path": "skills/review/SKILL.md",
+                    "line": 3,
+                    "source": "markdown-link",
+                    "kind": "github-raw",
+                    "normalized": "https://raw.githubusercontent.com/org/repo/main/install.sh",
+                    "raw": "https://raw.githubusercontent.com/org/repo/main/install.sh",
+                    "confidence": "high",
+                    "pinned": false
+                }
+            ],
+            "external_url_domains": [
+                {
+                    "domain": "raw.githubusercontent.com",
+                    "count": 1,
+                    "mutable_count": 1,
+                    "examples": ["https://raw.githubusercontent.com/org/repo/main/install.sh"],
+                    "affected_packages": ["skills/review/SKILL.md"],
+                    "affected_package_count": 1,
+                    "classification": "github-raw"
+                }
+            ],
+            "remote_dependencies": [],
+            "package_managers": [],
+            "lockfiles": [],
+            "executables": [],
+            "binaries": [],
+            "checksums": [],
+            "permissions": [],
+            "offline_readiness": []
+        }));
+
+        let html = render_html(&report);
+
+        assert!(html.contains("<td>raw.githubusercontent.com</td>"));
+        assert!(html.contains("<td class=\"mutable-url\">1</td>"));
+        assert!(html.contains("<td>GitHub raw</td>"));
     }
 
     #[test]

@@ -190,6 +190,7 @@ JSON reports also include a stable `supply_chain` section. The section is an inv
   "licenses": [],
   "trust_manifests": [],
   "external_urls": [],
+  "external_url_domains": [],
   "remote_dependencies": [],
   "dependency_manifests": [],
   "package_managers": [],
@@ -202,9 +203,11 @@ JSON reports also include a stable `supply_chain` section. The section is an inv
 }
 ```
 
+`external_url_domains` summarizes `external_urls` by domain with total URL count, mutable URL count, example URLs, affected packages, and a coarse classification such as `github-raw`, `docs`, `api`, `package-registry`, or `unknown`. The original per-URL evidence remains in `external_urls` for verbose review and reproducible datasets.
+
 `offline_readiness[].status`, `score`, and `reasons` describe static offline auditability. Optional `runtime_offline_capability`, `external_service_dependency`, and `remote_fetch_dependency` fields are separate so reports do not imply runtime offline behavior from auditability evidence alone.
 
-Summary output includes concise supply-chain counts, offline audit readiness status, and observed ecosystem patterns when applicable. SARIF includes supply-chain rule findings as normal results; the full inventory remains in JSON.
+Summary output includes concise supply-chain counts, top external domains when URL evidence is present, offline audit readiness status, and observed ecosystem patterns when applicable. SARIF includes supply-chain rule findings as normal results; the full inventory remains in JSON.
 
 SARIF output is intended for code scanning integrations that accept SARIF:
 

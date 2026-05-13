@@ -9,14 +9,14 @@ use crate::discovery::discover_skill_manifests;
 use crate::error::{AuditError, AuditResult};
 use crate::license_inventory::{inventory_license_files, inventory_manifest_license};
 use crate::model::{
-    build_ecosystem_patterns, build_finding_groups, finding_suppression_match_keys,
-    populate_finding_fingerprints, AuditMetadata, BinaryArtifactKind, CompatibilityMatrix,
-    DependencyManifestPinningKind, ExternalUrlKind, FindingConfidence, LicenseScope,
-    PackageManagerKind, PermissionEvidenceKind, PermissionKind, RemoteDependencyKind, ScanReport,
-    ScanSummary, SkillArtifactKind, SkillCompatibilityRow, SkillFile, SkillFileKind, SkillFinding,
-    SkillGraph, SkillManifest, SkillPackage, SkillReference, SupplyChainInventory,
-    SupplyChainSourceKind, SuppressedFinding, SuppressionMatch, TrustManifest,
-    TrustManifestDiagnostic, TrustManifestDiagnosticKind,
+    build_ecosystem_patterns, build_external_url_domain_summaries, build_finding_groups,
+    finding_suppression_match_keys, populate_finding_fingerprints, AuditMetadata,
+    BinaryArtifactKind, CompatibilityMatrix, DependencyManifestPinningKind, ExternalUrlKind,
+    FindingConfidence, LicenseScope, PackageManagerKind, PermissionEvidenceKind, PermissionKind,
+    RemoteDependencyKind, ScanReport, ScanSummary, SkillArtifactKind, SkillCompatibilityRow,
+    SkillFile, SkillFileKind, SkillFinding, SkillGraph, SkillManifest, SkillPackage,
+    SkillReference, SupplyChainInventory, SupplyChainSourceKind, SuppressedFinding,
+    SuppressionMatch, TrustManifest, TrustManifestDiagnostic, TrustManifestDiagnosticKind,
 };
 use crate::offline_readiness::populate_offline_readiness;
 use crate::package_inventory::{
@@ -280,6 +280,8 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
     );
     reconcile_observed_permissions(&mut supply_chain, &security_signals);
     populate_offline_readiness(&mut supply_chain, &packages);
+    supply_chain.external_url_domains =
+        build_external_url_domain_summaries(&packages, &supply_chain.external_urls);
     findings.extend(
         evaluate_supply_chain_rules(&supply_chain_rule_facts(
             options.config.as_ref(),
@@ -384,6 +386,9 @@ fn merge_supply_chain_inventory(
     target.trust_manifests.append(&mut source.trust_manifests);
     target.external_urls.append(&mut source.external_urls);
     target
+        .external_url_domains
+        .append(&mut source.external_url_domains);
+    target
         .remote_dependencies
         .append(&mut source.remote_dependencies);
     target
@@ -407,6 +412,7 @@ fn dedup_supply_chain_inventory(inventory: &mut SupplyChainInventory) {
     inventory.licenses.dedup();
     inventory.trust_manifests.dedup();
     inventory.external_urls.dedup();
+    inventory.external_url_domains.dedup();
     inventory.remote_dependencies.dedup();
     inventory.dependency_manifests.dedup();
     inventory.package_managers.dedup();

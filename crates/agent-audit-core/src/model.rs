@@ -225,6 +225,8 @@ pub struct SupplyChainInventory {
     pub trust_manifests: Vec<TrustManifest>,
     #[serde(default)]
     pub external_urls: Vec<ExternalUrl>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub external_url_domains: Vec<ExternalUrlDomainSummary>,
     #[serde(default)]
     pub remote_dependencies: Vec<RemoteDependency>,
     #[serde(default)]
@@ -250,6 +252,7 @@ impl SupplyChainInventory {
         self.licenses.sort();
         self.trust_manifests.sort();
         self.external_urls.sort();
+        self.external_url_domains.sort();
         self.remote_dependencies.sort();
         self.dependency_manifests.sort();
         self.package_managers.sort();
@@ -359,6 +362,29 @@ pub struct ExternalUrl {
     pub raw: Option<String>,
     pub confidence: EvidenceConfidence,
     pub pinned: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct ExternalUrlDomainSummary {
+    pub domain: String,
+    pub count: usize,
+    pub mutable_count: usize,
+    #[serde(default)]
+    pub examples: Vec<String>,
+    #[serde(default)]
+    pub affected_packages: Vec<String>,
+    pub affected_package_count: usize,
+    pub classification: ExternalUrlDomainClassification,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ExternalUrlDomainClassification {
+    GithubRaw,
+    Docs,
+    Api,
+    PackageRegistry,
+    Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -1120,6 +1146,164 @@ pub fn build_ecosystem_patterns(
     patterns
 }
 
+pub fn build_external_url_domain_summaries(
+    packages: &[SkillPackage],
+    urls: &[ExternalUrl],
+) -> Vec<ExternalUrlDomainSummary> {
+    let mut domains = BTreeMap::<String, ExternalUrlDomainAccumulator>::new();
+
+    for url in urls {
+        let Some(domain) = external_url_domain(&url.normalized) else {
+            continue;
+        };
+        let entry = domains.entry(domain.clone()).or_insert_with(|| {
+            ExternalUrlDomainAccumulator::new(classify_external_url_domain(&domain, url.kind))
+        });
+        entry.count += 1;
+        if url.pinned == Some(false) {
+            entry.mutable_count += 1;
+        }
+        entry.examples.insert(url.normalized.clone());
+        if let Some(package) = package_for_report_path(packages, &url.path) {
+            entry
+                .affected_packages
+                .insert(package.manifest_path.clone());
+        }
+        entry.classification = combine_domain_classification(entry.classification, url.kind);
+    }
+
+    let mut summaries = domains
+        .into_iter()
+        .map(|(domain, accumulator)| accumulator.into_summary(domain))
+        .collect::<Vec<_>>();
+    summaries.sort_by(|left, right| {
+        right
+            .count
+            .cmp(&left.count)
+            .then_with(|| right.mutable_count.cmp(&left.mutable_count))
+            .then_with(|| left.domain.cmp(&right.domain))
+    });
+    summaries
+}
+
+#[derive(Debug, Clone)]
+struct ExternalUrlDomainAccumulator {
+    count: usize,
+    mutable_count: usize,
+    examples: BTreeSet<String>,
+    affected_packages: BTreeSet<String>,
+    classification: ExternalUrlDomainClassification,
+}
+
+impl ExternalUrlDomainAccumulator {
+    fn new(classification: ExternalUrlDomainClassification) -> Self {
+        Self {
+            count: 0,
+            mutable_count: 0,
+            examples: BTreeSet::new(),
+            affected_packages: BTreeSet::new(),
+            classification,
+        }
+    }
+
+    fn into_summary(self, domain: String) -> ExternalUrlDomainSummary {
+        let affected_packages = self.affected_packages.into_iter().collect::<Vec<_>>();
+        ExternalUrlDomainSummary {
+            domain,
+            count: self.count,
+            mutable_count: self.mutable_count,
+            examples: self.examples.into_iter().take(3).collect(),
+            affected_package_count: affected_packages.len(),
+            affected_packages,
+            classification: self.classification,
+        }
+    }
+}
+
+fn combine_domain_classification(
+    current: ExternalUrlDomainClassification,
+    kind: ExternalUrlKind,
+) -> ExternalUrlDomainClassification {
+    let candidate = classify_external_url_domain("", kind);
+    if domain_classification_rank(candidate) < domain_classification_rank(current) {
+        candidate
+    } else {
+        current
+    }
+}
+
+fn classify_external_url_domain(
+    domain: &str,
+    kind: ExternalUrlKind,
+) -> ExternalUrlDomainClassification {
+    match kind {
+        ExternalUrlKind::GithubRaw => ExternalUrlDomainClassification::GithubRaw,
+        ExternalUrlKind::PackageRegistry => ExternalUrlDomainClassification::PackageRegistry,
+        ExternalUrlKind::Documentation => ExternalUrlDomainClassification::Docs,
+        _ => {
+            if domain == "raw.githubusercontent.com" {
+                ExternalUrlDomainClassification::GithubRaw
+            } else if domain == "api.github.com" || domain.starts_with("api.") {
+                ExternalUrlDomainClassification::Api
+            } else if domain.starts_with("docs.")
+                || domain.contains(".docs.")
+                || domain.contains("documentation")
+            {
+                ExternalUrlDomainClassification::Docs
+            } else if matches!(
+                domain,
+                "registry.npmjs.org"
+                    | "www.npmjs.com"
+                    | "pypi.org"
+                    | "files.pythonhosted.org"
+                    | "crates.io"
+                    | "index.crates.io"
+                    | "rubygems.org"
+                    | "repo.packagist.org"
+            ) {
+                ExternalUrlDomainClassification::PackageRegistry
+            } else {
+                ExternalUrlDomainClassification::Unknown
+            }
+        }
+    }
+}
+
+fn domain_classification_rank(classification: ExternalUrlDomainClassification) -> u8 {
+    match classification {
+        ExternalUrlDomainClassification::GithubRaw => 0,
+        ExternalUrlDomainClassification::PackageRegistry => 1,
+        ExternalUrlDomainClassification::Api => 2,
+        ExternalUrlDomainClassification::Docs => 3,
+        ExternalUrlDomainClassification::Unknown => 4,
+    }
+}
+
+fn external_url_domain(url: &str) -> Option<String> {
+    let after_scheme = url
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or(url)
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or_default();
+    let host = after_scheme
+        .rsplit_once('@')
+        .map(|(_, host)| host)
+        .unwrap_or(after_scheme)
+        .trim()
+        .trim_matches(['[', ']'])
+        .to_ascii_lowercase();
+    if host.is_empty() {
+        return None;
+    }
+    let host = host
+        .strip_suffix(":443")
+        .or_else(|| host.strip_suffix(":80"))
+        .unwrap_or(&host);
+    Some(host.to_owned())
+}
+
 struct FindingPatternSpec<'a> {
     id: &'a str,
     title: &'a str,
@@ -1848,6 +2032,17 @@ mod tests {
                     confidence: EvidenceConfidence::Medium,
                     pinned: Some(false),
                 }],
+                external_url_domains: vec![ExternalUrlDomainSummary {
+                    domain: "raw.githubusercontent.com".to_owned(),
+                    count: 1,
+                    mutable_count: 1,
+                    examples: vec![
+                        "https://raw.githubusercontent.com/example/repo/main/install.sh".to_owned(),
+                    ],
+                    affected_packages: vec!["skills/review/SKILL.md".to_owned()],
+                    affected_package_count: 1,
+                    classification: ExternalUrlDomainClassification::GithubRaw,
+                }],
                 remote_dependencies: vec![RemoteDependency {
                     path: "skills/review/scripts/install.sh".to_owned(),
                     line: Some(3),
@@ -2005,6 +2200,15 @@ mod tests {
                     "raw": null,
                     "confidence": "medium",
                     "pinned": false
+                }],
+                "external_url_domains": [{
+                    "domain": "raw.githubusercontent.com",
+                    "count": 1,
+                    "mutable_count": 1,
+                    "examples": ["https://raw.githubusercontent.com/example/repo/main/install.sh"],
+                    "affected_packages": ["skills/review/SKILL.md"],
+                    "affected_package_count": 1,
+                    "classification": "github-raw"
                 }],
                 "remote_dependencies": [{
                     "path": "skills/review/scripts/install.sh",
@@ -2272,6 +2476,78 @@ mod tests {
         assert!(first.fingerprint.starts_with("fnv1a64:"));
         assert_eq!(first.fingerprint, second.fingerprint);
         assert_ne!(second.fingerprint, different_path.fingerprint);
+    }
+
+    #[test]
+    fn external_url_domain_summaries_group_mutable_github_raw_branches() {
+        let packages = vec![test_package(
+            "skills/review",
+            "skills/review/SKILL.md",
+            "review",
+        )];
+        let urls = vec![
+            ExternalUrl {
+                path: "skills/review/SKILL.md".to_owned(),
+                line: Some(7),
+                source: SupplyChainSourceKind::MarkdownLink,
+                kind: ExternalUrlKind::GithubRaw,
+                normalized:
+                    "https://raw.githubusercontent.com/example/skill/main/scripts/install.sh"
+                        .to_owned(),
+                raw: Some(
+                    "https://raw.githubusercontent.com/example/skill/main/scripts/install.sh"
+                        .to_owned(),
+                ),
+                confidence: EvidenceConfidence::High,
+                pinned: Some(false),
+            },
+            ExternalUrl {
+                path: "skills/review/scripts/setup.sh".to_owned(),
+                line: Some(2),
+                source: SupplyChainSourceKind::Script,
+                kind: ExternalUrlKind::GithubRaw,
+                normalized:
+                    "https://raw.githubusercontent.com/example/skill/master/scripts/setup.sh"
+                        .to_owned(),
+                raw: Some(
+                    "https://raw.githubusercontent.com/example/skill/master/scripts/setup.sh"
+                        .to_owned(),
+                ),
+                confidence: EvidenceConfidence::High,
+                pinned: Some(false),
+            },
+            ExternalUrl {
+                path: "skills/review/SKILL.md".to_owned(),
+                line: Some(9),
+                source: SupplyChainSourceKind::MarkdownLink,
+                kind: ExternalUrlKind::Documentation,
+                normalized: "https://docs.example.test/reference".to_owned(),
+                raw: Some("https://docs.example.test/reference".to_owned()),
+                confidence: EvidenceConfidence::High,
+                pinned: None,
+            },
+        ];
+
+        let summaries = build_external_url_domain_summaries(&packages, &urls);
+
+        assert_eq!(summaries.len(), 2);
+        assert_eq!(summaries[0].domain, "raw.githubusercontent.com");
+        assert_eq!(summaries[0].count, 2);
+        assert_eq!(summaries[0].mutable_count, 2);
+        assert_eq!(summaries[0].affected_package_count, 1);
+        assert_eq!(
+            summaries[0].affected_packages,
+            vec!["skills/review/SKILL.md"]
+        );
+        assert_eq!(
+            summaries[0].classification,
+            ExternalUrlDomainClassification::GithubRaw
+        );
+        assert_eq!(summaries[1].domain, "docs.example.test");
+        assert_eq!(
+            summaries[1].classification,
+            ExternalUrlDomainClassification::Docs
+        );
     }
 
     #[test]

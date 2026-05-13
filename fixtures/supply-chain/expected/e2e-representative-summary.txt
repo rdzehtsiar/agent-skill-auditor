@@ -12,6 +12,9 @@ Supply chain:
 Licenses: 3 evidence
 Trust manifests: 1 total, 0 invalid
 External URLs: 2 total, 0 mutable
+Top external domains:
+- raw.githubusercontent.com: 1 URLs, 0 mutable, 1 packages, GitHub raw
+- registry.npmjs.org: 1 URLs, 0 mutable, 1 packages, package registry
 Dependencies: 2 observed, 0 unpinned
 Dependency manifests: 1 total, 1 exact-pinned, 0 range-based
 Lockfiles: 1 evidence
