@@ -681,6 +681,7 @@ mod tests {
         assert!(help.contains("verbose"));
         assert!(help.contains("research"));
         assert!(help.contains("ci"));
+        assert!(help.contains("triage"));
     }
 
     #[test]
@@ -1126,6 +1127,7 @@ mod tests {
         assert_parsed_report_mode("verbose", ReportMode::Verbose);
         assert_parsed_report_mode("research", ReportMode::Research);
         assert_parsed_report_mode("ci", ReportMode::Ci);
+        assert_parsed_report_mode("triage", ReportMode::Triage);
     }
 
     fn assert_parsed_scan_format(value: &str, expected: ReportFormat) {
@@ -1199,7 +1201,7 @@ mod tests {
         let message = error.to_string();
 
         assert!(message.contains("unsupported report mode 'debug'"));
-        assert!(message.contains("supported: default, verbose, research, ci"));
+        assert!(message.contains("supported: default, verbose, research, ci, triage"));
     }
 
     #[test]
