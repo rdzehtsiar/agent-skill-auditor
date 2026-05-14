@@ -280,9 +280,10 @@ fn render_research_summary(report: &ScanReport) -> String {
 fn render_triage_summary(report: &ScanReport) -> String {
     let mut lines = triage_summary_header("Agent Skill Auditor triage scan summary", report);
 
-    extend_supply_chain_summary(&mut lines, report);
-    extend_compatibility_summary(&mut lines, &report.compatibility);
-    extend_ecosystem_patterns_summary(&mut lines, report);
+    extend_triage_supply_chain_summary(&mut lines, report);
+    extend_triage_compatibility_summary(&mut lines, report);
+    extend_triage_review_priorities(&mut lines, report);
+    extend_triage_skill_collection_patterns_summary(&mut lines, report);
     extend_triage_finding_groups_summary(&mut lines, report);
 
     lines.join("\n")
@@ -428,7 +429,7 @@ fn summary_header(title: &str, report: &ScanReport) -> Vec<String> {
 
 fn triage_summary_header(title: &str, report: &ScanReport) -> Vec<String> {
     let mut lines = vec![title.to_owned()];
-    let audit = audit_metadata_summary(&report.audit);
+    let audit = triage_audit_metadata_summary(&report.audit);
     let audit_details = audit.strip_prefix("Audit: ").unwrap_or(&audit);
     push_wrapped_text_with_prefixes(
         &mut lines,
@@ -438,7 +439,18 @@ fn triage_summary_header(title: &str, report: &ScanReport) -> Vec<String> {
         TRIAGE_OUTPUT_WIDTH,
     );
     lines.push(format!("Packages: {}", report.summary.package_count));
-    lines.push(format!("Findings: {}", report.summary.finding_count));
+    lines.push(format!(
+        "Findings: {} occurrences",
+        report.summary.finding_count
+    ));
+    lines.push(format!(
+        "Finding groups: {}",
+        triage_finding_group_count(report)
+    ));
+    lines.push(format!(
+        "Rule types triggered: {}",
+        triage_rule_type_count(report)
+    ));
     lines.push(format!(
         "Suppressed findings: {}",
         report.summary.suppressed_finding_count
@@ -460,6 +472,10 @@ fn triage_summary_header(title: &str, report: &ScanReport) -> Vec<String> {
         report.summary.prompt_secret_exposure_count
     ));
     lines
+}
+
+fn triage_audit_metadata_summary(audit: &AuditMetadata) -> String {
+    audit_metadata_summary(audit).replace("timestamp=null", "timestamp=not-recorded")
 }
 
 fn audit_metadata_summary(audit: &AuditMetadata) -> String {
@@ -502,6 +518,20 @@ fn audit_metadata_summary(audit: &AuditMetadata) -> String {
     }
 
     format!("Audit: {}", parts.join(" "))
+}
+
+fn triage_finding_group_count(report: &ScanReport) -> usize {
+    let finding_groups = effective_finding_groups(report);
+    triage_finding_groups(finding_groups.as_ref()).len()
+}
+
+fn triage_rule_type_count(report: &ScanReport) -> usize {
+    report
+        .findings
+        .iter()
+        .map(|finding| finding.rule_id.as_str())
+        .collect::<BTreeSet<_>>()
+        .len()
 }
 
 fn short_commit(commit: &str) -> &str {
@@ -560,7 +590,7 @@ fn extend_triage_finding_groups_summary(lines: &mut Vec<String>, report: &ScanRe
             "  Confidence: {}",
             confidence_name(group.confidence)
         ));
-        lines.push(format!("  Category: {}", category_name(group.category)));
+        lines.push(format!("  Category: {}", triage_category_name(&group)));
         lines.push(format!("  Findings: {}", group.finding_count));
         lines.push(format!("  Packages: {}", group.package_count()));
         if let Some(message) = group.message.as_deref() {
@@ -602,10 +632,7 @@ impl TriageFindingGroup {
             finding_count: 0,
             package_count_fallback: 0,
             affected_packages: BTreeSet::new(),
-            message: group
-                .evidence_samples
-                .first()
-                .map(|sample| sample.message.clone()),
+            message: triage_generic_group_message(group),
             samples: BTreeMap::new(),
         };
         triage_group.merge(group);
@@ -664,6 +691,44 @@ fn triage_merge_group_title(title: &str) -> bool {
             | "Unpinned package dependency"
             | "Unpinned remote URL reference"
     )
+}
+
+fn triage_generic_group_message(group: &FindingGroup) -> Option<String> {
+    match group.rule_id.as_str() {
+        "SKILL040" => {
+            return Some(
+                "Some metadata is not defined by selected host profiles and may be ignored or interpreted differently, reducing portability and reviewability."
+                    .to_owned(),
+            );
+        }
+        "SKILL050" => {
+            return Some(
+                "Selected host profiles may ignore this metadata or interpret it differently, reducing portability and reviewability."
+                    .to_owned(),
+            );
+        }
+        _ => {}
+    }
+
+    active_rule_metadata(&group.rule_id)
+        .map(|metadata| metadata.rationale.to_owned())
+        .or_else(|| (!group.rationale.trim().is_empty()).then(|| group.rationale.clone()))
+        .or_else(|| {
+            group
+                .evidence_samples
+                .first()
+                .map(|sample| sample.message.clone())
+        })
+}
+
+fn triage_category_name(group: &TriageFindingGroup) -> &'static str {
+    if group.rule_id == "SEC009" && group.title == "Package install without lockfile" {
+        // SEC009 remains in the security rule family internally, but triage presents the
+        // primary review lens for this grouped finding as reproducibility drift.
+        "reproducibility"
+    } else {
+        category_name(group.category)
+    }
 }
 
 fn extend_full_findings_summary(
@@ -756,6 +821,18 @@ fn push_wrapped_text_with_prefixes(
 }
 
 fn extend_supply_chain_summary(lines: &mut Vec<String>, report: &ScanReport) {
+    extend_supply_chain_summary_with_options(lines, report, false);
+}
+
+fn extend_triage_supply_chain_summary(lines: &mut Vec<String>, report: &ScanReport) {
+    extend_supply_chain_summary_with_options(lines, report, true);
+}
+
+fn extend_supply_chain_summary_with_options(
+    lines: &mut Vec<String>,
+    report: &ScanReport,
+    show_empty_external_domains: bool,
+) {
     let supply_chain = &report.supply_chain;
     let finding_counts = supply_chain_finding_counts(&report.findings);
     let readiness_counts = offline_readiness_counts(supply_chain);
@@ -786,7 +863,7 @@ fn extend_supply_chain_summary(lines: &mut Vec<String>, report: &ScanReport) {
             .filter(|url| url.pinned == Some(false))
             .count()
     ));
-    extend_external_domain_summary(lines, supply_chain);
+    extend_external_domain_summary(lines, supply_chain, show_empty_external_domains);
     lines.push(format!(
         "Dependencies: {} observed, {} unpinned",
         supply_chain.remote_dependencies.len(),
@@ -834,8 +911,15 @@ fn extend_supply_chain_summary(lines: &mut Vec<String>, report: &ScanReport) {
     ));
 }
 
-fn extend_external_domain_summary(lines: &mut Vec<String>, supply_chain: &SupplyChainInventory) {
+fn extend_external_domain_summary(
+    lines: &mut Vec<String>,
+    supply_chain: &SupplyChainInventory,
+    show_empty: bool,
+) {
     if supply_chain.external_url_domains.is_empty() {
+        if show_empty {
+            lines.push("Top external domains: none".to_owned());
+        }
         return;
     }
 
@@ -936,9 +1020,16 @@ fn extend_compatibility_summary(lines: &mut Vec<String>, compatibility: &Compati
         return;
     }
 
-    let counts = compatibility_status_counts(compatibility);
     lines.push(String::new());
     lines.push("Compatibility:".to_owned());
+    extend_compatibility_summary_content(lines, compatibility);
+}
+
+fn extend_compatibility_summary_content(
+    lines: &mut Vec<String>,
+    compatibility: &CompatibilityMatrix,
+) {
+    let counts = compatibility_status_counts(compatibility);
     lines.push(format!("Profiles: {}", compatibility.profiles.join(", ")));
     lines.push(format!(
         "Status totals: pass={} warn={} fail={} unknown={} untested={}",
@@ -990,6 +1081,230 @@ fn extend_compatibility_summary(lines: &mut Vec<String>, compatibility: &Compati
     }
 }
 
+fn extend_triage_compatibility_summary(lines: &mut Vec<String>, report: &ScanReport) {
+    if report.compatibility.is_empty() {
+        return;
+    }
+
+    lines.push(String::new());
+    lines.push("Compatibility:".to_owned());
+    extend_triage_compatibility_interpretation(lines, report);
+    extend_compatibility_summary_content(lines, &report.compatibility);
+}
+
+fn extend_triage_compatibility_interpretation(lines: &mut Vec<String>, report: &ScanReport) {
+    let summary = triage_compatibility_interpretation(report);
+
+    lines.push("Compatibility interpretation:".to_owned());
+    if summary.hard_failure_packages == 0 {
+        lines.push("- No hard host-profile failures detected.".to_owned());
+    } else {
+        lines.push(format!(
+            "- {} {} {} hard host-profile failures.",
+            summary.hard_failure_packages,
+            plural(summary.hard_failure_packages, "package", "packages"),
+            has_have(summary.hard_failure_packages)
+        ));
+    }
+    if summary.metadata_extension_packages > 0 {
+        lines.push(format!(
+            "- {} {} use metadata not defined by selected host profiles.",
+            summary.metadata_extension_packages,
+            plural(summary.metadata_extension_packages, "package", "packages")
+        ));
+    }
+    if summary.unknown_profile_packages > 0 {
+        lines.push(format!(
+            "- {} {} {} insufficient evidence for one or more selected profiles.",
+            summary.unknown_profile_packages,
+            plural(summary.unknown_profile_packages, "package", "packages"),
+            has_have(summary.unknown_profile_packages)
+        ));
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct TriageCompatibilityInterpretation {
+    hard_failure_packages: usize,
+    metadata_extension_packages: usize,
+    unknown_profile_packages: usize,
+}
+
+fn triage_compatibility_interpretation(report: &ScanReport) -> TriageCompatibilityInterpretation {
+    let hard_failure_packages = report
+        .compatibility
+        .matrix
+        .iter()
+        .filter(|row| {
+            row.profiles
+                .iter()
+                .any(|profile| profile.status.as_str() == "fail")
+        })
+        .map(|row| row.path.as_str())
+        .collect::<BTreeSet<_>>()
+        .len();
+    let unknown_profile_packages = report
+        .compatibility
+        .matrix
+        .iter()
+        .filter(|row| {
+            row.profiles
+                .iter()
+                .any(|profile| profile.status.as_str() == "unknown")
+        })
+        .map(|row| row.path.as_str())
+        .collect::<BTreeSet<_>>()
+        .len();
+    let metadata_extension_packages =
+        triage_packages_for_rule_ids(report, &["SKILL040", "SKILL050"]).len();
+
+    TriageCompatibilityInterpretation {
+        hard_failure_packages,
+        metadata_extension_packages,
+        unknown_profile_packages,
+    }
+}
+
+fn extend_triage_review_priorities(lines: &mut Vec<String>, report: &ScanReport) {
+    let priorities = triage_review_priorities(report);
+
+    lines.push(String::new());
+    if priorities.is_empty() {
+        lines.push("Review priorities: No immediate review priorities.".to_owned());
+        return;
+    }
+
+    lines.push("Review priorities:".to_owned());
+    for (index, priority) in priorities.iter().enumerate() {
+        lines.push(format!("{}. {}", index + 1, priority));
+    }
+}
+
+fn triage_review_priorities(report: &ScanReport) -> Vec<String> {
+    let mut priorities = Vec::new();
+
+    let prompt_injection_count = triage_finding_count_for_rule_ids(report, &["SEC011"]);
+    if prompt_injection_count > 0 {
+        priorities.push(format!(
+            "Inspect {} prompt-injection-like {}.",
+            prompt_injection_count,
+            plural(prompt_injection_count, "finding", "findings")
+        ));
+    }
+
+    let hidden_prompt_count = triage_finding_count_for_rule_ids(report, &["SEC012"]);
+    if hidden_prompt_count > 0 {
+        priorities.push(format!(
+            "Inspect {} hidden prompt-like {}.",
+            hidden_prompt_count,
+            plural(hidden_prompt_count, "instruction", "instructions")
+        ));
+    }
+
+    let mutable_url_count = triage_mutable_external_url_count(report);
+    if mutable_url_count > 0 {
+        priorities.push(format!(
+            "Review {} mutable remote {}.",
+            mutable_url_count,
+            plural(mutable_url_count, "URL", "URLs")
+        ));
+    }
+
+    let reproducibility_package_count = triage_dependency_reproducibility_package_count(report);
+    if reproducibility_package_count > 0 {
+        priorities.push(format!(
+            "Review {} {} with dependency reproducibility gaps.",
+            reproducibility_package_count,
+            plural(reproducibility_package_count, "package", "packages")
+        ));
+    }
+
+    if let Some(field) = triage_top_metadata_extension_field(report) {
+        priorities.push(format!(
+            "Decide whether `{field}` is accepted metadata for this collection."
+        ));
+    }
+
+    priorities
+}
+
+fn triage_finding_count_for_rule_ids(report: &ScanReport, rule_ids: &[&str]) -> usize {
+    report
+        .findings
+        .iter()
+        .filter(|finding| rule_ids.contains(&finding.rule_id.as_str()))
+        .count()
+}
+
+fn triage_mutable_external_url_count(report: &ScanReport) -> usize {
+    report
+        .supply_chain
+        .external_urls
+        .iter()
+        .filter(|url| url.pinned == Some(false))
+        .count()
+}
+
+fn triage_dependency_reproducibility_package_count(report: &ScanReport) -> usize {
+    if let Some(pattern) = effective_ecosystem_patterns(report)
+        .iter()
+        .find(|pattern| pattern.id == "dependency-reproducibility-gaps")
+    {
+        return pattern.affected_package_count;
+    }
+
+    triage_packages_for_rule_ids(report, &["SEC009", "SUPPLY003", "SUPPLY004", "SUPPLY009"]).len()
+}
+
+fn triage_top_metadata_extension_field(report: &ScanReport) -> Option<String> {
+    let mut field_counts = BTreeMap::<String, usize>::new();
+
+    for group in effective_finding_groups(report).iter() {
+        if !matches!(group.rule_id.as_str(), "SKILL040" | "SKILL050") {
+            continue;
+        }
+
+        if let Some(field) = group.dimensions.get("frontmatter_field") {
+            *field_counts.entry(field.clone()).or_default() += group.finding_count;
+        }
+    }
+
+    field_counts
+        .into_iter()
+        .max_by(|left, right| left.1.cmp(&right.1).then_with(|| right.0.cmp(&left.0)))
+        .map(|(field, _)| field)
+}
+
+fn triage_packages_for_rule_ids(report: &ScanReport, rule_ids: &[&str]) -> BTreeSet<String> {
+    let package_refs = report.packages.iter().collect::<Vec<_>>();
+    report
+        .findings
+        .iter()
+        .filter(|finding| rule_ids.contains(&finding.rule_id.as_str()))
+        .map(|finding| {
+            package_for_finding(&package_refs, finding)
+                .map(|package| package.manifest_path.clone())
+                .unwrap_or_else(|| finding.location.path.clone())
+        })
+        .collect()
+}
+
+fn plural<'a>(count: usize, singular: &'a str, plural: &'a str) -> &'a str {
+    if count == 1 {
+        singular
+    } else {
+        plural
+    }
+}
+
+fn has_have(count: usize) -> &'static str {
+    if count == 1 {
+        "has"
+    } else {
+        "have"
+    }
+}
+
 fn extend_ecosystem_patterns_summary(lines: &mut Vec<String>, report: &ScanReport) {
     let patterns = effective_ecosystem_patterns(report);
     if patterns.is_empty() {
@@ -1004,6 +1319,151 @@ fn extend_ecosystem_patterns_summary(lines: &mut Vec<String>, report: &ScanRepor
             pattern.title, pattern.summary, pattern.count, pattern.affected_package_percent
         ));
     }
+}
+
+fn extend_triage_skill_collection_patterns_summary(lines: &mut Vec<String>, report: &ScanReport) {
+    let patterns = effective_ecosystem_patterns(report);
+
+    lines.push(String::new());
+    if patterns.is_empty() {
+        lines.push(
+            "Observed skill collection patterns: No notable collection-level patterns.".to_owned(),
+        );
+        return;
+    }
+
+    lines.push("Observed skill collection patterns:".to_owned());
+    for pattern in patterns.iter() {
+        let card = triage_pattern_card(pattern);
+        lines.push(String::new());
+        lines.push(format!("[{}] {}", card.priority, card.title));
+        lines.push(format!(
+            "  {}/{} {} ({}) | {}: {}",
+            pattern.affected_package_count,
+            report.summary.package_count,
+            plural(pattern.affected_package_count, "package", "packages"),
+            triage_pattern_percent(pattern.affected_package_count, report.summary.package_count),
+            triage_pattern_metric_label(card.metric_label, card.metric_count),
+            card.metric_count
+        ));
+        lines.push(format!("  {}", card.meaning));
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TriagePatternCard {
+    priority: &'static str,
+    title: String,
+    metric_label: &'static str,
+    metric_count: usize,
+    meaning: &'static str,
+}
+
+fn triage_pattern_card(pattern: &EcosystemPattern) -> TriagePatternCard {
+    match pattern.id.as_str() {
+        "low-trust-manifest-adoption" => TriagePatternCard {
+            priority: "HIGH",
+            title: "Missing trust manifests".to_owned(),
+            metric_label: "evidence",
+            metric_count: pattern.count,
+            meaning: "No local trust metadata was found.",
+        },
+        "host-specific-metadata-extensions" => TriagePatternCard {
+            priority: "MED",
+            title: "Host-specific metadata extensions".to_owned(),
+            metric_label: "evidence",
+            metric_count: pattern.count,
+            meaning: "Some hosts may ignore or reinterpret metadata.",
+        },
+        "low-checksum-evidence" => TriagePatternCard {
+            priority: "LOW",
+            title: "Low checksum coverage".to_owned(),
+            metric_label: "evidence",
+            metric_count: pattern.count,
+            meaning: "Executables or binaries lack matching integrity evidence.",
+        },
+        "dependency-reproducibility-gaps" => TriagePatternCard {
+            priority: "LOW",
+            title: "Dependency reproducibility gaps".to_owned(),
+            metric_label: "evidence",
+            metric_count: pattern.count,
+            meaning: "Install behavior may resolve different versions later.",
+        },
+        "mutable-remote-references" => {
+            let mutable_urls = pattern_evidence_count(pattern, "mutable_external_urls");
+            TriagePatternCard {
+                priority: "LOW",
+                title: "Mutable remote references".to_owned(),
+                metric_label: if mutable_urls > 0 {
+                    "mutable URLs"
+                } else {
+                    "evidence"
+                },
+                metric_count: if mutable_urls > 0 {
+                    mutable_urls
+                } else {
+                    pattern.count
+                },
+                meaning: "Some remote references are not immutable.",
+            }
+        }
+        "prompt-injection-review-signals" => TriagePatternCard {
+            priority: "MED",
+            title: "Prompt-injection-like review signals".to_owned(),
+            metric_label: "evidence",
+            metric_count: pattern.count,
+            meaning: "Review possible behavior-override instructions.",
+        },
+        "hidden-prompt-like-instructions" => TriagePatternCard {
+            priority: "MED",
+            title: "Hidden prompt-like instructions".to_owned(),
+            metric_label: "evidence",
+            metric_count: pattern.count,
+            meaning: "Prompt-like text appears in inert-looking context.",
+        },
+        _ => TriagePatternCard {
+            priority: "INFO",
+            title: pattern.title.clone(),
+            metric_label: "evidence",
+            metric_count: pattern.count,
+            meaning: "Review this recurring collection-level signal.",
+        },
+    }
+}
+
+fn triage_pattern_metric_label(metric_label: &str, count: usize) -> &'static str {
+    match metric_label {
+        "evidence" => plural(count, "evidence item", "evidence items"),
+        "mutable URLs" => plural(count, "mutable URL", "mutable URLs"),
+        _ => "evidence items",
+    }
+}
+
+fn pattern_evidence_count(pattern: &EcosystemPattern, kind: &str) -> usize {
+    pattern
+        .evidence
+        .iter()
+        .find(|evidence| evidence.kind == kind)
+        .map(|evidence| evidence.count)
+        .unwrap_or(0)
+}
+
+fn triage_pattern_percent(affected: usize, total: usize) -> String {
+    if total == 0 || affected == 0 {
+        return "0%".to_owned();
+    }
+
+    if affected * 100 >= total * 10 {
+        let percent = (affected * 100 + total / 2) / total;
+        return format!("{percent}%");
+    }
+
+    if affected * 1000 < total {
+        return "<0.1%".to_owned();
+    }
+
+    let tenths = (affected * 1000 + total / 2) / total;
+    format!("{}.{:01}%", tenths / 10, tenths % 10)
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -3625,9 +4085,9 @@ mod tests {
     use super::*;
     use agent_audit_core::model::ScanSummary;
     use agent_audit_core::{
-        build_finding_groups, FindingConfidence, FindingLocation, MarkdownCodeBlock, SkillFinding,
-        SkillGraph, SkillManifest, SkillPackage, SkillReference, SupplyChainInventory,
-        SuppressedFinding, SuppressionMatch,
+        build_finding_groups, EcosystemPatternEvidence, FindingConfidence, FindingLocation,
+        MarkdownCodeBlock, SkillFinding, SkillGraph, SkillManifest, SkillPackage, SkillReference,
+        SupplyChainInventory, SuppressedFinding, SuppressionMatch,
     };
     use std::collections::BTreeMap;
     use std::path::Path;
@@ -5096,6 +5556,364 @@ mod tests {
     }
 
     #[test]
+    fn triage_summary_renders_skill_collection_pattern_cards() {
+        let mut report = report_with_summary(864, 0, 0, 0, 0);
+        report.patterns = vec![
+            ecosystem_pattern(
+                "low-trust-manifest-adoption",
+                "Low trust-manifest adoption",
+                864,
+                864,
+                vec![
+                    ("trust_manifests", 0),
+                    ("packages_without_trust_manifest", 864),
+                ],
+            ),
+            ecosystem_pattern(
+                "host-specific-metadata-extensions",
+                "Host-specific metadata extensions",
+                842,
+                832,
+                vec![("SKILL040", 842)],
+            ),
+            ecosystem_pattern(
+                "low-checksum-evidence",
+                "Low checksum evidence",
+                121,
+                12,
+                vec![("executable_or_binary_artifacts", 133), ("checksums", 12)],
+            ),
+            ecosystem_pattern(
+                "dependency-reproducibility-gaps",
+                "Dependency reproducibility gaps in executable skills",
+                74,
+                4,
+                vec![("SEC009", 70), ("SUPPLY003", 4)],
+            ),
+            ecosystem_pattern(
+                "mutable-remote-references",
+                "Mutable remote references",
+                59,
+                3,
+                vec![
+                    ("mutable_external_urls", 2),
+                    ("mutable_remote_dependencies", 57),
+                ],
+            ),
+            ecosystem_pattern(
+                "prompt-injection-review-signals",
+                "Prompt-injection-like review signals",
+                2,
+                2,
+                vec![("SEC011", 2)],
+            ),
+            ecosystem_pattern(
+                "hidden-prompt-like-instructions",
+                "Hidden prompt-like instructions in inert contexts",
+                1,
+                1,
+                vec![("SEC012", 1)],
+            ),
+        ];
+
+        let summary = render_summary_with_mode(&report, ReportMode::Triage);
+
+        assert!(summary.contains("Observed skill collection patterns:"));
+        assert!(!summary.contains("Observed ecosystem patterns:"));
+        assert!(!summary.contains("count="));
+        assert!(summary.contains("[HIGH] Missing trust manifests"));
+        assert!(summary.contains("  864/864 packages (100%) | evidence items: 864"));
+        assert!(summary.contains("  No local trust metadata was found."));
+        assert!(summary.contains("[MED] Host-specific metadata extensions"));
+        assert!(summary.contains("  832/864 packages (96%) | evidence items: 842"));
+        assert!(summary.contains("  Some hosts may ignore or reinterpret metadata."));
+        assert!(summary.contains("[LOW] Low checksum coverage"));
+        assert!(summary.contains("  12/864 packages (1.4%) | evidence items: 121"));
+        assert!(summary.contains("[LOW] Dependency reproducibility gaps"));
+        assert!(summary.contains("  4/864 packages (0.5%) | evidence items: 74"));
+        assert!(summary.contains("[LOW] Mutable remote references"));
+        assert!(summary.contains("  3/864 packages (0.3%) | mutable URLs: 2"));
+        assert!(!summary
+            .contains("Mutable remote references\n  3/864 packages (0.3%) | evidence items: 59"));
+        assert!(summary.contains("[MED] Prompt-injection-like review signals"));
+        assert!(summary.contains("  2/864 packages (0.2%) | evidence items: 2"));
+        assert!(summary.contains("[MED] Hidden prompt-like instructions"));
+        assert!(summary.contains("  1/864 package (0.1%) | evidence item: 1"));
+        assert_triage_pattern_lines_do_not_contain_evidence_colon(&summary);
+
+        assert_triage_pattern_lines_are_fixed_width_safe(&summary);
+    }
+
+    #[test]
+    fn triage_pattern_percent_never_rounds_nonzero_to_zero() {
+        let mut report = report_with_summary(2000, 0, 0, 0, 0);
+        report.patterns = vec![ecosystem_pattern(
+            "hidden-prompt-like-instructions",
+            "Hidden prompt-like instructions in inert contexts",
+            1,
+            1,
+            vec![("SEC012", 1)],
+        )];
+
+        let summary = render_summary_with_mode(&report, ReportMode::Triage);
+
+        assert!(summary.contains("  1/2000 package (<0.1%) | evidence item: 1"));
+        assert!(!summary.contains("  1/2000 package (0%)"));
+        assert_triage_pattern_lines_are_fixed_width_safe(&summary);
+    }
+
+    #[test]
+    fn triage_pattern_cards_use_singular_mutable_url_label() {
+        let mut report = report_with_summary(864, 0, 0, 0, 0);
+        report.patterns = vec![ecosystem_pattern(
+            "mutable-remote-references",
+            "Mutable remote references",
+            1,
+            1,
+            vec![("mutable_external_urls", 1)],
+        )];
+
+        let summary = render_summary_with_mode(&report, ReportMode::Triage);
+
+        assert!(summary.contains("  1/864 package (0.1%) | mutable URL: 1"));
+        assert!(!summary.contains("mutable URLs: 1"));
+        assert_triage_pattern_lines_do_not_contain_evidence_colon(&summary);
+    }
+
+    #[test]
+    fn triage_summary_renders_empty_skill_collection_pattern_state() {
+        let report = report_with_summary(0, 0, 0, 0, 0);
+
+        let summary = render_summary_with_mode(&report, ReportMode::Triage);
+
+        assert!(summary
+            .contains("Observed skill collection patterns: No notable collection-level patterns."));
+        assert!(!summary.contains("Observed ecosystem patterns:"));
+    }
+
+    #[test]
+    fn triage_summary_adds_header_group_counts_and_empty_states() {
+        let report = report_with_summary(0, 0, 0, 0, 0);
+
+        let summary = render_summary_with_mode(&report, ReportMode::Triage);
+
+        assert_in_order(
+            &summary,
+            &[
+                "Packages: 0",
+                "Findings: 0 occurrences",
+                "Finding groups: 0",
+                "Rule types triggered: 0",
+                "Top external domains: none",
+                "Review priorities: No immediate review priorities.",
+                "Observed skill collection patterns: No notable collection-level patterns.",
+                "Finding groups: none",
+            ],
+        );
+    }
+
+    #[test]
+    fn triage_summary_counts_rendered_groups_and_rule_types() {
+        let report = repeated_finding_report(4);
+
+        let summary = render_summary_with_mode(&report, ReportMode::Triage);
+
+        assert!(summary.contains("Findings: 4 occurrences"));
+        assert!(summary.contains("Finding groups: 1"));
+        assert!(summary.contains("Rule types triggered: 1"));
+    }
+
+    #[test]
+    fn triage_summary_orders_review_priorities_with_singular_and_plural_text() {
+        let mut report = report_with_packages_and_findings(
+            vec![
+                package(
+                    "skills/inject-a",
+                    "skills/inject-a/SKILL.md",
+                    Some("inject-a"),
+                    None,
+                ),
+                package(
+                    "skills/inject-b",
+                    "skills/inject-b/SKILL.md",
+                    Some("inject-b"),
+                    None,
+                ),
+                package(
+                    "skills/hidden",
+                    "skills/hidden/SKILL.md",
+                    Some("hidden"),
+                    None,
+                ),
+                package("skills/deps", "skills/deps/SKILL.md", Some("deps"), None),
+                package("skills/meta", "skills/meta/SKILL.md", Some("meta"), None),
+            ],
+            vec![
+                finding(
+                    "SEC011",
+                    Severity::Medium,
+                    FindingCategory::Security,
+                    "Prompt-injection-like instruction",
+                    "The skill contains prompt-injection-like review text.",
+                    "skills/inject-a/SKILL.md",
+                    Some(4),
+                ),
+                finding(
+                    "SEC011",
+                    Severity::Medium,
+                    FindingCategory::Security,
+                    "Prompt-injection-like instruction",
+                    "The skill contains prompt-injection-like override text.",
+                    "skills/inject-b/SKILL.md",
+                    Some(5),
+                ),
+                finding(
+                    "SEC012",
+                    Severity::Medium,
+                    FindingCategory::Security,
+                    "Hidden prompt-like instructions",
+                    "Prompt-like text appears in an inert-looking comment.",
+                    "skills/hidden/SKILL.md",
+                    Some(8),
+                ),
+                finding(
+                    "SEC009",
+                    Severity::Low,
+                    FindingCategory::Security,
+                    "Package install without lockfile",
+                    "The script runs `npm install left-pad` without nearby lockfile evidence.",
+                    "skills/deps/scripts/install.sh",
+                    Some(2),
+                ),
+                finding(
+                    "SKILL040",
+                    Severity::Low,
+                    FindingCategory::Compatibility,
+                    "Host-specific or unrecognized metadata field",
+                    "The skill manifest declares the unknown frontmatter field `requires`.",
+                    "skills/meta/SKILL.md",
+                    Some(1),
+                ),
+            ],
+        );
+        report.supply_chain = supply_chain_inventory(json!({
+            "external_urls": [
+                {
+                    "path": "skills/a/SKILL.md",
+                    "line": 4,
+                    "source": "markdown-link",
+                    "kind": "github-raw",
+                    "normalized": "https://raw.githubusercontent.com/org/repo/main/install.sh",
+                    "raw": "https://raw.githubusercontent.com/org/repo/main/install.sh",
+                    "confidence": "high",
+                    "pinned": false
+                },
+                {
+                    "path": "skills/b/SKILL.md",
+                    "line": 5,
+                    "source": "markdown-link",
+                    "kind": "documentation",
+                    "normalized": "https://example.com/latest",
+                    "raw": "https://example.com/latest",
+                    "confidence": "medium",
+                    "pinned": false
+                }
+            ]
+        }));
+
+        let summary = render_summary_with_mode(&report, ReportMode::Triage);
+
+        assert_in_order(
+            &summary,
+            &[
+                "Review priorities:",
+                "1. Inspect 2 prompt-injection-like findings.",
+                "2. Inspect 1 hidden prompt-like instruction.",
+                "3. Review 2 mutable remote URLs.",
+                "4. Review 1 package with dependency reproducibility gaps.",
+                "5. Decide whether `requires` is accepted metadata for this collection.",
+                "Observed skill collection patterns:",
+            ],
+        );
+    }
+
+    #[test]
+    fn triage_compatibility_interpretation_deduplicates_profile_multiplied_counts() {
+        let mut report = report_with_packages_and_findings(
+            vec![
+                package("skills/alpha", "skills/alpha/SKILL.md", Some("alpha"), None),
+                package("skills/beta", "skills/beta/SKILL.md", Some("beta"), None),
+                package("skills/gamma", "skills/gamma/SKILL.md", Some("gamma"), None),
+            ],
+            vec![
+                finding(
+                    "SKILL040",
+                    Severity::Low,
+                    FindingCategory::Compatibility,
+                    "Host-specific or unrecognized metadata field",
+                    "The skill manifest declares the unknown frontmatter field `requires`.",
+                    "skills/alpha/SKILL.md",
+                    Some(1),
+                ),
+                finding(
+                    "SKILL040",
+                    Severity::Low,
+                    FindingCategory::Compatibility,
+                    "Host-specific or unrecognized metadata field",
+                    "The skill manifest declares the unknown frontmatter field `requires`.",
+                    "skills/beta/SKILL.md",
+                    Some(1),
+                ),
+            ],
+        );
+        report.compatibility = compatibility_matrix(json!({
+            "profiles": ["agent-skills-spec", "codex"],
+            "matrix": [
+                {
+                    "path": "skills/alpha/SKILL.md",
+                    "name": "alpha",
+                    "profiles": [
+                        {"profile": "agent-skills-spec", "status": "warn", "finding_ids": ["SKILL040"]},
+                        {"profile": "codex", "status": "warn", "finding_ids": ["SKILL040"]}
+                    ]
+                },
+                {
+                    "path": "skills/beta/SKILL.md",
+                    "name": "beta",
+                    "profiles": [
+                        {"profile": "agent-skills-spec", "status": "warn", "finding_ids": ["SKILL040"]},
+                        {"profile": "codex", "status": "warn", "finding_ids": ["SKILL040"]}
+                    ]
+                },
+                {
+                    "path": "skills/gamma/SKILL.md",
+                    "name": "gamma",
+                    "profiles": [
+                        {"profile": "agent-skills-spec", "status": "unknown", "finding_ids": []},
+                        {"profile": "codex", "status": "pass", "finding_ids": []}
+                    ]
+                }
+            ]
+        }));
+
+        let summary = render_summary_with_mode(&report, ReportMode::Triage);
+
+        assert_in_order(
+            &summary,
+            &[
+                "Compatibility:",
+                "Compatibility interpretation:",
+                "- No hard host-profile failures detected.",
+                "- 2 packages use metadata not defined by selected host profiles.",
+                "- 1 package has insufficient evidence for one or more selected profiles.",
+                "Profiles: agent-skills-spec, codex",
+                "Status totals: pass=1 warn=4 fail=0 unknown=1 untested=0",
+            ],
+        );
+        assert!(!summary.contains("6 packages use metadata"));
+    }
+
+    #[test]
     fn verbose_summary_mode_expands_all_findings() {
         let report = repeated_finding_report(4);
 
@@ -5167,7 +5985,7 @@ mod tests {
         assert!(summary.contains("SEC009: Package install without lockfile"));
         assert!(summary.contains("  Severity: low"));
         assert!(summary.contains("  Confidence: medium"));
-        assert!(summary.contains("  Category: security"));
+        assert!(summary.contains("  Category: reproducibility"));
         assert!(summary.contains("  Findings: 1"));
         assert!(summary.contains("  Packages: 1"));
         assert!(summary.contains("    - skills/triage/scripts/install.sh:21"));
@@ -5193,16 +6011,101 @@ mod tests {
             .skip(1)
             .take_while(|line| *line != "  Sample locations:")
             .collect::<Vec<_>>();
-        assert!(
-            message_lines.len() > 1,
-            "message should wrap across multiple lines"
+        let normalized_message = message_lines
+            .iter()
+            .map(|line| line.trim())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert_eq!(
+            normalized_message,
+            "Package installs without a lockfile or equivalent pinning can resolve different dependency versions across machines and over time."
         );
+        assert!(!normalized_message.contains("JavaScript"));
         for line in message_lines {
             assert!(
                 line.len() <= TRIAGE_OUTPUT_WIDTH,
                 "triage message line exceeded width: {line}"
             );
         }
+    }
+
+    #[test]
+    fn triage_summary_polishes_compatibility_group_wording() {
+        let report = report_with_packages_and_findings(
+            vec![
+                package(
+                    "skills/meta-a",
+                    "skills/meta-a/SKILL.md",
+                    Some("meta-a"),
+                    None,
+                ),
+                package(
+                    "skills/meta-b",
+                    "skills/meta-b/SKILL.md",
+                    Some("meta-b"),
+                    None,
+                ),
+            ],
+            vec![
+                finding(
+                    "SKILL040",
+                    Severity::Low,
+                    FindingCategory::Compatibility,
+                    "Host-specific or unrecognized metadata field",
+                    "The skill manifest declares the unknown frontmatter field `x-owner`.",
+                    "skills/meta-a/SKILL.md",
+                    Some(1),
+                ),
+                finding(
+                    "SKILL050",
+                    Severity::Low,
+                    FindingCategory::Compatibility,
+                    "Host-specific metadata extension",
+                    "The skill manifest declares the unsupported frontmatter field `x-runtime`.",
+                    "skills/meta-b/SKILL.md",
+                    Some(1),
+                ),
+            ],
+        );
+
+        let summary = render_summary_with_mode(&report, ReportMode::Triage);
+        let lower = summary.to_ascii_lowercase();
+
+        assert!(summary.contains("not defined by selected host profiles"));
+        assert!(summary.contains("may be ignored or interpreted differently"));
+        assert!(summary.contains("portability and reviewability"));
+        assert!(!lower.contains("unsupported frontmatter field"));
+        assert!(!lower.contains("bad field"));
+        assert!(!lower.contains("invalid metadata"));
+        assert!(!lower.contains("unknown frontmatter field"));
+    }
+
+    #[test]
+    fn triage_displays_sec009_as_reproducibility_without_changing_serialized_category() {
+        let report = review_skill_report(
+            "SEC009",
+            Severity::Low,
+            FindingCategory::Security,
+            "Package install without lockfile",
+            "The script runs `npm install left-pad` without nearby lockfile evidence.",
+            Some(3),
+        );
+
+        let summary = render_summary_with_mode(&report, ReportMode::Triage);
+        let json = render_report_with_mode(&report, ReportFormat::Json, ReportMode::Triage)
+            .expect("render JSON");
+        let json_value: Value = serde_json::from_str(&json).expect("parse JSON");
+        let sarif = render_report_with_mode(&report, ReportFormat::Sarif, ReportMode::Triage)
+            .expect("render SARIF");
+        let sarif_value: Value = serde_json::from_str(&sarif).expect("parse SARIF");
+
+        assert!(summary.contains("SEC009: Package install without lockfile"));
+        assert!(summary.contains("  Category: reproducibility"));
+        assert_eq!(json_value["findings"][0]["category"], "security");
+        assert_eq!(
+            sarif_value["runs"][0]["results"][0]["properties"]["category"],
+            "security"
+        );
     }
 
     #[test]
@@ -5237,6 +6140,8 @@ mod tests {
         assert!(audit_lines
             .iter()
             .any(|line| line.contains("platform=windows/windows/x86_64")));
+        assert!(summary.contains("timestamp=not-recorded"));
+        assert!(!summary.contains("timestamp=null"));
         for line in audit_lines {
             assert!(
                 line.len() <= TRIAGE_OUTPUT_WIDTH,
@@ -5477,6 +6382,31 @@ mod tests {
         assert!(summary.contains("    - skills/pkg-b/package.json:11"));
         assert!(summary.contains("    - skills/url-a/SKILL.md:12"));
         assert!(summary.contains("    - skills/url-b/SKILL.md:13"));
+        assert!(summary.contains("Package installs without a lockfile or equivalent pinning"));
+        assert!(summary.contains("Instructions that ask an agent to ignore policy"));
+        assert!(summary.contains(
+            "Some metadata is not defined by selected host profiles and may be ignored or interpreted differently"
+        ));
+        assert!(summary.contains("Package installation without a matching lockfile"));
+        assert!(summary.contains("Unpinned package versions can change"));
+        assert!(summary.contains("Mutable remote URLs can serve different content over time"));
+        for specific_message_fragment in [
+            "JavaScript package install",
+            "Python package install",
+            "prompt-injection-like review text",
+            "prompt-injection-like override text",
+            "npm install command",
+            "pip install command",
+            "`left-pad`",
+            "`right-pad`",
+            "https://example.test/main/install.sh",
+            "https://example.test/latest/install.sh",
+        ] {
+            assert!(
+                !summary.contains(specific_message_fragment),
+                "triage group message should not contain finding-specific fragment: {specific_message_fragment}"
+            );
+        }
         assert!(!summary.contains("Grouped by:"));
         assert!(!summary.contains("Fingerprint:"));
     }
@@ -7647,6 +8577,95 @@ mod tests {
                 ),
             ],
         )
+    }
+
+    fn ecosystem_pattern(
+        id: &str,
+        title: &str,
+        count: usize,
+        affected_package_count: usize,
+        evidence: Vec<(&str, usize)>,
+    ) -> EcosystemPattern {
+        EcosystemPattern {
+            id: id.to_owned(),
+            title: title.to_owned(),
+            summary: format!("{title} summary should not be used in triage cards."),
+            count,
+            affected_package_count,
+            affected_package_percent: 0,
+            evidence: evidence
+                .into_iter()
+                .map(|(kind, count)| EcosystemPatternEvidence {
+                    kind: kind.to_owned(),
+                    count,
+                })
+                .collect(),
+        }
+    }
+
+    fn assert_triage_pattern_lines_are_fixed_width_safe(summary: &str) {
+        let mut in_patterns = false;
+        let mut expecting_metric = false;
+        let mut expecting_meaning = false;
+
+        for line in summary.lines() {
+            if line == "Observed skill collection patterns:" {
+                in_patterns = true;
+                continue;
+            }
+            if !in_patterns {
+                continue;
+            }
+            if line == "Finding groups:" || line == "Finding groups: none" {
+                break;
+            }
+            if line.is_empty() {
+                continue;
+            }
+            if let Some(title) = line.strip_prefix('[') {
+                assert!(
+                    title.len() < line.len() && line.len() <= 60,
+                    "triage pattern title line exceeded width: {line}"
+                );
+                expecting_metric = true;
+                expecting_meaning = false;
+            } else if expecting_metric {
+                assert!(
+                    line.len() <= 76,
+                    "triage pattern metric line exceeded width: {line}"
+                );
+                expecting_metric = false;
+                expecting_meaning = true;
+            } else if expecting_meaning {
+                assert!(
+                    line.len() <= 76,
+                    "triage pattern meaning line exceeded width: {line}"
+                );
+                expecting_meaning = false;
+            }
+        }
+    }
+
+    fn assert_triage_pattern_lines_do_not_contain_evidence_colon(summary: &str) {
+        let mut in_patterns = false;
+
+        for line in summary.lines() {
+            if line == "Observed skill collection patterns:" {
+                in_patterns = true;
+                continue;
+            }
+            if !in_patterns {
+                continue;
+            }
+            if line == "Finding groups:" || line == "Finding groups: none" {
+                break;
+            }
+
+            assert!(
+                !line.contains("evidence:"),
+                "triage pattern line should not use legacy evidence label: {line}"
+            );
+        }
     }
 
     fn repeated_finding_report(count: usize) -> ScanReport {
