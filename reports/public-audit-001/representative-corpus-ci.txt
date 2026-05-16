@@ -8,7 +8,7 @@ Broken references: 4
 Actual secret evidence: 0
 Prompt secret exposure signals: 0
 CI policy: fail_on=none blocking_groups=0 non_blocking_groups=7
-Report output: reports/public-audit-001/representative-corpus-ci.txt (format=summary)
+Report output: reports/public-audit-001/representative-corpus-ci.txt (format=text)
 Exit code behavior: returns 0 unless scanning or report writing fails; fail_on is not configured.
 Severity totals: critical=0 high=0 medium=0 low=16 info=0
 Category totals: spec=9 compatibility=7 security=0 quality=0 portability=0 reproducibility=0

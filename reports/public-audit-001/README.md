@@ -4,24 +4,21 @@ This report records the phase 1 representative corpus run. The corpus is
 synthetic and checked into the repository so the run is offline, reproducible,
 and independent of public network access.
 
-For current v0.8 public audit batches, prefer `--format public-json` plus
-methodology metadata. Public JSON is the public-safe dataset projection: it keeps
-audit metadata, repository metadata, package identifiers, findings, finding
-groups, fingerprints, metrics, observed ecosystem patterns, and bounded evidence
-snippets while omitting full manifest bodies and code bodies. Finding
-fingerprints identify individual findings across repeated runs; group
-fingerprints identify repeated issue families for aggregate ecosystem pattern
-reporting.
+For current v0.8 public audit batches, prefer `--format json` plus methodology
+metadata. JSON keeps audit metadata, repository metadata, package identifiers,
+findings, finding groups, fingerprints, metrics, observed ecosystem patterns,
+and the full deterministic scan model. Finding fingerprints identify individual
+findings across repeated runs; group fingerprints identify repeated issue
+families for aggregate ecosystem pattern reporting.
 
 ## Commands
 
 ```text
-cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --output reports/public-audit-001/representative-corpus-summary.txt
+cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --output reports/public-audit-001/representative-corpus-text.txt
 cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --mode ci --output reports/public-audit-001/representative-corpus-ci.txt
 cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --mode verbose --output reports/public-audit-001/representative-corpus-verbose.txt
 cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --mode research --output reports/public-audit-001/representative-corpus-research.txt
-cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --format json --output reports/public-audit-001/representative-corpus.json
-cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --format public-json --output reports/public-audit-001/representative-corpus-public.json --corpus-name "v0.8 public audit" --corpus-entry-id phase1-representative --methodology-version 2026-05 --inclusion-tag synthetic --repo-classification fixture-corpus --scan-batch-id public-audit-001
+cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --format json --output reports/public-audit-001/representative-corpus.json --corpus-name "v0.8 public audit" --corpus-entry-id phase1-representative --methodology-version 2026-05 --inclusion-tag synthetic --repo-classification fixture-corpus --scan-batch-id public-audit-001
 cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --format sarif --output reports/public-audit-001/representative-corpus.sarif
 cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --format html --output reports/public-audit-001/representative-corpus.html --corpus-name "v0.8 public audit" --corpus-entry-id phase1-representative --methodology-version 2026-05 --inclusion-tag synthetic --repo-classification fixture-corpus --scan-batch-id public-audit-001
 ```
@@ -79,17 +76,16 @@ package manifests are:
 
 Stable artifacts:
 
-- `representative-corpus-summary.txt`
+- `representative-corpus-text.txt`
 - `representative-corpus-ci.txt`
 - `representative-corpus-verbose.txt`
 - `representative-corpus-research.txt`
 - `representative-corpus.json`
-- `representative-corpus-public.json`
 - `representative-corpus.sarif`
 - `representative-corpus.html`
 
-`representative-corpus-public.json` and `representative-corpus.html` include
-the public-audit methodology metadata:
+`representative-corpus.json` and `representative-corpus.html` include the
+public-audit methodology metadata:
 
 - Corpus name: `v0.8 public audit`.
 - Corpus entry ID: `phase1-representative`.
@@ -100,10 +96,10 @@ the public-audit methodology metadata:
 
 ## Quality Notes
 
-- Default, CI, verbose, research, JSON, public-safe JSON, SARIF, and HTML
-  outputs rendered without crashes.
-- Full JSON and public JSON contain the same 7 canonical finding groups.
-- Full JSON contains 16 finding fingerprints and 7 group fingerprints.
+- Default text, CI, verbose, research, JSON, SARIF, and HTML outputs rendered
+  without crashes.
+- JSON contains the same 7 canonical finding groups.
+- JSON contains 16 finding fingerprints and 7 group fingerprints.
 - SARIF contains 16 results, audit metadata, and 16
   `agentAuditFindingFingerprint` partial fingerprints.
 - HTML leads with executive summary, audit metadata, observed ecosystem

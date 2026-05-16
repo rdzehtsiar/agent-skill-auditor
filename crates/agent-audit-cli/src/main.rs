@@ -34,7 +34,126 @@ enum Command {
     Scan(ScanCommand),
 }
 
+const SCAN_HELP: &str = r#"Usage:
+  agent-audit scan [OPTIONS] [PATH]
+
+Arguments:
+  [PATH]
+      Repository, directory, or skill package to scan.
+      Defaults to current directory.
+
+Common examples:
+  agent-audit scan .
+  agent-audit scan . --mode triage
+  agent-audit scan . --format html --output report.html
+  agent-audit scan . --format sarif --output results.sarif
+  agent-audit scan . --profile claude-code,codex
+  agent-audit scan . --fail-on high --fail-on critical
+
+Output:
+  --mode <MODE>
+      Human output style.
+      Values: default, triage, ci, verbose, research
+      Default: default
+
+      default   concise scan summary
+      triage    human-readable review report
+      ci        compact CI gate output
+      verbose   expanded finding details
+      research  audit/corpus-oriented detail
+
+  --format <FORMAT>
+      Report format.
+      Values: text, json, sarif, html
+      Default: text
+
+      text   terminal text output
+      json   full machine-readable report
+      sarif  GitHub/code-scanning compatible output
+      html   self-contained offline HTML report
+
+  --output <PATH>
+      Write report to a file instead of stdout.
+
+  --open
+      Open HTML report after writing it.
+      Requires --format html and --output.
+
+Compatibility:
+  --profile <PROFILE>
+      Select host compatibility profile.
+      Repeat or comma-separate values.
+      Use 'all' for every supported profile.
+
+      Supported:
+        agent-skills-spec
+        claude-code
+        codex
+        github-copilot
+        vscode-copilot
+        generic
+
+Policy / CI:
+  --config <PATH>
+      Read and validate an explicit config file before scanning.
+
+  --fail-on <SEVERITY>
+      Exit non-zero when an unsuppressed finding exactly matches severity.
+      Repeat for multiple severities.
+
+      Values:
+        info
+        low
+        medium
+        high
+        critical
+
+Supply chain:
+  --strict-supply-chain
+      Require local trust manifest and license evidence.
+      Emits missing metadata findings.
+
+  --supply-chain
+      Deprecated no-op.
+      Supply-chain inventory and rules already run by default.
+
+Public audit metadata:
+  These fields label reproducible corpus scans and public audit datasets.
+  They do not affect scan findings.
+
+  --corpus-name <NAME>
+      Attach the corpus name.
+      Use to identify the dataset or collection being scanned.
+
+  --corpus-entry-id <ID>
+      Attach the corpus entry ID.
+      Use to link this scan result to a stable corpus manifest entry.
+
+  --methodology-version <VERSION>
+      Attach the methodology version.
+      Use to record which public-audit methodology produced the result.
+
+  --inclusion-tag <TAG>
+      Attach an inclusion tag.
+      Use to describe why the repository was included in the corpus.
+      Repeat or comma-separate values.
+
+  --repo-classification <CLASSIFICATION>
+      Attach repository classification metadata.
+      Use to label the repository type, such as official, community,
+      example, vendor, archive, or generated.
+
+  --scan-batch-id <ID>
+      Attach the scan batch ID.
+      Use to group results from the same audit run or publication batch.
+
+Help:
+  -h, --help
+      Print help.
+"#;
+
 #[derive(Debug, Parser)]
+#[command(override_help = SCAN_HELP)]
 struct ScanCommand {
     #[arg(default_value = ".")]
     path: PathBuf,
@@ -42,7 +161,7 @@ struct ScanCommand {
         long,
         visible_alias = "report",
         value_parser = parse_report_format,
-        default_value = "summary",
+        default_value = "text",
         value_name = "FORMAT",
         help = SUPPORTED_REPORT_FORMATS_HELP
     )]
@@ -639,6 +758,18 @@ mod tests {
     static NEXT_WORKSPACE_ID: AtomicUsize = AtomicUsize::new(0);
 
     #[test]
+    fn scan_help_matches_documented_layout() {
+        let mut command = Cli::command();
+        let help = command
+            .find_subcommand_mut("scan")
+            .expect("scan subcommand should be registered")
+            .render_long_help()
+            .to_string();
+
+        assert_eq!(help, SCAN_HELP);
+    }
+
+    #[test]
     fn scan_help_lists_supported_report_formats() {
         let mut command = Cli::command();
         let help = command
@@ -647,24 +778,11 @@ mod tests {
             .render_long_help()
             .to_string();
 
-        assert!(help.contains("summary"));
-        assert!(help.contains("json"));
-        assert!(help.contains("public-json"));
-        assert!(help.contains("sarif"));
-        assert!(help.contains("html"));
-    }
-
-    #[test]
-    fn scan_help_lists_report_alias_for_format() {
-        let mut command = Cli::command();
-        let help = command
-            .find_subcommand_mut("scan")
-            .expect("scan subcommand should be registered")
-            .render_long_help()
-            .to_string();
-
         assert!(help.contains("--format <FORMAT>"));
-        assert!(help.contains("[aliases: --report]"));
+        assert!(help.contains("text   terminal text output"));
+        assert!(help.contains("json   full machine-readable report"));
+        assert!(help.contains("sarif  GitHub/code-scanning compatible output"));
+        assert!(help.contains("html   self-contained offline HTML report"));
     }
 
     #[test]
@@ -694,7 +812,7 @@ mod tests {
             .to_string();
 
         assert!(help.contains("--config <PATH>"));
-        assert!(help.contains("Read and validate an explicit config file before scanning"));
+        assert!(help.contains("Read and validate an explicit config file before scanning."));
     }
 
     #[test]
@@ -707,8 +825,10 @@ mod tests {
             .to_string();
 
         assert!(help.contains("--fail-on <SEVERITY>"));
-        assert!(help.contains("Fail when an unsuppressed finding exactly matches severity"));
-        assert!(help.contains("repeat for multiple severities"));
+        assert!(
+            help.contains("Exit non-zero when an unsuppressed finding exactly matches severity.")
+        );
+        assert!(help.contains("Repeat for multiple severities."));
     }
 
     #[test]
@@ -721,9 +841,9 @@ mod tests {
             .to_string();
 
         assert!(help.contains("--profile <PROFILE>"));
-        assert!(help.contains("Select compatibility profile(s)"));
-        assert!(help.contains("comma-separate"));
-        assert!(help.contains("use 'all'"));
+        assert!(help.contains("Select host compatibility profile."));
+        assert!(help.contains("Repeat or comma-separate values."));
+        assert!(help.contains("Use 'all' for every supported profile."));
     }
 
     #[test]
@@ -736,10 +856,10 @@ mod tests {
             .to_string();
 
         assert!(help.contains("--supply-chain"));
-        assert!(help.contains("Compatibility no-op"));
-        assert!(help.contains("supply-chain inventory and rules already run by default"));
+        assert!(help.contains("Deprecated no-op."));
+        assert!(help.contains("Supply-chain inventory and rules already run by default."));
         assert!(help.contains("--strict-supply-chain"));
-        assert!(help.contains("Require local trust manifest and license evidence"));
+        assert!(help.contains("Require local trust manifest and license evidence."));
     }
 
     #[test]
@@ -773,9 +893,10 @@ mod tests {
             .to_string();
 
         assert!(help.contains("--output <PATH>"));
-        assert!(help.contains("Write the rendered report to a file instead of stdout"));
+        assert!(help.contains("Write report to a file instead of stdout."));
         assert!(help.contains("--open"));
-        assert!(help.contains("Open an HTML report after writing it to an explicit output file"));
+        assert!(help.contains("Open HTML report after writing it."));
+        assert!(help.contains("Requires --format html and --output."));
     }
 
     #[test]
@@ -785,7 +906,7 @@ mod tests {
         match cli.command {
             Command::Scan(command) => {
                 assert_eq!(command.path, PathBuf::from("."));
-                assert_eq!(command.format, ReportFormat::Summary);
+                assert_eq!(command.format, ReportFormat::Text);
                 assert_eq!(command.mode, ReportMode::Default);
                 assert_eq!(command.config, None);
                 assert_eq!(command.fail_on, Vec::<Severity>::new());
@@ -1107,8 +1228,8 @@ mod tests {
     }
 
     #[test]
-    fn parses_public_json_scan_format() {
-        assert_parsed_scan_format("public-json", ReportFormat::PublicJson);
+    fn parses_text_scan_format() {
+        assert_parsed_scan_format("text", ReportFormat::Text);
     }
 
     #[test]
@@ -1164,7 +1285,7 @@ mod tests {
         match cli.command {
             Command::Scan(command) => {
                 assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
-                assert_eq!(command.format, ReportFormat::Summary);
+                assert_eq!(command.format, ReportFormat::Text);
                 assert_eq!(command.mode, expected);
             }
         }
@@ -1184,7 +1305,24 @@ mod tests {
         let message = error.to_string();
 
         assert!(message.contains("unsupported report format 'xml'"));
-        assert!(message.contains("supported: summary, json, public-json, sarif, html"));
+        assert!(message.contains("supported: text, json, sarif, html"));
+    }
+
+    #[test]
+    fn rejects_removed_public_json_scan_format() {
+        let error = Cli::try_parse_from([
+            "agent-audit",
+            "scan",
+            "fixtures/spec/basic",
+            "--format",
+            "public-json",
+        ])
+        .expect_err("removed public-json format should fail");
+
+        let message = error.to_string();
+
+        assert!(message.contains("unsupported report format 'public-json'"));
+        assert!(message.contains("supported: text, json, sarif, html"));
     }
 
     #[test]
@@ -1205,16 +1343,16 @@ mod tests {
     }
 
     #[test]
-    fn runs_scan_with_summary_output() {
-        let workspace = CliTestWorkspace::new("summary-output");
+    fn runs_scan_with_text_output() {
+        let workspace = CliTestWorkspace::new("text-output");
         workspace.write_file(
             "SKILL.md",
             r#"---
-name: summary-output
-description: Summary output fixture.
+name: text-output
+description: Text output fixture.
 ---
 
-# Summary Output
+# Text Output
 "#,
         );
 
@@ -1224,8 +1362,8 @@ description: Summary output fixture.
             "# Guide\n\nSee [missing](../not-found.md).\n",
         );
 
-        let output = run_scan_output(scan_command(&workspace, ReportFormat::Summary))
-            .expect("run summary scan");
+        let output =
+            run_scan_output(scan_command(&workspace, ReportFormat::Text)).expect("run text scan");
 
         assert!(output.starts_with("Agent Skill Auditor scan summary\n"));
         assert!(output.contains("Audit: "));
@@ -1236,7 +1374,7 @@ description: Summary output fixture.
         assert!(output.contains(
             "Profiles: agent-skills-spec, claude-code, codex, github-copilot, vscode-copilot, generic"
         ));
-        assert!(output.contains("- SKILL.md (summary-output): agent-skills-spec=pass"));
+        assert!(output.contains("- SKILL.md (text-output): agent-skills-spec=pass"));
         assert!(output.ends_with('\n'));
     }
 
@@ -1361,80 +1499,6 @@ methodology:
     }
 
     #[test]
-    fn runs_scan_with_public_json_output_without_manifest_body() {
-        let workspace = CliTestWorkspace::new("public-json-output");
-        workspace.write_file(
-            "SKILL.md",
-            r#"---
-name: public-json-output
-description: Public JSON output fixture.
----
-
-# Public JSON Output
-
-PUBLIC_JSON_FULL_MANIFEST_BODY_SHOULD_NOT_APPEAR
-"#,
-        );
-
-        let output = run_scan_output(scan_command(&workspace, ReportFormat::PublicJson))
-            .expect("run public JSON scan");
-
-        assert!(output.starts_with("{\n"));
-        assert!(output.ends_with('\n'));
-        assert!(!output.contains("PUBLIC_JSON_FULL_MANIFEST_BODY_SHOULD_NOT_APPEAR"));
-
-        let value: serde_json::Value =
-            serde_json::from_str(&output).expect("parse public JSON output");
-        assert_eq!(
-            value["audit"]["command"]["format"],
-            serde_json::json!("public-json")
-        );
-        assert_eq!(value["packages"][0]["name"], "public-json-output");
-        assert!(value["packages"][0]["manifest"].is_null());
-        assert!(value["packages"][0]["body"].is_null());
-        assert!(value["metrics"]["summary"]["package_count"].is_number());
-        assert!(value["findings"].is_array());
-        assert!(value["finding_groups"].is_array());
-        assert!(value["patterns"].is_array());
-    }
-
-    #[test]
-    fn run_scan_includes_cli_methodology_metadata_in_public_json() {
-        let workspace = CliTestWorkspace::new("public-json-methodology");
-        workspace.write_file("SKILL.md", valid_skill("public-json-methodology"));
-
-        let output = run_scan_output(ScanCommand {
-            corpus_name: Some("v0.8 public audit".to_owned()),
-            corpus_entry_id: Some("repo-002".to_owned()),
-            methodology_version: Some("2026-05".to_owned()),
-            inclusion_tags: vec!["public".to_owned()],
-            scan_batch_id: Some("batch-2026-05".to_owned()),
-            ..scan_command(&workspace, ReportFormat::PublicJson)
-        })
-        .expect("run public JSON scan");
-        let value: serde_json::Value =
-            serde_json::from_str(&output).expect("parse public JSON output");
-
-        assert_eq!(
-            value["audit"]["methodology"]["corpus_name"],
-            "v0.8 public audit"
-        );
-        assert_eq!(value["audit"]["methodology"]["corpus_entry_id"], "repo-002");
-        assert_eq!(
-            value["audit"]["methodology"]["methodology_version"],
-            "2026-05"
-        );
-        assert_eq!(
-            value["audit"]["methodology"]["inclusion_tags"],
-            serde_json::json!(["public"])
-        );
-        assert_eq!(
-            value["audit"]["methodology"]["scan_batch_id"],
-            "batch-2026-05"
-        );
-    }
-
-    #[test]
     fn run_scan_audit_paths_preserve_user_provided_relative_paths() {
         let scan_root = PathBuf::from("../../fixtures/compatibility/valid/spec-basic");
         let config_path =
@@ -1535,11 +1599,11 @@ description: HTML output fixture.
         let workspace = CliTestWorkspace::new("stdout-unchanged");
         workspace.write_file("SKILL.md", valid_skill("stdout-unchanged"));
 
-        let first = run_scan_output(scan_command(&workspace, ReportFormat::Summary))
+        let first = run_scan_output(scan_command(&workspace, ReportFormat::Text))
             .expect("run first stdout scan");
         let second = run_scan_output(ScanCommand {
             output: None,
-            ..scan_command(&workspace, ReportFormat::Summary)
+            ..scan_command(&workspace, ReportFormat::Text)
         })
         .expect("run second stdout scan");
 
@@ -1581,7 +1645,7 @@ description: HTML output fixture.
                 mode: ReportMode::Ci,
                 output: Some(output_path.clone()),
                 fail_on: vec![Severity::Low],
-                ..scan_command(&workspace, ReportFormat::Summary)
+                ..scan_command(&workspace, ReportFormat::Text)
             },
             &mut stdout,
         );
@@ -1595,7 +1659,7 @@ description: HTML output fixture.
         assert!(report.starts_with("Agent Skill Auditor CI scan summary\n"));
         assert!(report.contains("CI policy: fail_on=low blocking_groups=1"));
         assert!(report.contains(&format!(
-            "Report output: {} (format=summary)",
+            "Report output: {} (format=text)",
             path_metadata_string(&output_path)
         )));
         assert!(report.contains("Exit code behavior: returns 1 after rendering"));
@@ -1767,7 +1831,7 @@ name: [unterminated
 "#,
         );
 
-        let output = run_scan_output(scan_command(&workspace, ReportFormat::Summary))
+        let output = run_scan_output(scan_command(&workspace, ReportFormat::Text))
             .expect("malformed frontmatter should render report");
 
         assert!(output.starts_with("Agent Skill Auditor scan summary\n"));
@@ -1810,8 +1874,8 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
 "#,
         );
 
-        let output = run_scan_output(scan_command(&workspace, ReportFormat::Summary))
-            .expect("run summary scan");
+        let output =
+            run_scan_output(scan_command(&workspace, ReportFormat::Text)).expect("run text scan");
 
         assert!(output.contains("Finding groups:\n"));
         assert!(output.contains("[low/high/spec]"));
@@ -1827,9 +1891,9 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
 
         let output = run_scan_output(ScanCommand {
             mode: ReportMode::Verbose,
-            ..scan_command(&workspace, ReportFormat::Summary)
+            ..scan_command(&workspace, ReportFormat::Text)
         })
-        .expect("run verbose summary scan");
+        .expect("run verbose text scan");
 
         assert!(output.starts_with("Agent Skill Auditor verbose scan summary\n"));
         assert!(output.contains("Full findings:"));
@@ -1841,7 +1905,7 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
         let workspace = CliTestWorkspace::new("default-non-failing");
         workspace.write_file("SKILL.md", missing_name_skill());
 
-        let output = run_scan_output(scan_command(&workspace, ReportFormat::Summary))
+        let output = run_scan_output(scan_command(&workspace, ReportFormat::Text))
             .expect("default scan should render low findings without failing");
 
         assert!(output.contains("SKILL001 [low/high/spec] x1 packages=1"));
@@ -1861,7 +1925,7 @@ fail_on:
 
         let (output, result) = run_scan_attempt(configured_scan_command(
             &workspace,
-            ReportFormat::Summary,
+            ReportFormat::Text,
             "agent-audit.yaml",
         ));
         let error = result.expect_err("low fail_on should fail after rendering");
@@ -1888,7 +1952,7 @@ fail_on:
 
         let (output, result) = run_scan_attempt(configured_scan_command(
             &workspace,
-            ReportFormat::Summary,
+            ReportFormat::Text,
             "agent-audit.yaml",
         ));
         let error = result.expect_err("multiple config fail_on values should match low finding");
@@ -1913,7 +1977,7 @@ fail_on:
 
         let output = run_scan_output(configured_scan_command(
             &workspace,
-            ReportFormat::Summary,
+            ReportFormat::Text,
             "agent-audit.yaml",
         ))
         .expect("high fail_on should not match low finding");
@@ -1936,7 +2000,7 @@ fail_on:
 
         let output = run_scan_output(configured_scan_command(
             &workspace,
-            ReportFormat::Summary,
+            ReportFormat::Text,
             "agent-audit.yaml",
         ))
         .expect("multiple config fail_on values should not match low finding");
@@ -2031,7 +2095,7 @@ ignore:
 
         let (output, result) = run_scan_attempt(failing_scan_command(
             &workspace,
-            ReportFormat::Summary,
+            ReportFormat::Text,
             vec![Severity::Low],
         ));
 
@@ -2046,7 +2110,7 @@ ignore:
 
         let (output, result) = run_scan_attempt(failing_scan_command(
             &workspace,
-            ReportFormat::Summary,
+            ReportFormat::Text,
             vec![Severity::Medium, Severity::Low],
         ));
         let error = result.expect_err("multiple CLI fail_on values should match low finding");
@@ -2089,7 +2153,7 @@ fail_on:
 
         let (output, result) = run_scan_attempt(configured_path_scan_command(
             fixture,
-            ReportFormat::Summary,
+            ReportFormat::Text,
             "agent-audit.yaml",
         ));
         let error = result.expect_err("low fail_on fixture should fail");
@@ -2126,7 +2190,7 @@ fail_on:
 
         let output = run_scan_output(configured_path_scan_command(
             fixture,
-            ReportFormat::Summary,
+            ReportFormat::Text,
             "agent-audit.yaml",
         ))
         .expect("high threshold should not fail low findings");
@@ -2335,7 +2399,7 @@ ignore:
 
         let output = run_scan_output(configured_scan_command(
             &workspace,
-            ReportFormat::Summary,
+            ReportFormat::Text,
             "agent-audit.yaml",
         ))
         .expect("valid config should load before scan");
@@ -2671,7 +2735,7 @@ description: No config discovery fixture.
         );
         workspace.write_file(".agent-audit.yaml", "profiles: [codex\n");
 
-        let output = run_scan_output(scan_command(&workspace, ReportFormat::Summary))
+        let output = run_scan_output(scan_command(&workspace, ReportFormat::Text))
             .expect("implicit config discovery should not run");
 
         assert!(output.contains("Packages: 1\n"));
@@ -2861,7 +2925,7 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
     ) -> ScanCommand {
         ScanCommand {
             config: Some(config),
-            ..scan_command(workspace, ReportFormat::Summary)
+            ..scan_command(workspace, ReportFormat::Text)
         }
     }
 

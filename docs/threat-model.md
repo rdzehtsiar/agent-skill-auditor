@@ -16,7 +16,7 @@ The tool is intended to support local review and CI policy decisions before a sk
 
 The output is review evidence. It is not a guarantee that a skill is safe.
 
-Public audit outputs should use the public-safe dataset projection rather than the full private JSON report when reports may be shared outside the reviewing organization. Public datasets keep stable package identifiers, findings, finding groups, fingerprints, metrics, observed ecosystem patterns, and bounded evidence snippets, but omit full manifest bodies and code bodies by default.
+Public audit outputs should use reviewed JSON reports when reports may be shared outside the reviewing organization. JSON keeps stable package identifiers, findings, finding groups, fingerprints, metrics, observed ecosystem patterns, and the full deterministic scan model, so reviewers should decide whether source excerpts and manifest content are appropriate to publish.
 
 ## Trust Boundaries
 

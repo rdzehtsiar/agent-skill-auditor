@@ -49,7 +49,7 @@ jobs:
         run: npm test --prefix npm/agent-audit
 
       - name: Run representative summary scan
-        run: ./target/debug/agent-audit scan fixtures/spec/phase1/representative-corpus --format summary
+        run: ./target/debug/agent-audit scan fixtures/spec/phase1/representative-corpus --format text
 
       - name: Run representative SARIF scan
         run: ./target/debug/agent-audit scan fixtures/spec/phase1/representative-corpus --format sarif --output target/ci-agent-audit/representative.sarif

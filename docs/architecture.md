@@ -50,7 +50,7 @@ Inventory collection lives in `agent-audit-core`:
 Rendering lives in `agent-audit-report`:
 
 - JSON serializes the full `supply_chain` inventory and structured `patterns` from `ScanReport`.
-- Summary output renders compact supply-chain counts, offline audit readiness status, and concise observed ecosystem patterns when evidence supports them.
+- Text output renders compact supply-chain counts, offline audit readiness status, and concise observed ecosystem patterns when evidence supports them.
 - SARIF renders supply-chain findings as normal rule results.
 - HTML renders a self-contained offline report without hosted assets. It is responsible for the executive summary, observed ecosystem patterns, risk distribution, host support, top risky skills, broken references, external URLs, secret usage, offline audit readiness, package inventory, findings, and per-skill detail sections. External URLs are rendered as text and are not fetched or embedded. Secret usage distinguishes actual secret evidence from prompt-risk text that mentions secret exposure.
 
@@ -77,7 +77,7 @@ compatibility
 
 The `audit` object may include optional `methodology` metadata for v0.8 public-audit batches when supplied by config or CLI: corpus name, corpus entry ID, methodology version, inclusion tags, repository classification, and scan batch ID. The field is omitted when absent so normal local scan output remains stable.
 
-The JSON schema in `docs/report.schema.json` documents the full report shape and the public-safe dataset projection emitted by `--format public-json`. Public JSON preserves methodology metadata, repository metadata, package identifiers, findings, finding groups, fingerprints, metrics, observed ecosystem patterns, and bounded evidence snippets while omitting full manifest and code bodies. External URL evidence remains available per URL in `supply_chain.external_urls`; domain-level reuse and public audit summaries use `supply_chain.external_url_domains`, which records domain counts, mutable counts, bounded examples, affected packages, and coarse classification. SARIF intentionally carries supply-chain findings as normal rule results rather than embedding the full inventory. SARIF includes rule help text, documentation URIs, category/profile tags, audit metadata, result confidence, and stable fingerprints; SARIF levels map `critical`/`high` to `error`, `medium` to `warning`, and `low`/`info` to `note`.
+The JSON schema in `docs/report.schema.json` documents the full report shape emitted by `--format json`. External URL evidence remains available per URL in `supply_chain.external_urls`; domain-level reuse and public audit summaries use `supply_chain.external_url_domains`, which records domain counts, mutable counts, bounded examples, affected packages, and coarse classification. SARIF intentionally carries supply-chain findings as normal rule results rather than embedding the full inventory. SARIF includes rule help text, documentation URIs, category/profile tags, audit metadata, result confidence, and stable fingerprints; SARIF levels map `critical`/`high` to `error`, `medium` to `warning`, and `low`/`info` to `note`.
 
 The `summary` object includes separate `actual_secret_evidence_count` and `prompt_secret_exposure_count` fields. Prompt-injection findings such as `SEC011` remain visible as findings, but they do not increase the actual secret evidence count.
 

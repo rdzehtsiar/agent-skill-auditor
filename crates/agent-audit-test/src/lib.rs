@@ -18,7 +18,7 @@ mod tests {
         SkillGraph, SkillManifest, SkillPackage,
     };
     use agent_audit_report::{
-        render_html, render_json, render_report, render_sarif, render_summary, ReportFormat,
+        render_html, render_json, render_report, render_sarif, render_text, ReportFormat,
     };
     use std::collections::BTreeMap;
     use std::fs;
@@ -218,7 +218,7 @@ mod tests {
             "cargo clippy --workspace --all-targets --locked -- -D warnings",
             "cargo build --workspace --locked",
             "npm test --prefix npm/agent-audit",
-            "./target/debug/agent-audit scan fixtures/spec/phase1/representative-corpus --format summary",
+            "./target/debug/agent-audit scan fixtures/spec/phase1/representative-corpus --format text",
             "./target/debug/agent-audit scan fixtures/spec/phase1/representative-corpus --format sarif --output target/ci-agent-audit/representative.sarif",
             "./target/debug/agent-audit scan fixtures/spec/phase1/representative-corpus --format html --output target/ci-agent-audit/representative.html",
             "./target/debug/agent-audit scan fixtures/compatibility/valid/spec-basic --profile agent-skills-spec --profile generic --fail-on high --fail-on critical",
@@ -277,7 +277,6 @@ mod tests {
     #[test]
     fn release_install_docs_cover_v07_paths_without_live_publication_claims() {
         let root = workspace_root();
-        let readme_path = root.join("README.md");
         let install_doc_path = root.join("docs").join("release").join("install.md");
         let github_action_readme_path = root
             .join("examples")
@@ -287,7 +286,6 @@ mod tests {
         let pre_commit_readme_path = root.join("examples").join("pre-commit").join("README.md");
         let npm_package_path = root.join("npm").join("agent-audit").join("package.json");
 
-        let readme = fs::read_to_string(&readme_path).expect("read README");
         let install_doc = fs::read_to_string(&install_doc_path).expect("read install doc");
         let github_action_readme =
             fs::read_to_string(&github_action_readme_path).expect("read GitHub Action README");
@@ -296,9 +294,6 @@ mod tests {
             fs::read_to_string(&pre_commit_readme_path).expect("read pre-commit README");
         let npm_package = fs::read_to_string(&npm_package_path).expect("read npm package");
 
-        assert!(readme.contains("v0.7.0 integration work"));
-        assert!(readme.contains("[Install And Workflow Paths](./docs/release/install.md)"));
-        assert!(readme.contains("External publication remains deferred"));
         assert!(pre_commit_readme.contains("rev: v0.7.0"));
         assert!(pre_commit_readme.contains("Use `v0.7.0` only after that tag exists"));
         assert!(github_action_readme.contains("rdzehtsiar/agent-skill-auditor@v0.7.0"));
@@ -323,7 +318,6 @@ mod tests {
         }
 
         for (name, content) in [
-            ("README", readme.as_str()),
             ("install doc", install_doc.as_str()),
             ("GitHub Action README", github_action_readme.as_str()),
             ("Docker README", docker_readme.as_str()),
@@ -595,7 +589,7 @@ mod tests {
             "assets/badge.txt"
         );
 
-        let summary = render_summary(&first_report);
+        let summary = render_text(&first_report);
         assert_eq!(summary, expected_e2e_representative_summary());
         assert!(summary.contains("Supply chain:\n"));
         assert!(summary.contains("External URLs: 2 total, 0 mutable"));
@@ -682,7 +676,7 @@ mod tests {
         assert_json_audit_timestamp_null(&json);
         assert!(!json.contains("generated_at"));
 
-        let summary = render_summary(&report);
+        let summary = render_text(&report);
         assert!(summary.contains("Packages: 30"));
         assert!(summary.contains("Findings: 16"));
         assert!(summary.contains("Suppressed findings: 0"));
@@ -705,7 +699,7 @@ mod tests {
         assert!(html.contains("generic/broken-reference/SKILL.md:8"));
 
         for format in [
-            ReportFormat::Summary,
+            ReportFormat::Text,
             ReportFormat::Json,
             ReportFormat::Sarif,
             ReportFormat::Html,

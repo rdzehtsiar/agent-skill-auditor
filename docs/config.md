@@ -198,7 +198,7 @@ In `--mode ci`, the summary reports the configured `fail_on` severities, the num
 
 ## Methodology Metadata
 
-`methodology` attaches optional v0.8 public-audit context to generated JSON, public JSON, and HTML reports. The scanner omits `audit.methodology` when no methodology metadata is provided, so normal local scans keep their existing deterministic shape.
+`methodology` attaches optional v0.8 public-audit context to generated JSON and HTML reports. The scanner omits `audit.methodology` when no methodology metadata is provided, so normal local scans keep their existing deterministic shape.
 
 Supported fields are:
 
@@ -216,8 +216,8 @@ The same fields can be supplied for one scan with CLI flags. CLI values override
 ```bash
 agent-audit scan ./skills \
   --config .agent-audit.yaml \
-  --format public-json \
-  --output reports/public-audit-001/dataset.json \
+  --format json \
+  --output reports/public-audit-001/report.json \
   --corpus-name "v0.8 public audit" \
   --corpus-entry-id repo-001 \
   --methodology-version 2026-05 \
@@ -226,7 +226,7 @@ agent-audit scan ./skills \
   --scan-batch-id batch-2026-05
 ```
 
-Use `--format public-json` for reusable public datasets. The public projection keeps methodology metadata, repository metadata, package identifiers, findings, finding groups, fingerprints, metrics, observed ecosystem patterns, and bounded evidence snippets while omitting full manifest bodies, code block bodies, inline code bodies, and other large manifest content. Normal `json` output remains the fuller deterministic scan report for private review.
+Use `--format json` for reusable public-audit reports. JSON keeps methodology metadata, repository metadata, package identifiers, findings, finding groups, fingerprints, metrics, observed ecosystem patterns, and the full deterministic scan model for private or reviewed publication workflows.
 
 ## Suppressions
 
@@ -298,7 +298,7 @@ Suppressed findings are not treated as active findings.
 Report behavior is format-specific:
 
 - JSON includes suppressed finding details under `suppressed_findings` and includes `summary.suppressed_finding_count`.
-- Summary output includes the suppressed finding count, but lists active findings only.
+- Text output includes the suppressed finding count, but lists active findings only.
 - HTML output includes the suppressed finding count, but lists active findings only.
 - SARIF output contains active findings only.
 

@@ -18,15 +18,13 @@ use agent_audit_core::{
 use agent_audit_rules::{active_rule_metadata, RuleMetadata, RuleSeverity};
 use serde_json::{json, Value};
 
-pub const SUPPORTED_REPORT_FORMATS: &[&str] = &["summary", "json", "public-json", "sarif", "html"];
-pub const SUPPORTED_REPORT_FORMATS_HELP: &str =
-    "supported: summary, json, public-json, sarif, html";
+pub const SUPPORTED_REPORT_FORMATS: &[&str] = &["text", "json", "sarif", "html"];
+pub const SUPPORTED_REPORT_FORMATS_HELP: &str = "supported: text, json, sarif, html";
 pub const SUPPORTED_REPORT_MODES: &[&str] = &["default", "verbose", "research", "ci", "triage"];
 pub const SUPPORTED_REPORT_MODES_HELP: &str = "supported: default, verbose, research, ci, triage";
 const SUMMARY_COMPATIBILITY_ROW_LIMIT: usize = 5;
 const CI_TOP_GROUP_LIMIT: usize = 5;
 const TRIAGE_OUTPUT_WIDTH: usize = 120;
-const PUBLIC_DATASET_SNIPPET_LIMIT: usize = 240;
 const HTML_TOP_PACKAGE_LIMIT: usize = 25;
 const HTML_TOP_DOMAIN_LIMIT: usize = 10;
 const HTML_TOP_URL_LIMIT: usize = 25;
@@ -34,9 +32,8 @@ const SUMMARY_TOP_DOMAIN_LIMIT: usize = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReportFormat {
-    Summary,
+    Text,
     Json,
-    PublicJson,
     Sarif,
     Html,
 }
@@ -44,9 +41,8 @@ pub enum ReportFormat {
 impl ReportFormat {
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Summary => "summary",
+            Self::Text => "text",
             Self::Json => "json",
-            Self::PublicJson => "public-json",
             Self::Sarif => "sarif",
             Self::Html => "html",
         }
@@ -58,9 +54,8 @@ impl FromStr for ReportFormat {
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "summary" => Ok(Self::Summary),
+            "text" => Ok(Self::Text),
             "json" => Ok(Self::Json),
-            "public-json" => Ok(Self::PublicJson),
             "sarif" => Ok(Self::Sarif),
             "html" => Ok(Self::Html),
             _ => Err(UnsupportedReportFormat {
@@ -164,9 +159,8 @@ pub fn render_report_with_mode(
     mode: ReportMode,
 ) -> serde_json::Result<String> {
     let rendered = match format {
-        ReportFormat::Summary => render_summary_with_mode(report, mode),
+        ReportFormat::Text => render_text_with_mode(report, mode),
         ReportFormat::Json => render_json(report)?,
-        ReportFormat::PublicJson => render_public_json(report)?,
         ReportFormat::Sarif => render_sarif(report)?,
         ReportFormat::Html => render_html_with_mode(report, mode),
     };
@@ -174,21 +168,21 @@ pub fn render_report_with_mode(
     Ok(with_trailing_newline(rendered))
 }
 
-pub fn render_summary(report: &ScanReport) -> String {
-    render_summary_with_mode(report, ReportMode::Default)
+pub fn render_text(report: &ScanReport) -> String {
+    render_text_with_mode(report, ReportMode::Default)
 }
 
-pub fn render_summary_with_mode(report: &ScanReport, mode: ReportMode) -> String {
+pub fn render_text_with_mode(report: &ScanReport, mode: ReportMode) -> String {
     match mode {
-        ReportMode::Default => render_default_summary(report),
-        ReportMode::Verbose => render_verbose_summary(report),
-        ReportMode::Research => render_research_summary(report),
-        ReportMode::Ci => render_ci_summary(report),
-        ReportMode::Triage => render_triage_summary(report),
+        ReportMode::Default => render_default_text(report),
+        ReportMode::Verbose => render_verbose_text(report),
+        ReportMode::Research => render_research_text(report),
+        ReportMode::Ci => render_ci_text(report),
+        ReportMode::Triage => render_triage_text(report),
     }
 }
 
-fn render_default_summary(report: &ScanReport) -> String {
+fn render_default_text(report: &ScanReport) -> String {
     let mut lines = vec![
         "Agent Skill Auditor scan summary".to_owned(),
         audit_metadata_summary(&report.audit),
@@ -254,7 +248,7 @@ fn render_default_summary(report: &ScanReport) -> String {
     lines.join("\n")
 }
 
-fn render_verbose_summary(report: &ScanReport) -> String {
+fn render_verbose_text(report: &ScanReport) -> String {
     let mut lines = summary_header("Agent Skill Auditor verbose scan summary", report);
 
     extend_supply_chain_summary(&mut lines, report);
@@ -265,7 +259,7 @@ fn render_verbose_summary(report: &ScanReport) -> String {
     lines.join("\n")
 }
 
-fn render_research_summary(report: &ScanReport) -> String {
+fn render_research_text(report: &ScanReport) -> String {
     let mut lines = summary_header("Agent Skill Auditor research scan summary", report);
 
     extend_supply_chain_summary(&mut lines, report);
@@ -277,7 +271,7 @@ fn render_research_summary(report: &ScanReport) -> String {
     lines.join("\n")
 }
 
-fn render_triage_summary(report: &ScanReport) -> String {
+fn render_triage_text(report: &ScanReport) -> String {
     let mut lines = triage_summary_header("Agent Skill Auditor triage scan summary", report);
 
     extend_triage_supply_chain_summary(&mut lines, report);
@@ -289,7 +283,7 @@ fn render_triage_summary(report: &ScanReport) -> String {
     lines.join("\n")
 }
 
-fn render_ci_summary(report: &ScanReport) -> String {
+fn render_ci_text(report: &ScanReport) -> String {
     let severity_counts = severity_counts(&report.findings);
     let category_counts = category_counts(&report.findings);
     let compatibility_counts = compatibility_status_counts(&report.compatibility);
@@ -1517,161 +1511,6 @@ fn add_compatibility_status_count(counts: &mut CompatibilityStatusCounts, status
 
 pub fn render_json(report: &ScanReport) -> serde_json::Result<String> {
     serde_json::to_string_pretty(report)
-}
-
-pub fn render_public_json(report: &ScanReport) -> serde_json::Result<String> {
-    serde_json::to_string_pretty(&public_dataset_value(report))
-}
-
-fn public_dataset_value(report: &ScanReport) -> Value {
-    json!({
-        "audit": &report.audit,
-        "repository": &report.audit.repository,
-        "packages": public_packages(report),
-        "findings": public_findings(report),
-        "finding_groups": public_finding_groups(report),
-        "metrics": public_metrics(report),
-        "patterns": &report.patterns,
-        "supply_chain": public_supply_chain(report),
-    })
-}
-
-fn public_packages(report: &ScanReport) -> Vec<Value> {
-    report
-        .packages
-        .iter()
-        .map(|package| {
-            let frontmatter_keys = package.manifest.frontmatter.keys().collect::<Vec<_>>();
-            json!({
-                "root": &package.root,
-                "manifest_path": &package.manifest_path,
-                "name": &package.manifest.name,
-                "description": &package.manifest.description,
-                "frontmatter_keys": frontmatter_keys,
-                "headings": &package.manifest.headings,
-                "links": &package.manifest.links,
-                "declared_tools": &package.manifest.declared_tools,
-                "declared_permissions": &package.manifest.declared_permissions,
-                "graph": &package.graph,
-            })
-        })
-        .collect()
-}
-
-fn public_findings(report: &ScanReport) -> Vec<Value> {
-    report
-        .findings
-        .iter()
-        .map(|finding| {
-            json!({
-                "rule_id": &finding.rule_id,
-                "fingerprint": &finding.fingerprint,
-                "severity": finding.severity,
-                "confidence": finding.confidence,
-                "category": finding.category,
-                "title": &finding.title,
-                "message": public_snippet(&finding.message),
-                "location": &finding.location,
-                "rationale": public_snippet(&finding.rationale),
-                "remediation": public_snippet(&finding.remediation),
-                "suppression": public_snippet(&finding.suppression),
-                "evidence_snippet": public_snippet(&finding.message),
-            })
-        })
-        .collect()
-}
-
-fn public_finding_groups(report: &ScanReport) -> Vec<Value> {
-    effective_finding_groups(report)
-        .iter()
-        .map(|group| {
-            let evidence_samples = group
-                .evidence_samples
-                .iter()
-                .map(|sample| {
-                    json!({
-                        "location": &sample.location,
-                        "message": public_snippet(&sample.message),
-                    })
-                })
-                .collect::<Vec<_>>();
-
-            json!({
-                "rule_id": &group.rule_id,
-                "group_fingerprint": &group.group_fingerprint,
-                "severity": group.severity,
-                "confidence": group.confidence,
-                "category": group.category,
-                "title": &group.title,
-                "rationale": public_snippet(&group.rationale),
-                "remediation": public_snippet(&group.remediation),
-                "suppression": public_snippet(&group.suppression),
-                "evidence_key": public_snippet(&group.evidence_key),
-                "dimensions": &group.dimensions,
-                "finding_count": group.finding_count,
-                "affected_package_count": group.affected_package_count,
-                "affected_packages": &group.affected_packages,
-                "evidence_samples": evidence_samples,
-            })
-        })
-        .collect()
-}
-
-fn public_metrics(report: &ScanReport) -> Value {
-    json!({
-        "summary": &report.summary,
-        "supply_chain_counts": {
-            "licenses": report.supply_chain.licenses.len(),
-            "trust_manifests": report.supply_chain.trust_manifests.len(),
-            "external_urls": report.supply_chain.external_urls.len(),
-            "external_url_domains": report.supply_chain.external_url_domains.len(),
-            "remote_dependencies": report.supply_chain.remote_dependencies.len(),
-            "dependency_manifests": report.supply_chain.dependency_manifests.len(),
-            "package_managers": report.supply_chain.package_managers.len(),
-            "lockfiles": report.supply_chain.lockfiles.len(),
-            "executables": report.supply_chain.executables.len(),
-            "binaries": report.supply_chain.binaries.len(),
-            "checksums": report.supply_chain.checksums.len(),
-            "permissions": report.supply_chain.permissions.len(),
-            "offline_readiness": report.supply_chain.offline_readiness.len(),
-        }
-    })
-}
-
-fn public_supply_chain(report: &ScanReport) -> Value {
-    let value =
-        serde_json::to_value(&report.supply_chain).expect("serialize supply-chain inventory");
-    redact_public_json_value(value)
-}
-
-fn redact_public_json_value(value: Value) -> Value {
-    match value {
-        Value::String(text) => Value::String(public_snippet(&text)),
-        Value::Array(values) => {
-            Value::Array(values.into_iter().map(redact_public_json_value).collect())
-        }
-        Value::Object(entries) => Value::Object(
-            entries
-                .into_iter()
-                .map(|(key, value)| (key, redact_public_json_value(value)))
-                .collect(),
-        ),
-        other => other,
-    }
-}
-
-fn public_snippet(value: &str) -> String {
-    let mut chars = value.chars();
-    let snippet = chars
-        .by_ref()
-        .take(PUBLIC_DATASET_SNIPPET_LIMIT)
-        .collect::<String>();
-
-    if chars.next().is_some() {
-        format!("{snippet}... [truncated]")
-    } else {
-        snippet
-    }
 }
 
 pub fn render_html(report: &ScanReport) -> String {
@@ -4086,7 +3925,7 @@ mod tests {
     use agent_audit_core::model::ScanSummary;
     use agent_audit_core::{
         build_finding_groups, EcosystemPatternEvidence, FindingConfidence, FindingLocation,
-        MarkdownCodeBlock, SkillFinding, SkillGraph, SkillManifest, SkillPackage, SkillReference,
+        SkillFinding, SkillGraph, SkillManifest, SkillPackage, SkillReference,
         SupplyChainInventory, SuppressedFinding, SuppressionMatch,
     };
     use std::collections::BTreeMap;
@@ -4094,20 +3933,13 @@ mod tests {
 
     #[test]
     fn supported_report_formats_match_phase_one_outputs() {
-        assert_eq!(
-            SUPPORTED_REPORT_FORMATS,
-            &["summary", "json", "public-json", "sarif", "html"]
-        );
+        assert_eq!(SUPPORTED_REPORT_FORMATS, &["text", "json", "sarif", "html"]);
     }
 
     #[test]
     fn report_format_parses_supported_formats() {
-        assert_eq!("summary".parse::<ReportFormat>(), Ok(ReportFormat::Summary));
+        assert_eq!("text".parse::<ReportFormat>(), Ok(ReportFormat::Text));
         assert_eq!("json".parse::<ReportFormat>(), Ok(ReportFormat::Json));
-        assert_eq!(
-            "public-json".parse::<ReportFormat>(),
-            Ok(ReportFormat::PublicJson)
-        );
         assert_eq!("sarif".parse::<ReportFormat>(), Ok(ReportFormat::Sarif));
         assert_eq!("html".parse::<ReportFormat>(), Ok(ReportFormat::Html));
     }
@@ -4121,16 +3953,15 @@ mod tests {
         assert_eq!(error.value(), "xml");
         assert_eq!(
             error.to_string(),
-            "unsupported report format 'xml' (supported: summary, json, public-json, sarif, html)"
+            "unsupported report format 'xml' (supported: text, json, sarif, html)"
         );
     }
 
     #[test]
     fn report_format_as_str_matches_supported_metadata() {
         let formats = [
-            ReportFormat::Summary,
+            ReportFormat::Text,
             ReportFormat::Json,
-            ReportFormat::PublicJson,
             ReportFormat::Sarif,
             ReportFormat::Html,
         ];
@@ -4204,92 +4035,20 @@ mod tests {
             Some(1),
         );
 
-        let summary = render_report(&report, ReportFormat::Summary).expect("render summary");
+        let text = render_report(&report, ReportFormat::Text).expect("render text");
         let json = render_report(&report, ReportFormat::Json).expect("render JSON");
-        let public_json =
-            render_report(&report, ReportFormat::PublicJson).expect("render public JSON");
         let sarif = render_report(&report, ReportFormat::Sarif).expect("render SARIF");
         let html = render_report(&report, ReportFormat::Html).expect("render HTML");
 
-        assert!(summary.starts_with("Agent Skill Auditor scan summary\n"));
+        assert!(text.starts_with("Agent Skill Auditor scan summary\n"));
         assert!(json.starts_with("{\n"));
-        assert!(public_json.starts_with("{\n"));
         assert!(sarif.contains("\"version\": \"2.1.0\""));
         assert!(html.starts_with("<!doctype html>\n"));
-        assert!(summary.ends_with('\n'));
+        assert!(text.ends_with('\n'));
         assert!(json.ends_with('\n'));
-        assert!(public_json.ends_with('\n'));
         assert!(sarif.ends_with('\n'));
         assert!(html.ends_with('\n'));
         assert_eq!(html, render_html(&report));
-    }
-
-    #[test]
-    fn public_json_redacts_manifest_bodies_and_bounds_evidence_snippets() {
-        let full_manifest_body = "PUBLIC_DATASET_FULL_MANIFEST_BODY_SHOULD_NOT_APPEAR";
-        let full_code_block = "PUBLIC_DATASET_FULL_CODE_BLOCK_SHOULD_NOT_APPEAR";
-        let long_tail = "PUBLIC_DATASET_LONG_EVIDENCE_TAIL_SHOULD_NOT_APPEAR";
-        let long_message = format!(
-            "{}{}",
-            "a".repeat(PUBLIC_DATASET_SNIPPET_LIMIT + 20),
-            long_tail
-        );
-        let mut package = review_package();
-        package.manifest.body = full_manifest_body.to_owned();
-        package.manifest.inline_code = vec![full_code_block.to_owned()];
-        package.manifest.code_blocks = vec![MarkdownCodeBlock {
-            language: Some("bash".to_owned()),
-            content: full_code_block.to_owned(),
-            line: Some(8),
-        }];
-
-        let report = report_with_packages_and_findings(
-            vec![package],
-            vec![finding(
-                "SEC001",
-                Severity::High,
-                FindingCategory::Security,
-                "Remote content piped into shell",
-                &long_message,
-                "skills/review/scripts/install.sh",
-                Some(4),
-            )],
-        );
-
-        let rendered = render_public_json(&report).expect("render public JSON");
-        let value: Value = serde_json::from_str(&rendered).expect("parse public JSON");
-
-        assert!(!rendered.contains(full_manifest_body));
-        assert!(!rendered.contains(full_code_block));
-        assert!(!rendered.contains(long_tail));
-        assert_eq!(value["audit"], serde_json::to_value(&report.audit).unwrap());
-        assert_eq!(value["repository"], Value::Null);
-        assert_eq!(
-            value["packages"][0]["manifest_path"],
-            "skills/review/SKILL.md"
-        );
-        assert_eq!(value["packages"][0]["name"], "review-skill");
-        assert!(value["packages"][0]["manifest"].is_null());
-        assert!(value["packages"][0]["body"].is_null());
-        assert!(value["packages"][0]["code_blocks"].is_null());
-        assert_eq!(
-            value["findings"][0]["fingerprint"],
-            report.findings[0].fingerprint
-        );
-        assert_eq!(
-            value["finding_groups"][0]["group_fingerprint"],
-            report.finding_groups[0].group_fingerprint
-        );
-        assert_eq!(
-            value["findings"][0]["evidence_snippet"]
-                .as_str()
-                .expect("evidence snippet")
-                .chars()
-                .count(),
-            PUBLIC_DATASET_SNIPPET_LIMIT + "... [truncated]".len()
-        );
-        assert_eq!(value["metrics"]["summary"]["package_count"], 1);
-        assert!(value["patterns"].is_array());
     }
 
     #[test]
@@ -4700,7 +4459,7 @@ mod tests {
         assert_eq!(report.summary.actual_secret_evidence_count, 1);
         assert_eq!(report.summary.prompt_secret_exposure_count, 1);
 
-        let summary = render_summary(&report);
+        let summary = render_text(&report);
         assert!(summary.contains("Actual secret evidence: 1"));
         assert!(summary.contains("Prompt secret exposure signals: 1"));
 
@@ -4831,10 +4590,10 @@ mod tests {
     }
 
     #[test]
-    fn summary_output_includes_counts_and_no_finding_state() {
+    fn text_output_includes_counts_and_no_finding_state() {
         let report = report_with_summary(2, 0, 4, 1, 0);
 
-        let summary = render_summary(&report);
+        let summary = render_text(&report);
 
         assert_eq!(
             summary,
@@ -4847,7 +4606,7 @@ mod tests {
     }
 
     #[test]
-    fn summary_output_derives_groups_for_legacy_reports_without_finding_groups() {
+    fn text_output_derives_groups_for_legacy_reports_without_finding_groups() {
         let mut report = review_skill_report(
             "SKILL001",
             Severity::Low,
@@ -4858,7 +4617,7 @@ mod tests {
         );
         report.finding_groups.clear();
 
-        let summary = render_summary(&report);
+        let summary = render_text(&report);
 
         assert!(summary.contains("Findings: 1"));
         assert!(summary.contains("Finding groups:\n"));
@@ -4933,7 +4692,7 @@ mod tests {
     }
 
     #[test]
-    fn summary_output_includes_clean_supply_chain_counts() {
+    fn text_output_includes_clean_supply_chain_counts() {
         let mut report = report_with_summary(1, 0, 0, 0, 0);
         report.supply_chain = supply_chain_inventory(json!({
             "licenses": [
@@ -4990,7 +4749,7 @@ mod tests {
             ]
         }));
 
-        let summary = render_summary(&report);
+        let summary = render_text(&report);
 
         assert_in_order(
             &summary,
@@ -5014,7 +4773,7 @@ mod tests {
     }
 
     #[test]
-    fn summary_output_includes_finding_heavy_supply_chain_counts() {
+    fn text_output_includes_finding_heavy_supply_chain_counts() {
         let mut report = report_with_findings(vec![
             finding(
                 "SUPPLY003",
@@ -5178,7 +4937,7 @@ mod tests {
             ]
         }));
 
-        let summary = render_summary(&report);
+        let summary = render_text(&report);
 
         assert_in_order(
             &summary,
@@ -5208,7 +4967,7 @@ mod tests {
     }
 
     #[test]
-    fn summary_output_does_not_count_requirements_manifests_as_lockfiles() {
+    fn text_output_does_not_count_requirements_manifests_as_lockfiles() {
         let mut report = report_with_summary(1, 0, 0, 0, 0);
         report.supply_chain = supply_chain_inventory(json!({
             "licenses": [],
@@ -5250,7 +5009,7 @@ mod tests {
             "offline_readiness": []
         }));
 
-        let summary = render_summary(&report);
+        let summary = render_text(&report);
 
         assert!(summary.contains("Dependency manifests: 2 total, 1 exact-pinned, 1 range-based"));
         assert!(summary.contains("Lockfiles: 0 evidence"));
@@ -5326,7 +5085,7 @@ mod tests {
     }
 
     #[test]
-    fn summary_output_includes_compatibility_totals_and_rows() {
+    fn text_output_includes_compatibility_totals_and_rows() {
         let mut report = report_with_summary(2, 1, 0, 0, 0);
         report.compatibility = serde_json::from_value(json!({
             "profiles": ["agent-skills-spec", "codex", "generic", "future-host"],
@@ -5387,7 +5146,7 @@ mod tests {
         }))
         .expect("compatibility matrix fixture");
 
-        let summary = render_summary(&report);
+        let summary = render_text(&report);
 
         assert_in_order(
             &summary,
@@ -5410,14 +5169,14 @@ mod tests {
     }
 
     #[test]
-    fn summary_output_handles_profile_selection_without_matrix_rows() {
+    fn text_output_handles_profile_selection_without_matrix_rows() {
         let mut report = report_with_summary(0, 0, 0, 0, 0);
         report.compatibility = CompatibilityMatrix {
             profiles: vec!["codex".to_owned(), "generic".to_owned()],
             matrix: Vec::new(),
         };
 
-        let summary = render_summary(&report);
+        let summary = render_text(&report);
 
         assert!(summary.contains("Profiles: codex, generic"));
         assert!(summary.contains("Status totals: pass=0 warn=0 fail=0 unknown=0 untested=0"));
@@ -5425,7 +5184,7 @@ mod tests {
     }
 
     #[test]
-    fn summary_output_omits_large_compatibility_row_sets() {
+    fn text_output_omits_large_compatibility_row_sets() {
         let mut report = report_with_summary(6, 0, 0, 0, 0);
         let matrix = (0..6)
             .map(|index| {
@@ -5448,7 +5207,7 @@ mod tests {
         }))
         .expect("compatibility matrix fixture");
 
-        let summary = render_summary(&report);
+        let summary = render_text(&report);
 
         assert!(summary.contains("- codex: pass=0 warn=6 fail=0 unknown=0 untested=0"));
         assert!(summary.contains("Rows: 6 packages omitted from summary"));
@@ -5456,7 +5215,7 @@ mod tests {
     }
 
     #[test]
-    fn summary_output_orders_finding_groups_and_uses_lowercase_metadata() {
+    fn text_output_orders_finding_groups_and_uses_lowercase_metadata() {
         let report = report_with_findings(vec![
             finding(
                 "SKILL020",
@@ -5496,7 +5255,7 @@ mod tests {
             ),
         ]);
 
-        let summary = render_summary(&report);
+        let summary = render_text(&report);
 
         assert!(summary.contains("Packages: 0"));
         assert!(summary.contains("Findings: 4"));
@@ -5523,7 +5282,7 @@ mod tests {
     fn default_summary_mode_keeps_grouped_limited_samples() {
         let report = repeated_finding_report(4);
 
-        let summary = render_summary_with_mode(&report, ReportMode::Default);
+        let summary = render_text_with_mode(&report, ReportMode::Default);
 
         assert!(summary.contains("Agent Skill Auditor scan summary"));
         assert!(summary.contains("Finding groups:"));
@@ -5549,7 +5308,7 @@ mod tests {
             evidence: vec![],
         }];
 
-        let summary = render_summary(&report);
+        let summary = render_text(&report);
 
         assert!(summary.contains("Observed ecosystem patterns:"));
         assert!(summary.contains("- Dependency reproducibility gaps in executable skills: Executable dependency setup has reproducibility gaps in 4 of 4 packages (100%). count=4 packages=100%"));
@@ -5616,7 +5375,7 @@ mod tests {
             ),
         ];
 
-        let summary = render_summary_with_mode(&report, ReportMode::Triage);
+        let summary = render_text_with_mode(&report, ReportMode::Triage);
 
         assert!(summary.contains("Observed skill collection patterns:"));
         assert!(!summary.contains("Observed ecosystem patterns:"));
@@ -5655,7 +5414,7 @@ mod tests {
             vec![("SEC012", 1)],
         )];
 
-        let summary = render_summary_with_mode(&report, ReportMode::Triage);
+        let summary = render_text_with_mode(&report, ReportMode::Triage);
 
         assert!(summary.contains("  1/2000 package (<0.1%) | evidence item: 1"));
         assert!(!summary.contains("  1/2000 package (0%)"));
@@ -5673,7 +5432,7 @@ mod tests {
             vec![("mutable_external_urls", 1)],
         )];
 
-        let summary = render_summary_with_mode(&report, ReportMode::Triage);
+        let summary = render_text_with_mode(&report, ReportMode::Triage);
 
         assert!(summary.contains("  1/864 package (0.1%) | mutable URL: 1"));
         assert!(!summary.contains("mutable URLs: 1"));
@@ -5684,7 +5443,7 @@ mod tests {
     fn triage_summary_renders_empty_skill_collection_pattern_state() {
         let report = report_with_summary(0, 0, 0, 0, 0);
 
-        let summary = render_summary_with_mode(&report, ReportMode::Triage);
+        let summary = render_text_with_mode(&report, ReportMode::Triage);
 
         assert!(summary
             .contains("Observed skill collection patterns: No notable collection-level patterns."));
@@ -5695,7 +5454,7 @@ mod tests {
     fn triage_summary_adds_header_group_counts_and_empty_states() {
         let report = report_with_summary(0, 0, 0, 0, 0);
 
-        let summary = render_summary_with_mode(&report, ReportMode::Triage);
+        let summary = render_text_with_mode(&report, ReportMode::Triage);
 
         assert_in_order(
             &summary,
@@ -5716,7 +5475,7 @@ mod tests {
     fn triage_summary_counts_rendered_groups_and_rule_types() {
         let report = repeated_finding_report(4);
 
-        let summary = render_summary_with_mode(&report, ReportMode::Triage);
+        let summary = render_text_with_mode(&report, ReportMode::Triage);
 
         assert!(summary.contains("Findings: 4 occurrences"));
         assert!(summary.contains("Finding groups: 1"));
@@ -5821,7 +5580,7 @@ mod tests {
             ]
         }));
 
-        let summary = render_summary_with_mode(&report, ReportMode::Triage);
+        let summary = render_text_with_mode(&report, ReportMode::Triage);
 
         assert_in_order(
             &summary,
@@ -5896,7 +5655,7 @@ mod tests {
             ]
         }));
 
-        let summary = render_summary_with_mode(&report, ReportMode::Triage);
+        let summary = render_text_with_mode(&report, ReportMode::Triage);
 
         assert_in_order(
             &summary,
@@ -5917,7 +5676,7 @@ mod tests {
     fn verbose_summary_mode_expands_all_findings() {
         let report = repeated_finding_report(4);
 
-        let summary = render_summary_with_mode(&report, ReportMode::Verbose);
+        let summary = render_text_with_mode(&report, ReportMode::Verbose);
 
         assert!(summary.contains("Agent Skill Auditor verbose scan summary"));
         assert!(summary.contains("Full findings:"));
@@ -5933,7 +5692,7 @@ mod tests {
     fn research_summary_mode_keeps_groups_and_adds_normalized_full_evidence() {
         let report = repeated_finding_report(4);
 
-        let summary = render_summary_with_mode(&report, ReportMode::Research);
+        let summary = render_text_with_mode(&report, ReportMode::Research);
 
         assert!(summary.contains("Agent Skill Auditor research scan summary"));
         assert!(summary.contains("Audit: "));
@@ -5967,7 +5726,7 @@ mod tests {
             )],
         );
 
-        let summary = render_summary_with_mode(&report, ReportMode::Triage);
+        let summary = render_text_with_mode(&report, ReportMode::Triage);
 
         assert!(summary.contains("Agent Skill Auditor triage scan summary"));
         assert!(summary.contains("Finding groups:"));
@@ -6068,7 +5827,7 @@ mod tests {
             ],
         );
 
-        let summary = render_summary_with_mode(&report, ReportMode::Triage);
+        let summary = render_text_with_mode(&report, ReportMode::Triage);
         let lower = summary.to_ascii_lowercase();
 
         assert!(summary.contains("not defined by selected host profiles"));
@@ -6091,7 +5850,7 @@ mod tests {
             Some(3),
         );
 
-        let summary = render_summary_with_mode(&report, ReportMode::Triage);
+        let summary = render_text_with_mode(&report, ReportMode::Triage);
         let json = render_report_with_mode(&report, ReportFormat::Json, ReportMode::Triage)
             .expect("render JSON");
         let json_value: Value = serde_json::from_str(&json).expect("parse JSON");
@@ -6126,7 +5885,7 @@ mod tests {
             arch: "x86_64".to_owned(),
         });
 
-        let summary = render_summary_with_mode(&report, ReportMode::Triage);
+        let summary = render_text_with_mode(&report, ReportMode::Triage);
         let audit_lines = summary
             .lines()
             .filter(|line| line.starts_with("Audit: ") || line.starts_with("       "))
@@ -6330,7 +6089,7 @@ mod tests {
                 > 1
         );
 
-        let summary = render_summary_with_mode(&report, ReportMode::Triage);
+        let summary = render_text_with_mode(&report, ReportMode::Triage);
 
         assert_eq!(
             summary
@@ -6415,7 +6174,7 @@ mod tests {
     fn ci_summary_mode_is_compact_and_reports_top_groups() {
         let report = repeated_finding_report(4);
 
-        let summary = render_summary_with_mode(&report, ReportMode::Ci);
+        let summary = render_text_with_mode(&report, ReportMode::Ci);
 
         assert!(summary.contains("Agent Skill Auditor CI scan summary"));
         assert!(summary.contains("CI policy: fail_on=none blocking_groups=0 non_blocking_groups=1"));
@@ -6438,15 +6197,15 @@ mod tests {
     #[test]
     fn ci_summary_reports_blocking_groups_output_path_and_exit_behavior() {
         let mut report = repeated_finding_report(4);
-        report.audit.command.format = Some("summary".to_owned());
+        report.audit.command.format = Some("text".to_owned());
         report.audit.command.output = Some("reports/ci.txt".to_owned());
         report.audit.command.fail_on = vec!["medium".to_owned(), "high".to_owned()];
 
-        let summary = render_summary_with_mode(&report, ReportMode::Ci);
+        let summary = render_text_with_mode(&report, ReportMode::Ci);
 
         assert!(summary
             .contains("CI policy: fail_on=medium,high blocking_groups=1 non_blocking_groups=0"));
-        assert!(summary.contains("Report output: reports/ci.txt (format=summary)"));
+        assert!(summary.contains("Report output: reports/ci.txt (format=text)"));
         assert!(summary.contains("Exit code behavior: returns 1 after rendering because at least one unsuppressed finding exactly matches fail_on."));
         assert!(summary.contains("Top blocking groups: showing 1 of 1 canonical blocking groups."));
         assert!(summary.contains("BLOCKING SEC009 [medium] x4 packages=4"));
@@ -7020,7 +6779,7 @@ mod tests {
     fn default_summary_uses_canonical_dependency_reproducibility_finding_groups() {
         let report = dependency_reproducibility_report();
 
-        let summary = render_summary(&report);
+        let summary = render_text(&report);
 
         assert!(summary.contains("SEC009 [low/medium/security] x1 packages=1"));
         assert!(summary.contains("SUPPLY003 [medium/medium/reproducibility] x1 packages=1"));
@@ -7047,7 +6806,7 @@ mod tests {
     fn verbose_summary_preserves_expanded_dependency_reproducibility_findings() {
         let report = dependency_reproducibility_report();
 
-        let summary = render_summary_with_mode(&report, ReportMode::Verbose);
+        let summary = render_text_with_mode(&report, ReportMode::Verbose);
 
         assert!(summary.contains("SEC009 [low/medium/security] skills/deps/scripts/install.sh:3"));
         assert!(summary.contains(
@@ -7128,8 +6887,8 @@ mod tests {
             .map(|group| (group.rule_id.as_str(), group.group_fingerprint.as_str()))
             .collect::<Vec<_>>();
 
-        let default_summary = render_summary_with_mode(&report, ReportMode::Default);
-        let research_summary = render_summary_with_mode(&report, ReportMode::Research);
+        let default_summary = render_text_with_mode(&report, ReportMode::Default);
+        let research_summary = render_text_with_mode(&report, ReportMode::Research);
         let html = render_html(&report);
         let json: Value =
             serde_json::from_str(&render_json(&report).expect("render JSON")).expect("parse JSON");

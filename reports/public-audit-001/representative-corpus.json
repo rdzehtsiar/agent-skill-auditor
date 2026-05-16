@@ -38,6 +38,16 @@
       "supply_chain": false,
       "strict_supply_chain": false
     },
+    "methodology": {
+      "corpus_name": "v0.8 public audit",
+      "corpus_entry_id": "phase1-representative",
+      "methodology_version": "2026-05",
+      "inclusion_tags": [
+        "synthetic"
+      ],
+      "repo_classification": "fixture-corpus",
+      "scan_batch_id": "public-audit-001"
+    },
     "platform": {
       "os": "windows",
       "arch": "x86_64",
