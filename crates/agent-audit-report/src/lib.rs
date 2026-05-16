@@ -174,69 +174,119 @@ pub fn render_text_with_mode(report: &ScanReport, mode: ReportMode) -> String {
 }
 
 fn render_summary_text(report: &ScanReport) -> String {
-    let mut lines = vec![
-        "Agent Skill Auditor scan summary".to_owned(),
-        audit_metadata_summary(&report.audit),
-        format!("Packages: {}", report.summary.package_count),
-        format!("Findings: {}", report.summary.finding_count),
-        format!(
-            "Suppressed findings: {}",
-            report.summary.suppressed_finding_count
-        ),
-        format!(
-            "Invalid manifests: {}",
-            report.summary.invalid_manifest_count
-        ),
-        format!(
-            "Broken references: {}",
-            report.summary.broken_reference_count
-        ),
-        format!(
-            "Actual secret evidence: {}",
-            report.summary.actual_secret_evidence_count
-        ),
-        format!(
-            "Prompt secret exposure signals: {}",
-            report.summary.prompt_secret_exposure_count
-        ),
-    ];
+    let mut lines = vec!["Agent Skill Auditor scan summary".to_owned()];
 
-    extend_supply_chain_summary(&mut lines, report);
-    extend_compatibility_summary(&mut lines, &report.compatibility);
-    extend_ecosystem_patterns_summary(&mut lines, report);
-
-    let finding_groups = effective_finding_groups(report);
-    if finding_groups.is_empty() {
-        lines.push(String::new());
-        lines.push("No findings.".to_owned());
-    } else {
-        lines.push(String::new());
-        lines.push("Finding groups:".to_owned());
-
-        for group in finding_groups.iter() {
-            lines.push(format!(
-                "{} [{}/{}/{}] x{} packages={}{}: {} fingerprint={}",
-                group.rule_id,
-                severity_name(group.severity),
-                confidence_name(group.confidence),
-                category_name(group.category),
-                group.finding_count,
-                group.affected_package_count,
-                summary_group_dimensions(group),
-                group.title,
-                group.group_fingerprint
-            ));
-            for sample in &group.evidence_samples {
-                lines.push(format!(
-                    "  sample: {}: {}",
-                    location_display(&sample.location.path, sample.location.line),
-                    sample.message
-                ));
-            }
-        }
-    }
+    extend_summary_audit_section(&mut lines, &report.audit);
+    extend_summary_scope_section(&mut lines, report);
+    extend_summary_findings_section(&mut lines, report);
+    extend_summary_supply_chain_section(&mut lines, report);
+    extend_summary_compatibility_section(&mut lines, &report.compatibility);
+    extend_summary_patterns_section(&mut lines, report);
 
     lines.join("\n")
+}
+
+fn extend_summary_audit_section(lines: &mut Vec<String>, audit: &AuditMetadata) {
+    lines.push(String::new());
+    lines.push("Audit:".to_owned());
+    lines.push(format!(
+        "  scanner: {}/{}",
+        audit.scanner.name, audit.scanner.version
+    ));
+    lines.push(format!(
+        "  ruleset: {} ({})",
+        audit.ruleset.version, audit.ruleset.hash
+    ));
+    lines.push(format!("  schema: {}", audit.output_schema_version));
+    lines.push(format!(
+        "  profiles: {} selected",
+        format_count(audit.host_profiles.selected.len())
+    ));
+    lines.push(format!(
+        "  scan root: {}",
+        audit.scan.root.as_deref().unwrap_or("unspecified")
+    ));
+    lines.push(format!("  git: {}", summary_git_status(audit)));
+    lines.push(format!("  platform: {}", summary_platform(audit)));
+    lines.push(format!(
+        "  timestamp: {}",
+        audit.timestamp.as_deref().unwrap_or("not-recorded")
+    ));
+}
+
+fn summary_git_status(audit: &AuditMetadata) -> String {
+    let Some(repository) = audit.repository.as_ref() else {
+        return "not-detected".to_owned();
+    };
+
+    let commit = repository
+        .commit
+        .as_deref()
+        .map(short_commit)
+        .unwrap_or("unknown");
+    match repository.dirty {
+        Some(true) => format!("{commit} dirty"),
+        Some(false) => format!("{commit} clean"),
+        None => commit.to_owned(),
+    }
+}
+
+fn summary_platform(audit: &AuditMetadata) -> String {
+    audit
+        .platform
+        .as_ref()
+        .map(|platform| format!("{}/{}/{}", platform.family, platform.os, platform.arch))
+        .unwrap_or_else(|| "not-recorded".to_owned())
+}
+
+fn extend_summary_scope_section(lines: &mut Vec<String>, report: &ScanReport) {
+    lines.push(String::new());
+    lines.push("Scope:".to_owned());
+    lines.push(format!(
+        "  packages: {}",
+        format_count(report.summary.package_count)
+    ));
+    lines.push(format!(
+        "  invalid manifests: {}",
+        format_count(report.summary.invalid_manifest_count)
+    ));
+    lines.push(format!(
+        "  broken references: {}",
+        format_count(report.summary.broken_reference_count)
+    ));
+    lines.push(format!(
+        "  suppressed findings: {}",
+        format_count(report.summary.suppressed_finding_count)
+    ));
+}
+
+fn extend_summary_findings_section(lines: &mut Vec<String>, report: &ScanReport) {
+    let groups = effective_finding_groups(report);
+    let severity_counts = severity_counts(&report.findings);
+
+    lines.push(String::new());
+    lines.push("Findings:".to_owned());
+    lines.push(format!(
+        "  occurrences: {}",
+        format_count(report.summary.finding_count)
+    ));
+    lines.push(format!("  groups: {}", format_count(groups.len())));
+    lines.push(format!(
+        "  severity: critical={} high={} medium={} low={} info={}",
+        format_count(severity_counts.critical),
+        format_count(severity_counts.high),
+        format_count(severity_counts.medium),
+        format_count(severity_counts.low),
+        format_count(severity_counts.info)
+    ));
+    lines.push(format!(
+        "  actual secret evidence: {}",
+        format_count(report.summary.actual_secret_evidence_count)
+    ));
+    lines.push(format!(
+        "  prompt secret exposure signals: {}",
+        format_count(report.summary.prompt_secret_exposure_count)
+    ));
 }
 
 fn render_research_text(report: &ScanReport) -> String {
@@ -401,6 +451,20 @@ fn triage_rule_type_count(report: &ScanReport) -> usize {
 
 fn short_commit(commit: &str) -> &str {
     commit.get(..12).unwrap_or(commit)
+}
+
+fn format_count(count: usize) -> String {
+    let raw = count.to_string();
+    let mut formatted = String::with_capacity(raw.len() + raw.len() / 3);
+
+    for (index, ch) in raw.chars().rev().enumerate() {
+        if index > 0 && index % 3 == 0 {
+            formatted.push(',');
+        }
+        formatted.push(ch);
+    }
+
+    formatted.chars().rev().collect()
 }
 
 fn extend_research_finding_groups_summary(lines: &mut Vec<String>, report: &ScanReport) {
@@ -689,6 +753,86 @@ fn extend_supply_chain_summary(lines: &mut Vec<String>, report: &ScanReport) {
     extend_supply_chain_summary_with_options(lines, report, false);
 }
 
+fn extend_summary_supply_chain_section(lines: &mut Vec<String>, report: &ScanReport) {
+    let supply_chain = &report.supply_chain;
+    let finding_counts = supply_chain_finding_counts(&report.findings);
+    let readiness_counts = offline_readiness_counts(supply_chain);
+    let manifest_counts = dependency_manifest_counts(supply_chain);
+    let install_command_count = install_command_count(supply_chain);
+    let invalid_trust_manifests = supply_chain
+        .trust_manifests
+        .iter()
+        .filter(|manifest| manifest.valid == Some(false))
+        .count();
+    let mutable_urls = supply_chain
+        .external_urls
+        .iter()
+        .filter(|url| url.pinned == Some(false))
+        .count();
+    let unpinned_dependencies = supply_chain
+        .remote_dependencies
+        .iter()
+        .filter(|dependency| dependency.pinned == Some(false))
+        .count();
+
+    lines.push(String::new());
+    lines.push("Supply chain:".to_owned());
+    lines.push(format!(
+        "  licenses: {}",
+        format_count(supply_chain.licenses.len())
+    ));
+    lines.push(format!(
+        "  trust manifests: {} total, {} invalid",
+        format_count(supply_chain.trust_manifests.len()),
+        format_count(invalid_trust_manifests)
+    ));
+    lines.push(format!(
+        "  external URLs: {} total, {} mutable",
+        format_count(supply_chain.external_urls.len()),
+        format_count(mutable_urls)
+    ));
+    lines.push(format!(
+        "  dependencies: {} total, {} unpinned",
+        format_count(supply_chain.remote_dependencies.len()),
+        format_count(unpinned_dependencies)
+    ));
+    lines.push(format!(
+        "  dependency manifests: {} total, {} exact-pinned, {} range-based",
+        format_count(manifest_counts.total),
+        format_count(manifest_counts.exact_pinned),
+        format_count(manifest_counts.range_based)
+    ));
+    lines.push(format!(
+        "  lockfiles: {}",
+        format_count(supply_chain.lockfiles.len())
+    ));
+    lines.push(format!(
+        "  install commands: {} total, {} with reproducibility gaps",
+        format_count(install_command_count),
+        format_count(finding_counts.install_without_reproducibility_evidence)
+    ));
+    lines.push(format!(
+        "  executables/binaries: {} executable, {} binary",
+        format_count(supply_chain.executables.len()),
+        format_count(supply_chain.binaries.len())
+    ));
+    lines.push(format!(
+        "  checksums: {}",
+        format_count(supply_chain.checksums.len())
+    ));
+    lines.push(format!(
+        "  permission conflicts: {}",
+        format_count(finding_counts.permission_conflicts)
+    ));
+    lines.push(format!(
+        "  offline audit readiness: ready={} partial={} not-ready={} unknown={}",
+        format_count(readiness_counts.ready),
+        format_count(readiness_counts.partial),
+        format_count(readiness_counts.not_ready),
+        format_count(readiness_counts.unknown)
+    ));
+}
+
 fn extend_triage_supply_chain_summary(lines: &mut Vec<String>, report: &ScanReport) {
     extend_supply_chain_summary_with_options(lines, report, true);
 }
@@ -888,6 +1032,39 @@ fn extend_compatibility_summary(lines: &mut Vec<String>, compatibility: &Compati
     lines.push(String::new());
     lines.push("Compatibility:".to_owned());
     extend_compatibility_summary_content(lines, compatibility);
+}
+
+fn extend_summary_compatibility_section(
+    lines: &mut Vec<String>,
+    compatibility: &CompatibilityMatrix,
+) {
+    lines.push(String::new());
+    lines.push("Compatibility:".to_owned());
+
+    if compatibility.is_empty() {
+        lines.push("  profiles: 0".to_owned());
+        lines.push("  package rows: 0".to_owned());
+        lines.push("  status totals: pass=0 warn=0 fail=0 unknown=0 untested=0".to_owned());
+        return;
+    }
+
+    let counts = compatibility_status_counts(compatibility);
+    lines.push(format!(
+        "  profiles: {}",
+        format_count(compatibility.profiles.len())
+    ));
+    lines.push(format!(
+        "  package rows: {}",
+        format_count(compatibility.matrix.len())
+    ));
+    lines.push(format!(
+        "  status totals: pass={} warn={} fail={} unknown={} untested={}",
+        format_count(counts.pass),
+        format_count(counts.warn),
+        format_count(counts.fail),
+        format_count(counts.unknown),
+        format_count(counts.untested)
+    ));
 }
 
 fn extend_compatibility_summary_content(
@@ -1184,6 +1361,15 @@ fn extend_ecosystem_patterns_summary(lines: &mut Vec<String>, report: &ScanRepor
             pattern.title, pattern.summary, pattern.count, pattern.affected_package_percent
         ));
     }
+}
+
+fn extend_summary_patterns_section(lines: &mut Vec<String>, report: &ScanReport) {
+    lines.push(String::new());
+    lines.push("Patterns:".to_owned());
+    lines.push(format!(
+        "  observed skill collection patterns: {}",
+        format_count(effective_ecosystem_patterns(report).len())
+    ));
 }
 
 fn extend_triage_skill_collection_patterns_summary(lines: &mut Vec<String>, report: &ScanReport) {
@@ -4134,8 +4320,8 @@ mod tests {
         assert_eq!(report.summary.prompt_secret_exposure_count, 1);
 
         let summary = render_text(&report);
-        assert!(summary.contains("Actual secret evidence: 1"));
-        assert!(summary.contains("Prompt secret exposure signals: 1"));
+        assert!(summary.contains("  actual secret evidence: 1"));
+        assert!(summary.contains("  prompt secret exposure signals: 1"));
 
         let value: Value =
             serde_json::from_str(&render_json(&report).expect("render JSON")).expect("parse JSON");
@@ -4271,16 +4457,21 @@ mod tests {
 
         assert_eq!(
             summary,
-            format!(
-                "Agent Skill Auditor scan summary\n{}\nPackages: 2\nFindings: 0\nSuppressed findings: 4\nInvalid manifests: 1\nBroken references: 0\nActual secret evidence: 0\nPrompt secret exposure signals: 0\n\nSupply chain:\nLicenses: 0 evidence\nTrust manifests: 0 total, 0 invalid\nExternal URLs: 0 total, 0 mutable\nDependencies: 0 observed, 0 unpinned\nDependency manifests: 0 total, 0 exact-pinned, 0 range-based\nLockfiles: 0 evidence\nInstall commands: 0 observed, 0 without reproducibility evidence\nExecutables: 0 evidence\nBinaries: 0 evidence\nChecksums: 0 evidence\nPermissions: 0 evidence, 0 conflicts\nOffline audit readiness: ready=0 partial=0 not-ready=0 unknown=0\n\nNo findings.",
-                audit_metadata_summary(&report.audit)
-            )
+            "Agent Skill Auditor scan summary\n\nAudit:\n  scanner: agent-audit/0.6.0\n  ruleset: 0.6.0 (fnv1a64:ce2cbacc2fe36422)\n  schema: 1\n  profiles: 0 selected\n  scan root: unspecified\n  git: not-detected\n  platform: not-recorded\n  timestamp: not-recorded\n\nScope:\n  packages: 2\n  invalid manifests: 1\n  broken references: 0\n  suppressed findings: 4\n\nFindings:\n  occurrences: 0\n  groups: 0\n  severity: critical=0 high=0 medium=0 low=0 info=0\n  actual secret evidence: 0\n  prompt secret exposure signals: 0\n\nSupply chain:\n  licenses: 0\n  trust manifests: 0 total, 0 invalid\n  external URLs: 0 total, 0 mutable\n  dependencies: 0 total, 0 unpinned\n  dependency manifests: 0 total, 0 exact-pinned, 0 range-based\n  lockfiles: 0\n  install commands: 0 total, 0 with reproducibility gaps\n  executables/binaries: 0 executable, 0 binary\n  checksums: 0\n  permission conflicts: 0\n  offline audit readiness: ready=0 partial=0 not-ready=0 unknown=0\n\nCompatibility:\n  profiles: 0\n  package rows: 0\n  status totals: pass=0 warn=0 fail=0 unknown=0 untested=0\n\nPatterns:\n  observed skill collection patterns: 0"
         );
-        assert!(summary.contains("timestamp=null"));
+        assert!(summary.contains("timestamp: not-recorded"));
     }
 
     #[test]
-    fn text_output_derives_groups_for_legacy_reports_without_finding_groups() {
+    fn summary_count_formatter_groups_decimal_thousands() {
+        assert_eq!(format_count(0), "0");
+        assert_eq!(format_count(999), "999");
+        assert_eq!(format_count(1_034), "1,034");
+        assert_eq!(format_count(5_154), "5,154");
+    }
+
+    #[test]
+    fn text_output_summarizes_legacy_reports_without_finding_groups() {
         let mut report = review_skill_report(
             "SKILL001",
             Severity::Low,
@@ -4293,10 +4484,11 @@ mod tests {
 
         let summary = render_text(&report);
 
-        assert!(summary.contains("Findings: 1"));
-        assert!(summary.contains("Finding groups:\n"));
-        assert!(summary.contains("SKILL001 [low/medium/spec] x1 packages=1"));
-        assert!(summary.contains("sample: skills/review/SKILL.md:1"));
+        assert!(summary.contains("  occurrences: 1"));
+        assert!(summary.contains("  groups: 1"));
+        assert!(summary.contains("  severity: critical=0 high=0 medium=0 low=1 info=0"));
+        assert!(!summary.contains("SKILL001 [low/medium/spec] x1 packages=1"));
+        assert!(!summary.contains("sample: skills/review/SKILL.md:1"));
         assert!(!summary.contains("\nNo findings."));
     }
 
@@ -4423,7 +4615,7 @@ mod tests {
             ]
         }));
 
-        let summary = render_text(&report);
+        let summary = render_text_with_mode(&report, ReportMode::Research);
 
         assert_in_order(
             &summary,
@@ -4441,7 +4633,8 @@ mod tests {
                 "Checksums: 0 evidence",
                 "Permissions: 0 evidence, 0 conflicts",
                 "Offline audit readiness: ready=1 partial=0 not-ready=0 unknown=0",
-                "No findings.",
+                "Finding groups: none",
+                "Full findings: none",
             ],
         );
     }
@@ -4611,7 +4804,7 @@ mod tests {
             ]
         }));
 
-        let summary = render_text(&report);
+        let summary = render_text_with_mode(&report, ReportMode::Research);
 
         assert_in_order(
             &summary,
@@ -4632,10 +4825,10 @@ mod tests {
                 "Permissions: 1 evidence, 1 conflicts",
                 "Offline audit readiness: ready=0 partial=1 not-ready=1 unknown=0",
                 "Finding groups:",
-                "SUPPLY003 [medium/medium/reproducibility] x1 packages=0 command_pattern=npm install package_manager=npm: Install command without matching reproducibility evidence",
-                "sample: scripts/install.sh:2: npm install is not paired with matching reproducibility evidence.",
-                "SUPPLY009 [medium/medium/security] x1 packages=0 evidence=network access conflicts with declared permissions: Observed permission conflicts with trust manifest",
-                "sample: scripts/upload.sh:4: Network access conflicts with declared permissions.",
+                "SUPPLY003 group_fingerprint=",
+                "evidence_sample: scripts/install.sh:2: npm install is not paired with matching reproducibility evidence.",
+                "SUPPLY009 group_fingerprint=",
+                "evidence_sample: scripts/upload.sh:4: Network access conflicts with declared permissions.",
             ],
         );
     }
@@ -4683,7 +4876,7 @@ mod tests {
             "offline_readiness": []
         }));
 
-        let summary = render_text(&report);
+        let summary = render_text_with_mode(&report, ReportMode::Research);
 
         assert!(summary.contains("Dependency manifests: 2 total, 1 exact-pinned, 1 range-based"));
         assert!(summary.contains("Lockfiles: 0 evidence"));
@@ -4820,7 +5013,7 @@ mod tests {
         }))
         .expect("compatibility matrix fixture");
 
-        let summary = render_text(&report);
+        let summary = render_text_with_mode(&report, ReportMode::Research);
 
         assert_in_order(
             &summary,
@@ -4837,7 +5030,8 @@ mod tests {
                 "Rows:",
                 "- alpha/SKILL.md (alpha): agent-skills-spec=pass, codex=warn(SKILL050), generic=pass, future-host=untested",
                 "- beta/SKILL.md: agent-skills-spec=fail(SKILL002), codex=unknown, generic=warn(SKILL040), future-host=untested",
-                "No findings.",
+                "Finding groups: none",
+                "Full findings: none",
             ],
         );
     }
@@ -4850,7 +5044,7 @@ mod tests {
             matrix: Vec::new(),
         };
 
-        let summary = render_text(&report);
+        let summary = render_text_with_mode(&report, ReportMode::Research);
 
         assert!(summary.contains("Profiles: codex, generic"));
         assert!(summary.contains("Status totals: pass=0 warn=0 fail=0 unknown=0 untested=0"));
@@ -4881,7 +5075,7 @@ mod tests {
         }))
         .expect("compatibility matrix fixture");
 
-        let summary = render_text(&report);
+        let summary = render_text_with_mode(&report, ReportMode::Research);
 
         assert!(summary.contains("- codex: pass=0 warn=6 fail=0 unknown=0 untested=0"));
         assert!(summary.contains("Rows: 6 packages omitted from summary"));
@@ -4929,7 +5123,7 @@ mod tests {
             ),
         ]);
 
-        let summary = render_text(&report);
+        let summary = render_text_with_mode(&report, ReportMode::Research);
 
         assert!(summary.contains("Packages: 0"));
         assert!(summary.contains("Findings: 4"));
@@ -4940,29 +5134,30 @@ mod tests {
             &summary,
             &[
                 "Finding groups:",
-                "SEC005 [high/medium/security] x1 packages=0 evidence=line two: Use of sudo",
-                "sample: alpha/SKILL.md:2: Line two.",
-                "SKILL001 [info/medium/quality] x1 packages=0 evidence=line one: Missing skill name",
-                "sample: alpha/SKILL.md:1: Line one.",
-                "SKILL010 [low/medium/compatibility] x1 packages=0 evidence=no line sorts before line: Broken relative reference",
-                "sample: alpha/SKILL.md: No line sorts before line.",
-                "SKILL020 [medium/medium/spec] x1 packages=0 evidence=later path: Oversized skill manifest",
-                "sample: zeta/SKILL.md:1: Later path.",
+                "SEC005 group_fingerprint=",
+                "evidence_sample: alpha/SKILL.md:2: Line two.",
+                "SKILL001 group_fingerprint=",
+                "evidence_sample: alpha/SKILL.md:1: Line one.",
+                "SKILL010 group_fingerprint=",
+                "evidence_sample: alpha/SKILL.md: No line sorts before line.",
+                "SKILL020 group_fingerprint=",
+                "evidence_sample: zeta/SKILL.md:1: Later path.",
             ],
         );
     }
 
     #[test]
-    fn summary_mode_keeps_grouped_limited_samples() {
+    fn summary_mode_omits_grouped_detail_samples() {
         let report = repeated_finding_report(4);
 
         let summary = render_text_with_mode(&report, ReportMode::Summary);
 
         assert!(summary.contains("Agent Skill Auditor scan summary"));
-        assert!(summary.contains("Finding groups:"));
-        assert!(summary.contains("sample: skills/repeated-0/scripts/install.sh:2"));
-        assert!(summary.contains("sample: skills/repeated-1/scripts/install.sh:2"));
-        assert!(summary.contains("sample: skills/repeated-2/scripts/install.sh:2"));
+        assert!(summary.contains("  groups: 1"));
+        assert!(summary.contains("  severity: critical=0 high=0 medium=4 low=0 info=0"));
+        assert!(!summary.contains("sample: skills/repeated-0/scripts/install.sh:2"));
+        assert!(!summary.contains("sample: skills/repeated-1/scripts/install.sh:2"));
+        assert!(!summary.contains("sample: skills/repeated-2/scripts/install.sh:2"));
         assert!(!summary.contains("skills/repeated-3/scripts/install.sh:2"));
         assert!(!summary.contains("Full findings:"));
     }
@@ -4984,8 +5179,9 @@ mod tests {
 
         let summary = render_text(&report);
 
-        assert!(summary.contains("Observed ecosystem patterns:"));
-        assert!(summary.contains("- Dependency reproducibility gaps in executable skills: Executable dependency setup has reproducibility gaps in 4 of 4 packages (100%). count=4 packages=100%"));
+        assert!(summary.contains("  observed skill collection patterns: 1"));
+        assert!(!summary.contains("Observed ecosystem patterns:"));
+        assert!(!summary.contains("- Dependency reproducibility gaps in executable skills:"));
     }
 
     #[test]
@@ -6361,10 +6557,13 @@ mod tests {
 
         let summary = render_text(&report);
 
-        assert!(summary.contains("SEC009 [low/medium/security] x1 packages=1"));
-        assert!(summary.contains("SUPPLY003 [medium/medium/reproducibility] x1 packages=1"));
-        assert!(summary.contains("SUPPLY004 [medium/medium/reproducibility] x1 packages=1"));
-        assert!(summary.contains(&report.finding_groups[0].group_fingerprint));
+        assert!(summary.contains("  occurrences: 3"));
+        assert!(summary.contains("  groups: 3"));
+        assert!(summary.contains("  severity: critical=0 high=0 medium=2 low=1 info=0"));
+        assert!(!summary.contains("SEC009 [low/medium/security] x1 packages=1"));
+        assert!(!summary.contains("SUPPLY003 [medium/medium/reproducibility] x1 packages=1"));
+        assert!(!summary.contains("SUPPLY004 [medium/medium/reproducibility] x1 packages=1"));
+        assert!(!summary.contains(&report.finding_groups[0].group_fingerprint));
         let headline_lines = summary
             .lines()
             .filter(|line| {
@@ -6378,7 +6577,7 @@ mod tests {
                 .iter()
                 .map(|line| line.split(' ').next().unwrap())
                 .collect::<Vec<_>>(),
-            vec!["SEC009", "SUPPLY003", "SUPPLY004"]
+            Vec::<&str>::new()
         );
     }
 
@@ -6459,10 +6658,7 @@ mod tests {
             serde_json::from_str(&render_json(&report).expect("render JSON")).expect("parse JSON");
         let json_groups = json["finding_groups"].as_array().expect("finding groups");
 
-        assert_eq!(
-            summary_group_line_count(&summary, &expected),
-            expected.len()
-        );
+        assert_eq!(summary_group_line_count(&summary, &expected), 0);
         assert_eq!(
             summary_group_line_count(&research_summary, &expected),
             expected.len()
@@ -6471,8 +6667,8 @@ mod tests {
         assert_eq!(json_groups.len(), expected.len());
 
         for (rule_id, fingerprint) in expected {
-            assert!(summary.contains(rule_id));
-            assert!(summary.contains(fingerprint));
+            assert!(!summary.contains(rule_id));
+            assert!(!summary.contains(fingerprint));
             assert!(research_summary.contains(rule_id));
             assert!(research_summary.contains(fingerprint));
             assert!(html.contains(&format!("<td>{rule_id}</td>")));

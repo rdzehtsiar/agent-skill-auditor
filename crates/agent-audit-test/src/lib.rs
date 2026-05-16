@@ -584,10 +584,10 @@ mod tests {
 
         let summary = render_text(&first_report);
         assert_eq!(summary, expected_e2e_representative_summary());
-        assert!(summary.contains("Supply chain:\n"));
-        assert!(summary.contains("External URLs: 2 total, 0 mutable"));
-        assert!(summary.contains("Dependencies: 2 observed, 0 unpinned"));
-        assert!(summary.contains("No findings."));
+        assert!(summary.contains("Supply chain:"));
+        assert!(summary.contains("  external URLs: 2 total, 0 mutable"));
+        assert!(summary.contains("  dependencies: 2 total, 0 unpinned"));
+        assert!(summary.contains("  groups: 0"));
     }
 
     #[test]
@@ -670,10 +670,14 @@ mod tests {
         assert!(!json.contains("generated_at"));
 
         let summary = render_text(&report);
-        assert!(summary.contains("Packages: 30"));
-        assert!(summary.contains("Findings: 16"));
-        assert!(summary.contains("Suppressed findings: 0"));
-        assert!(summary.contains("SKILL010 [low/high/spec]"));
+        assert!(summary.contains("Scope:\n"));
+        assert!(summary.contains("  packages: 30"));
+        assert!(summary.contains("  occurrences: 16"));
+        assert!(summary.contains("  suppressed findings: 0"));
+        assert!(summary.contains("  groups: 7"));
+        assert!(summary.contains("  severity: critical=0 high=0 medium=0 low=16 info=0"));
+        assert!(!summary.contains("SKILL010 [low/high/spec]"));
+        assert!(!summary.contains("sample:"));
 
         let sarif = render_sarif(&report).expect("render SARIF");
         let sarif_value: serde_json::Value = serde_json::from_str(&sarif).expect("parse SARIF");

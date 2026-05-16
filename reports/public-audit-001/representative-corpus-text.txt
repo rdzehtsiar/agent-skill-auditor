@@ -1,63 +1,45 @@
 Agent Skill Auditor scan summary
-Audit: schema=1 scanner=agent-audit/0.6.0 ruleset=0.6.0(fnv1a64:ce2cbacc2fe36422) profiles=agent-skills-spec,claude-code,codex,github-copilot,vscode-copilot,generic scan_root=fixtures/spec/phase1/representative-corpus timestamp=null platform=windows/windows/x86_64
-Packages: 30
-Findings: 16
-Suppressed findings: 0
-Invalid manifests: 5
-Broken references: 4
-Actual secret evidence: 0
-Prompt secret exposure signals: 0
+
+Audit:
+  scanner: agent-audit/0.6.0
+  ruleset: 0.6.0 (fnv1a64:ce2cbacc2fe36422)
+  schema: 1
+  profiles: 6 selected
+  scan root: fixtures/spec/phase1/representative-corpus
+  git: not-detected
+  platform: windows/windows/x86_64
+  timestamp: not-recorded
+
+Scope:
+  packages: 30
+  invalid manifests: 5
+  broken references: 4
+  suppressed findings: 0
+
+Findings:
+  occurrences: 16
+  groups: 7
+  severity: critical=0 high=0 medium=0 low=16 info=0
+  actual secret evidence: 0
+  prompt secret exposure signals: 0
 
 Supply chain:
-Licenses: 0 evidence
-Trust manifests: 0 total, 0 invalid
-External URLs: 0 total, 0 mutable
-Dependencies: 0 observed, 0 unpinned
-Dependency manifests: 0 total, 0 exact-pinned, 0 range-based
-Lockfiles: 0 evidence
-Install commands: 0 observed, 0 without reproducibility evidence
-Executables: 3 evidence
-Binaries: 0 evidence
-Checksums: 0 evidence
-Permissions: 1 evidence, 0 conflicts
-Offline audit readiness: ready=30 partial=0 not-ready=0 unknown=0
+  licenses: 0
+  trust manifests: 0 total, 0 invalid
+  external URLs: 0 total, 0 mutable
+  dependencies: 0 total, 0 unpinned
+  dependency manifests: 0 total, 0 exact-pinned, 0 range-based
+  lockfiles: 0
+  install commands: 0 total, 0 with reproducibility gaps
+  executables/binaries: 3 executable, 0 binary
+  checksums: 0
+  permission conflicts: 0
+  offline audit readiness: ready=30 partial=0 not-ready=0 unknown=0
 
 Compatibility:
-Profiles: agent-skills-spec, claude-code, codex, github-copilot, vscode-copilot, generic
-Status totals: pass=36 warn=60 fail=30 unknown=54 untested=0
-Profile totals:
-- agent-skills-spec: pass=15 warn=10 fail=5 unknown=0 untested=0
-- claude-code: pass=1 warn=10 fail=5 unknown=14 untested=0
-- codex: pass=1 warn=10 fail=5 unknown=14 untested=0
-- github-copilot: pass=2 warn=10 fail=5 unknown=13 untested=0
-- vscode-copilot: pass=2 warn=10 fail=5 unknown=13 untested=0
-- generic: pass=15 warn=10 fail=5 unknown=0 untested=0
-Rows: 30 packages omitted from summary
+  profiles: 6
+  package rows: 30
+  status totals: pass=36 warn=60 fail=30 unknown=54 untested=0
 
-Observed ecosystem patterns:
-- Low trust-manifest adoption: Trust manifest evidence is missing for 30 of 30 packages (100%). count=30 packages=100%
-- Host-specific metadata extensions: Host-specific or unknown metadata appears in 3 of 30 packages (10%). count=3 packages=10%
-- Low checksum evidence: Executable or binary artifact evidence exceeds checksum evidence across 3 of 30 packages (10%). count=3 packages=10%
-
-Finding groups:
-SKILL001 [low/high/spec] x3 packages=3 host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot: Missing skill name fingerprint=fnv1a64:6c3da7af2d36deb5
-  sample: .github/skills/missing-name/SKILL.md:1: The skill manifest does not declare a name.
-  sample: generic/missing-name/SKILL.md:1: The skill manifest does not declare a name.
-  sample: nested/team/portability/missing-name/SKILL.md:1: The skill manifest does not declare a name.
-SKILL002 [low/high/spec] x2 packages=2 host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot: Missing skill description fingerprint=fnv1a64:846266d12f7e80e8
-  sample: .agents/skills/missing-description/SKILL.md:1: The skill manifest does not declare a description.
-  sample: generic/missing-description/SKILL.md:1: The skill manifest does not declare a description.
-SKILL010 [low/high/spec] x4 packages=4 host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot: Broken relative reference fingerprint=fnv1a64:5b6331b70eaec49f
-  sample: .agents/skills/broken-reference/SKILL.md:8: The manifest references `references/playbook.md`, but the file was not found.
-  sample: .github/skills/broken-reference/SKILL.md:8: The manifest references `references/release.md`, but the file was not found.
-  sample: generic/broken-reference/SKILL.md:8: The manifest references `references/missing-guide.md`, but the file was not found.
-SKILL030 [low/high/compatibility] x4 packages=4 host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot: Duplicate skill name fingerprint=fnv1a64:0b15203c4d5649ea
-  sample: .claude/skills/duplicate-a/SKILL.md:1: The skill name `corpus-host-duplicate` is also declared by other manifest path(s): `.claude/skills/duplicate-b/SKILL.md`.
-  sample: .claude/skills/duplicate-b/SKILL.md:1: The skill name `corpus-host-duplicate` is also declared by other manifest path(s): `.claude/skills/duplicate-a/SKILL.md`.
-  sample: generic/duplicate-a/SKILL.md:1: The skill name `corpus-duplicate` is also declared by other manifest path(s): `generic/duplicate-b/SKILL.md`.
-SKILL040 [low/medium/compatibility] x1 packages=1 frontmatter_field=host host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot: Host-specific or unrecognized metadata field fingerprint=fnv1a64:ddda4205713f0217
-  sample: .claude/skills/unknown-frontmatter/SKILL.md:4: The field `host` is not defined by the selected host profiles and may be ignored or interpreted differently.
-SKILL040 [low/medium/compatibility] x1 packages=1 frontmatter_field=owner host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot: Host-specific or unrecognized metadata field fingerprint=fnv1a64:18036a90900fd927
-  sample: nested/team/security/checks/SKILL.md:4: The field `owner` is not defined by the selected host profiles and may be ignored or interpreted differently.
-SKILL040 [low/medium/compatibility] x1 packages=1 frontmatter_field=x-owner host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot: Host-specific or unrecognized metadata field fingerprint=fnv1a64:5bdfdf722774e08b
-  sample: generic/unknown-field/SKILL.md:4: The field `x-owner` is not defined by the selected host profiles and may be ignored or interpreted differently.
+Patterns:
+  observed skill collection patterns: 3

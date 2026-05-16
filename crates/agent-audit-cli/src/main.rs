@@ -1335,15 +1335,13 @@ description: Text output fixture.
             run_scan_output(scan_command(&workspace, ReportFormat::Text)).expect("run text scan");
 
         assert!(output.starts_with("Agent Skill Auditor scan summary\n"));
-        assert!(output.contains("Audit: "));
-        assert!(output.contains("timestamp=null"));
-        assert!(output.contains("Packages: 1\n"));
-        assert!(output.contains("Findings: "));
-        assert!(output.contains("Compatibility:\n"));
-        assert!(output.contains(
-            "Profiles: agent-skills-spec, claude-code, codex, github-copilot, vscode-copilot, generic"
-        ));
-        assert!(output.contains("- SKILL.md (text-output): agent-skills-spec=pass"));
+        assert!(output.contains("Audit:\n"));
+        assert!(output.contains("timestamp: not-recorded"));
+        assert!(output.contains("  packages: 1\n"));
+        assert!(output.contains("Findings:\n"));
+        assert!(output.contains("  profiles: 6") && output.contains("  package rows: 1"));
+        assert!(!output.contains("Profiles: agent-skills-spec, claude-code"));
+        assert!(!output.contains("- SKILL.md (text-output): agent-skills-spec=pass"));
         assert!(output.ends_with('\n'));
     }
 
@@ -1770,10 +1768,12 @@ name: [unterminated
             .expect("malformed frontmatter should render report");
 
         assert!(output.starts_with("Agent Skill Auditor scan summary\n"));
-        assert!(output.contains("Packages: 1\n"));
-        assert!(output.contains("Invalid manifests: 1\n"));
-        assert!(output.contains("SKILL041 [low/high/spec] x1 packages=1"));
-        assert!(output.contains("The skill manifest frontmatter could not be parsed:"));
+        assert!(output.contains("  packages: 1\n"));
+        assert!(output.contains("  invalid manifests: 1\n"));
+        assert!(output.contains("  groups: 1"));
+        assert!(output.contains("  severity: critical=0 high=0 medium=0 low=1 info=0"));
+        assert!(!output.contains("SKILL041 [low/high/spec] x1 packages=1"));
+        assert!(!output.contains("The skill manifest frontmatter could not be parsed:"));
         assert!(output.ends_with('\n'));
     }
 
@@ -1812,10 +1812,10 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
         let output =
             run_scan_output(scan_command(&workspace, ReportFormat::Text)).expect("run text scan");
 
-        assert!(output.contains("Finding groups:\n"));
-        assert!(output.contains("[low/high/spec]"));
-        assert!(output.contains("SKILL.md:"));
-        assert!(output.contains("The skill manifest does not declare a name."));
+        assert!(output.contains("  groups: 1"));
+        assert!(output.contains("  severity: critical=0 high=0 medium=0 low=1 info=0"));
+        assert!(!output.contains("[low/high/spec]"));
+        assert!(!output.contains("The skill manifest does not declare a name."));
         assert!(output.ends_with('\n'));
     }
 
@@ -1843,7 +1843,8 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
         let output = run_scan_output(scan_command(&workspace, ReportFormat::Text))
             .expect("summary scan should render low findings without failing");
 
-        assert!(output.contains("SKILL001 [low/high/spec] x1 packages=1"));
+        assert!(output.contains("  groups: 1"));
+        assert!(output.contains("  severity: critical=0 high=0 medium=0 low=1 info=0"));
     }
 
     #[test]
@@ -1866,7 +1867,7 @@ fail_on:
         let error = result.expect_err("low fail_on should fail after rendering");
 
         assert!(output.starts_with("Agent Skill Auditor scan summary\n"));
-        assert!(output.contains("SKILL001 [low/high/spec] x1 packages=1"));
+        assert!(output.contains("  groups: 1"));
         assert!(error
             .to_string()
             .contains("fail_on matched an unsuppressed finding severity"));
@@ -1892,7 +1893,7 @@ fail_on:
         ));
         let error = result.expect_err("multiple config fail_on values should match low finding");
 
-        assert!(output.contains("SKILL001 [low/high/spec] x1 packages=1"));
+        assert!(output.contains("  groups: 1"));
         assert!(error
             .to_string()
             .contains("fail_on matched an unsuppressed finding severity"));
@@ -1917,7 +1918,7 @@ fail_on:
         ))
         .expect("high fail_on should not match low finding");
 
-        assert!(output.contains("SKILL001 [low/high/spec] x1 packages=1"));
+        assert!(output.contains("  groups: 1"));
     }
 
     #[test]
@@ -1940,7 +1941,7 @@ fail_on:
         ))
         .expect("multiple config fail_on values should not match low finding");
 
-        assert!(output.contains("SKILL001 [low/high/spec] x1 packages=1"));
+        assert!(output.contains("  groups: 1"));
     }
 
     #[test]
@@ -2035,7 +2036,7 @@ ignore:
         ));
 
         result.expect_err("CLI fail_on low should fail without config");
-        assert!(output.contains("SKILL001 [low/high/spec] x1 packages=1"));
+        assert!(output.contains("  groups: 1"));
     }
 
     #[test]
@@ -2050,7 +2051,7 @@ ignore:
         ));
         let error = result.expect_err("multiple CLI fail_on values should match low finding");
 
-        assert!(output.contains("SKILL001 [low/high/spec] x1 packages=1"));
+        assert!(output.contains("  groups: 1"));
         assert!(error
             .to_string()
             .contains("fail_on matched an unsuppressed finding severity"));
@@ -2093,7 +2094,7 @@ fail_on:
         ));
         let error = result.expect_err("low fail_on fixture should fail");
 
-        assert!(output.contains("SKILL001 [low/high/spec] x1 packages=1"));
+        assert!(output.contains("  groups: 1"));
         assert!(error
             .to_string()
             .contains("fail_on matched an unsuppressed finding severity"));
@@ -2130,7 +2131,7 @@ fail_on:
         ))
         .expect("high threshold should not fail low findings");
 
-        assert!(output.contains("SKILL001 [low/high/spec] x1 packages=1"));
+        assert!(output.contains("  groups: 1"));
     }
 
     #[test]
@@ -2339,7 +2340,7 @@ ignore:
         ))
         .expect("valid config should load before scan");
 
-        assert!(output.contains("Packages: 1\n"));
+        assert!(output.contains("  packages: 1\n"));
         assert!(output.ends_with('\n'));
     }
 
@@ -2673,7 +2674,7 @@ description: No config discovery fixture.
         let output = run_scan_output(scan_command(&workspace, ReportFormat::Text))
             .expect("implicit config discovery should not run");
 
-        assert!(output.contains("Packages: 1\n"));
+        assert!(output.contains("  packages: 1\n"));
     }
 
     #[test]

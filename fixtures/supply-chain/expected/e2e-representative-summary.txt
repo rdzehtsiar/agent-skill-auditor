@@ -1,41 +1,45 @@
 Agent Skill Auditor scan summary
-Audit: schema=1 scanner=agent-audit/0.6.0 ruleset=0.6.0(fnv1a64:ce2cbacc2fe36422) profiles=agent-skills-spec,claude-code,codex,github-copilot,vscode-copilot,generic scan_root=unspecified timestamp=null
-Packages: 1
-Findings: 0
-Suppressed findings: 0
-Invalid manifests: 0
-Broken references: 0
-Actual secret evidence: 0
-Prompt secret exposure signals: 0
+
+Audit:
+  scanner: agent-audit/0.6.0
+  ruleset: 0.6.0 (fnv1a64:ce2cbacc2fe36422)
+  schema: 1
+  profiles: 6 selected
+  scan root: unspecified
+  git: not-detected
+  platform: not-recorded
+  timestamp: not-recorded
+
+Scope:
+  packages: 1
+  invalid manifests: 0
+  broken references: 0
+  suppressed findings: 0
+
+Findings:
+  occurrences: 0
+  groups: 0
+  severity: critical=0 high=0 medium=0 low=0 info=0
+  actual secret evidence: 0
+  prompt secret exposure signals: 0
 
 Supply chain:
-Licenses: 3 evidence
-Trust manifests: 1 total, 0 invalid
-External URLs: 2 total, 0 mutable
-Top external domains:
-- raw.githubusercontent.com: 1 URLs, 0 mutable, 1 packages, GitHub raw
-- registry.npmjs.org: 1 URLs, 0 mutable, 1 packages, package registry
-Dependencies: 2 observed, 0 unpinned
-Dependency manifests: 1 total, 1 exact-pinned, 0 range-based
-Lockfiles: 1 evidence
-Install commands: 0 observed, 0 without reproducibility evidence
-Executables: 2 evidence
-Binaries: 0 evidence
-Checksums: 1 evidence
-Permissions: 2 evidence, 0 conflicts
-Offline audit readiness: ready=1 partial=0 not-ready=0 unknown=0
+  licenses: 3
+  trust manifests: 1 total, 0 invalid
+  external URLs: 2 total, 0 mutable
+  dependencies: 2 total, 0 unpinned
+  dependency manifests: 1 total, 1 exact-pinned, 0 range-based
+  lockfiles: 1
+  install commands: 0 total, 0 with reproducibility gaps
+  executables/binaries: 2 executable, 0 binary
+  checksums: 1
+  permission conflicts: 0
+  offline audit readiness: ready=1 partial=0 not-ready=0 unknown=0
 
 Compatibility:
-Profiles: agent-skills-spec, claude-code, codex, github-copilot, vscode-copilot, generic
-Status totals: pass=2 warn=0 fail=0 unknown=4 untested=0
-Profile totals:
-- agent-skills-spec: pass=1 warn=0 fail=0 unknown=0 untested=0
-- claude-code: pass=0 warn=0 fail=0 unknown=1 untested=0
-- codex: pass=0 warn=0 fail=0 unknown=1 untested=0
-- github-copilot: pass=0 warn=0 fail=0 unknown=1 untested=0
-- vscode-copilot: pass=0 warn=0 fail=0 unknown=1 untested=0
-- generic: pass=1 warn=0 fail=0 unknown=0 untested=0
-Rows:
-- SKILL.md (e2e-representative): agent-skills-spec=pass, claude-code=unknown, codex=unknown, github-copilot=unknown, vscode-copilot=unknown, generic=pass
+  profiles: 6
+  package rows: 1
+  status totals: pass=2 warn=0 fail=0 unknown=4 untested=0
 
-No findings.
+Patterns:
+  observed skill collection patterns: 0
