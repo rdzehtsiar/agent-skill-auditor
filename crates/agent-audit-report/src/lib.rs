@@ -20,10 +20,9 @@ use serde_json::{json, Value};
 
 pub const SUPPORTED_REPORT_FORMATS: &[&str] = &["text", "json", "sarif", "html"];
 pub const SUPPORTED_REPORT_FORMATS_HELP: &str = "supported: text, json, sarif, html";
-pub const SUPPORTED_REPORT_MODES: &[&str] = &["default", "verbose", "research", "ci", "triage"];
-pub const SUPPORTED_REPORT_MODES_HELP: &str = "supported: default, verbose, research, ci, triage";
+pub const SUPPORTED_REPORT_MODES: &[&str] = &["summary", "triage", "research"];
+pub const SUPPORTED_REPORT_MODES_HELP: &str = "supported: summary, triage, research";
 const SUMMARY_COMPATIBILITY_ROW_LIMIT: usize = 5;
-const CI_TOP_GROUP_LIMIT: usize = 5;
 const TRIAGE_OUTPUT_WIDTH: usize = 120;
 const HTML_TOP_PACKAGE_LIMIT: usize = 25;
 const HTML_TOP_DOMAIN_LIMIT: usize = 10;
@@ -90,20 +89,16 @@ impl Error for UnsupportedReportFormat {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReportMode {
-    Default,
-    Verbose,
+    Summary,
     Research,
-    Ci,
     Triage,
 }
 
 impl ReportMode {
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Default => "default",
-            Self::Verbose => "verbose",
+            Self::Summary => "summary",
             Self::Research => "research",
-            Self::Ci => "ci",
             Self::Triage => "triage",
         }
     }
@@ -114,10 +109,8 @@ impl FromStr for ReportMode {
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "default" => Ok(Self::Default),
-            "verbose" => Ok(Self::Verbose),
+            "summary" => Ok(Self::Summary),
             "research" => Ok(Self::Research),
-            "ci" => Ok(Self::Ci),
             "triage" => Ok(Self::Triage),
             _ => Err(UnsupportedReportMode {
                 value: value.to_owned(),
@@ -150,7 +143,7 @@ impl fmt::Display for UnsupportedReportMode {
 impl Error for UnsupportedReportMode {}
 
 pub fn render_report(report: &ScanReport, format: ReportFormat) -> serde_json::Result<String> {
-    render_report_with_mode(report, format, ReportMode::Default)
+    render_report_with_mode(report, format, ReportMode::Summary)
 }
 
 pub fn render_report_with_mode(
@@ -169,20 +162,18 @@ pub fn render_report_with_mode(
 }
 
 pub fn render_text(report: &ScanReport) -> String {
-    render_text_with_mode(report, ReportMode::Default)
+    render_text_with_mode(report, ReportMode::Summary)
 }
 
 pub fn render_text_with_mode(report: &ScanReport, mode: ReportMode) -> String {
     match mode {
-        ReportMode::Default => render_default_text(report),
-        ReportMode::Verbose => render_verbose_text(report),
+        ReportMode::Summary => render_summary_text(report),
         ReportMode::Research => render_research_text(report),
-        ReportMode::Ci => render_ci_text(report),
         ReportMode::Triage => render_triage_text(report),
     }
 }
 
-fn render_default_text(report: &ScanReport) -> String {
+fn render_summary_text(report: &ScanReport) -> String {
     let mut lines = vec![
         "Agent Skill Auditor scan summary".to_owned(),
         audit_metadata_summary(&report.audit),
@@ -248,17 +239,6 @@ fn render_default_text(report: &ScanReport) -> String {
     lines.join("\n")
 }
 
-fn render_verbose_text(report: &ScanReport) -> String {
-    let mut lines = summary_header("Agent Skill Auditor verbose scan summary", report);
-
-    extend_supply_chain_summary(&mut lines, report);
-    extend_compatibility_summary(&mut lines, &report.compatibility);
-    extend_ecosystem_patterns_summary(&mut lines, report);
-    extend_full_findings_summary(&mut lines, report, false);
-
-    lines.join("\n")
-}
-
 fn render_research_text(report: &ScanReport) -> String {
     let mut lines = summary_header("Agent Skill Auditor research scan summary", report);
 
@@ -279,115 +259,6 @@ fn render_triage_text(report: &ScanReport) -> String {
     extend_triage_review_priorities(&mut lines, report);
     extend_triage_skill_collection_patterns_summary(&mut lines, report);
     extend_triage_finding_groups_summary(&mut lines, report);
-
-    lines.join("\n")
-}
-
-fn render_ci_text(report: &ScanReport) -> String {
-    let severity_counts = severity_counts(&report.findings);
-    let category_counts = category_counts(&report.findings);
-    let compatibility_counts = compatibility_status_counts(&report.compatibility);
-    let readiness_counts = offline_readiness_counts(&report.supply_chain);
-    let finding_groups = effective_finding_groups(report);
-    let top_groups = ci_top_finding_groups(finding_groups.as_ref());
-    let fail_on = ci_fail_on_severities(report);
-    let blocking_groups = ci_blocking_finding_groups(finding_groups.as_ref(), &fail_on);
-    let non_blocking_group_count = finding_groups.len().saturating_sub(blocking_groups.len());
-    let top_blocking_groups = ci_top_finding_groups_from_refs(&blocking_groups);
-
-    let mut lines = summary_header("Agent Skill Auditor CI scan summary", report);
-    lines.push(format!(
-        "CI policy: fail_on={} blocking_groups={} non_blocking_groups={}",
-        ci_fail_on_summary(&fail_on),
-        blocking_groups.len(),
-        non_blocking_group_count
-    ));
-    lines.push(format!(
-        "Report output: {} (format={})",
-        ci_report_output_summary(&report.audit),
-        report.audit.command.format.as_deref().unwrap_or("unknown")
-    ));
-    lines.push(ci_exit_code_behavior_summary(
-        &fail_on,
-        !blocking_groups.is_empty(),
-    ));
-    lines.push(format!(
-        "Severity totals: critical={} high={} medium={} low={} info={}",
-        severity_counts.critical,
-        severity_counts.high,
-        severity_counts.medium,
-        severity_counts.low,
-        severity_counts.info
-    ));
-    lines.push(format!(
-        "Category totals: spec={} compatibility={} security={} quality={} portability={} reproducibility={}",
-        category_counts.spec,
-        category_counts.compatibility,
-        category_counts.security,
-        category_counts.quality,
-        category_counts.portability,
-        category_counts.reproducibility
-    ));
-    if !report.compatibility.is_empty() {
-        lines.push(format!(
-            "Compatibility totals: pass={} warn={} fail={} unknown={} untested={}",
-            compatibility_counts.pass,
-            compatibility_counts.warn,
-            compatibility_counts.fail,
-            compatibility_counts.unknown,
-            compatibility_counts.untested
-        ));
-    }
-    lines.push(format!(
-        "Offline audit readiness: ready={} partial={} not-ready={} unknown={}",
-        readiness_counts.ready,
-        readiness_counts.partial,
-        readiness_counts.not_ready,
-        readiness_counts.unknown
-    ));
-
-    if top_groups.is_empty() {
-        lines.push("Top finding groups: none".to_owned());
-    } else {
-        lines.push(format!(
-            "Top finding groups: showing {} of {} canonical groups (filtered for CI log size).",
-            top_groups.len(),
-            finding_groups.len()
-        ));
-        for group in top_groups {
-            lines.push(format!(
-                "{} [{}/{}/{}] x{} packages={}: {} fingerprint={}",
-                group.rule_id,
-                severity_name(group.severity),
-                confidence_name(group.confidence),
-                category_name(group.category),
-                group.finding_count,
-                group.affected_package_count,
-                group.title,
-                group.group_fingerprint
-            ));
-        }
-    }
-    if top_blocking_groups.is_empty() {
-        lines.push("Top blocking groups: none".to_owned());
-    } else {
-        lines.push(format!(
-            "Top blocking groups: showing {} of {} canonical blocking groups.",
-            top_blocking_groups.len(),
-            blocking_groups.len()
-        ));
-        for group in top_blocking_groups {
-            lines.push(format!(
-                "BLOCKING {} [{}] x{} packages={}: {} fingerprint={}",
-                group.rule_id,
-                severity_name(group.severity),
-                group.finding_count,
-                group.affected_package_count,
-                group.title,
-                group.group_fingerprint
-            ));
-        }
-    }
 
     lines.join("\n")
 }
@@ -1514,7 +1385,7 @@ pub fn render_json(report: &ScanReport) -> serde_json::Result<String> {
 }
 
 pub fn render_html(report: &ScanReport) -> String {
-    render_html_with_mode(report, ReportMode::Default)
+    render_html_with_mode(report, ReportMode::Summary)
 }
 
 pub fn render_html_with_mode(report: &ScanReport, mode: ReportMode) -> String {
@@ -1566,15 +1437,6 @@ tbody tr:nth-child(even){background:var(--soft)}
 "#,
     );
 
-    if mode == ReportMode::Ci {
-        extend_html_executive_summary(&mut html, report, &view_model);
-        extend_html_audit_metadata(&mut html, &report.audit);
-        extend_html_ecosystem_patterns(&mut html, report);
-        extend_html_ci_summary(&mut html, report, &view_model);
-        html.push_str("</main>\n</body>\n</html>\n");
-        return html;
-    }
-
     extend_html_table_of_contents(&mut html, report);
     extend_html_executive_summary(&mut html, report, &view_model);
     extend_html_audit_metadata(&mut html, &report.audit);
@@ -1585,12 +1447,10 @@ tbody tr:nth-child(even){background:var(--soft)}
     extend_html_security_review_signals(&mut html, report, &view_model);
     extend_html_external_urls(&mut html, &view_model);
     match mode {
-        ReportMode::Verbose => extend_html_full_findings(&mut html, report, false),
         ReportMode::Research => {
             extend_html_full_findings(&mut html, report, true);
         }
-        ReportMode::Default | ReportMode::Triage => {}
-        ReportMode::Ci => unreachable!("CI mode returns before full report sections"),
+        ReportMode::Summary | ReportMode::Triage => {}
     }
     extend_html_packages_with_findings(&mut html, &view_model, mode);
     extend_html_package_appendix(&mut html, report);
@@ -1623,112 +1483,6 @@ fn effective_ecosystem_patterns(report: &ScanReport) -> Cow<'_, [EcosystemPatter
     } else {
         Cow::Borrowed(&report.patterns)
     }
-}
-
-fn ci_top_finding_groups(groups: &[FindingGroup]) -> Vec<&FindingGroup> {
-    let mut groups = groups.iter().collect::<Vec<_>>();
-    groups.sort_by(|left, right| {
-        ci_finding_group_order_key(left).cmp(&ci_finding_group_order_key(right))
-    });
-    groups.truncate(CI_TOP_GROUP_LIMIT);
-    groups
-}
-
-fn ci_top_finding_groups_from_refs<'a>(groups: &[&'a FindingGroup]) -> Vec<&'a FindingGroup> {
-    let mut groups = groups.to_vec();
-    groups.sort_by(|left, right| {
-        ci_finding_group_order_key(left).cmp(&ci_finding_group_order_key(right))
-    });
-    groups.truncate(CI_TOP_GROUP_LIMIT);
-    groups
-}
-
-fn ci_blocking_finding_groups<'a>(
-    groups: &'a [FindingGroup],
-    fail_on: &BTreeSet<Severity>,
-) -> Vec<&'a FindingGroup> {
-    if fail_on.is_empty() {
-        return Vec::new();
-    }
-
-    groups
-        .iter()
-        .filter(|group| fail_on.contains(&group.severity))
-        .collect()
-}
-
-fn ci_fail_on_severities(report: &ScanReport) -> BTreeSet<Severity> {
-    report
-        .audit
-        .command
-        .fail_on
-        .iter()
-        .filter_map(|severity| severity_from_name(severity))
-        .collect()
-}
-
-fn severity_from_name(value: &str) -> Option<Severity> {
-    match value {
-        "critical" => Some(Severity::Critical),
-        "high" => Some(Severity::High),
-        "medium" => Some(Severity::Medium),
-        "low" => Some(Severity::Low),
-        "info" => Some(Severity::Info),
-        _ => None,
-    }
-}
-
-fn ci_fail_on_summary(fail_on: &BTreeSet<Severity>) -> String {
-    if fail_on.is_empty() {
-        return "none".to_owned();
-    }
-
-    fail_on
-        .iter()
-        .map(|severity| severity_name(*severity))
-        .collect::<Vec<_>>()
-        .join(",")
-}
-
-fn ci_report_output_summary(audit: &AuditMetadata) -> String {
-    audit
-        .command
-        .output
-        .as_deref()
-        .unwrap_or("stdout")
-        .to_owned()
-}
-
-fn ci_exit_code_behavior_summary(
-    fail_on: &BTreeSet<Severity>,
-    has_blocking_groups: bool,
-) -> String {
-    if fail_on.is_empty() {
-        return "Exit code behavior: returns 0 unless scanning or report writing fails; fail_on is not configured.".to_owned();
-    }
-
-    if has_blocking_groups {
-        "Exit code behavior: returns 1 after rendering because at least one unsuppressed finding exactly matches fail_on.".to_owned()
-    } else {
-        "Exit code behavior: returns 0 because no unsuppressed finding exactly matches fail_on."
-            .to_owned()
-    }
-}
-
-fn ci_finding_group_order_key(
-    group: &FindingGroup,
-) -> (
-    std::cmp::Reverse<usize>,
-    std::cmp::Reverse<usize>,
-    &str,
-    &str,
-) {
-    (
-        std::cmp::Reverse(severity_weight(group.severity)),
-        std::cmp::Reverse(group.finding_count),
-        group.rule_id.as_str(),
-        group.evidence_key.as_str(),
-    )
 }
 
 fn finding_group_normalized_key(group: &FindingGroup) -> String {
@@ -2007,90 +1761,6 @@ fn extend_html_risk_distribution_content(html: &mut String, view_model: &HtmlRep
     html.push_str("</tbody></table>");
 }
 
-fn extend_html_ci_summary(
-    html: &mut String,
-    report: &ScanReport,
-    view_model: &HtmlReportViewModel<'_>,
-) {
-    let finding_groups = effective_finding_groups(report);
-    let top_groups = ci_top_finding_groups(finding_groups.as_ref());
-
-    html.push_str("<section aria-labelledby=\"ci-summary\"><h2 id=\"ci-summary\">CI Summary</h2>");
-    html.push_str("<table><thead><tr><th>Signal</th><th>Counts</th></tr></thead><tbody>");
-    html.push_str("<tr><td>Severity totals</td><td>");
-    html.push_str(&escape_html(&format!(
-        "critical={} high={} medium={} low={} info={}",
-        view_model.severity_counts.critical,
-        view_model.severity_counts.high,
-        view_model.severity_counts.medium,
-        view_model.severity_counts.low,
-        view_model.severity_counts.info
-    )));
-    html.push_str("</td></tr><tr><td>Category totals</td><td>");
-    html.push_str(&escape_html(&format!(
-        "spec={} compatibility={} security={} quality={} portability={} reproducibility={}",
-        view_model.category_counts.spec,
-        view_model.category_counts.compatibility,
-        view_model.category_counts.security,
-        view_model.category_counts.quality,
-        view_model.category_counts.portability,
-        view_model.category_counts.reproducibility
-    )));
-    html.push_str("</td></tr><tr><td>Offline audit readiness</td><td>");
-    html.push_str(&escape_html(&format!(
-        "ready={} partial={} not-ready={} unknown={}",
-        view_model.offline_readiness_totals.ready,
-        view_model.offline_readiness_totals.partial,
-        view_model.offline_readiness_totals.not_ready,
-        view_model.offline_readiness_totals.unknown
-    )));
-    html.push_str("</td></tr>");
-    if !report.compatibility.is_empty() {
-        html.push_str("<tr><td>Compatibility totals</td><td>");
-        html.push_str(&escape_html(&format!(
-            "pass={} warn={} fail={} unknown={} untested={}",
-            view_model.compatibility_totals.pass,
-            view_model.compatibility_totals.warn,
-            view_model.compatibility_totals.fail,
-            view_model.compatibility_totals.unknown,
-            view_model.compatibility_totals.untested
-        )));
-        html.push_str("</td></tr>");
-    }
-    html.push_str("</tbody></table>");
-
-    html.push_str("<h3>Top Finding Groups</h3><p>");
-    html.push_str(&escape_html(&format!(
-        "Showing {} of {} canonical groups; filtered for CI log size.",
-        top_groups.len(),
-        finding_groups.len()
-    )));
-    html.push_str("</p><table><thead><tr><th>Rule</th><th>Fingerprint</th><th>Severity</th><th>Confidence</th><th>Category</th><th>Findings</th><th>Affected packages</th><th>Title</th></tr></thead><tbody>");
-    if top_groups.is_empty() {
-        html.push_str("<tr><td colspan=\"8\">No findings.</td></tr>");
-    }
-    for group in top_groups {
-        html.push_str("<tr><td>");
-        html.push_str(&escape_html(&group.rule_id));
-        html.push_str("</td><td>");
-        html.push_str(&escape_html(&group.group_fingerprint));
-        html.push_str("</td><td>");
-        html.push_str(&html_severity(severity_name(group.severity)));
-        html.push_str("</td><td>");
-        html.push_str(confidence_name(group.confidence));
-        html.push_str("</td><td>");
-        html.push_str(category_name(group.category));
-        html.push_str("</td><td>");
-        html.push_str(&group.finding_count.to_string());
-        html.push_str("</td><td>");
-        html.push_str(&group.affected_package_count.to_string());
-        html.push_str("</td><td>");
-        html.push_str(&escape_html(&group.title));
-        html.push_str("</td></tr>");
-    }
-    html.push_str("</tbody></table></section>\n");
-}
-
 fn extend_html_top_risky_skills_content(html: &mut String, view_model: &HtmlReportViewModel<'_>) {
     html.push_str("<h3>Top Risky Skills</h3><table class=\"compact\"><thead><tr><th>Skill</th><th>Manifest</th><th>Findings</th><th>Risk score</th></tr></thead><tbody>");
     if view_model.top_risky_skills.is_empty() {
@@ -2201,7 +1871,7 @@ fn extend_html_external_urls(html: &mut String, view_model: &HtmlReportViewModel
     if view_model.external_url_domains.len() > HTML_TOP_DOMAIN_LIMIT {
         html.push_str("<tr><td colspan=\"6\">");
         html.push_str(&escape_html(&format!(
-            "{} additional domains omitted from the default HTML view.",
+            "{} additional domains omitted from the summary HTML view.",
             view_model.external_url_domains.len() - HTML_TOP_DOMAIN_LIMIT
         )));
         html.push_str("</td></tr>");
@@ -2249,7 +1919,7 @@ fn extend_html_external_urls(html: &mut String, view_model: &HtmlReportViewModel
     if view_model.external_urls.len() > HTML_TOP_URL_LIMIT {
         html.push_str("<tr><td colspan=\"5\">");
         html.push_str(&escape_html(&format!(
-            "{} additional URLs omitted from the default HTML view.",
+            "{} additional URLs omitted from the summary HTML view.",
             view_model.external_urls.len() - HTML_TOP_URL_LIMIT
         )));
         html.push_str("</td></tr>");
@@ -2470,7 +2140,7 @@ fn extend_html_supply_chain_summary(html: &mut String, report: &ScanReport) {
     if total_rows > HTML_TOP_PACKAGE_LIMIT {
         html.push_str("<tr><td colspan=\"5\">");
         html.push_str(&escape_html(&format!(
-            "{} additional inventory rows omitted from the default HTML view.",
+            "{} additional inventory rows omitted from the summary HTML view.",
             total_rows - HTML_TOP_PACKAGE_LIMIT
         )));
         html.push_str("</td></tr>");
@@ -2679,7 +2349,7 @@ fn extend_html_packages_with_findings(
         html.push_str(&group.findings.len().to_string());
         html.push_str("</td></tr></tbody></table>");
 
-        let include_details = matches!(mode, ReportMode::Verbose | ReportMode::Research);
+        let include_details = matches!(mode, ReportMode::Research);
         if include_details {
             html.push_str("<table class=\"compact\"><thead><tr><th>Rule</th><th>Severity</th><th>Confidence</th><th>Location</th><th>Message</th><th>Why it matters</th><th>How to fix</th><th>Suppression</th></tr></thead><tbody>");
         } else {
@@ -2716,7 +2386,7 @@ fn extend_html_packages_with_findings(
 
 fn extend_html_package_appendix(html: &mut String, report: &ScanReport) {
     html.push_str("<section aria-labelledby=\"all-packages\"><h2 id=\"all-packages\">Appendix: All Packages</h2>");
-    html.push_str("<p class=\"section-note\">Packages without findings are summarized here instead of expanded in the default report body.</p>");
+    html.push_str("<p class=\"section-note\">Packages without findings are summarized here instead of expanded in the summary report body.</p>");
     html.push_str("<table class=\"compact\"><thead><tr><th>Name</th><th>Description</th><th>Manifest</th><th>Root</th><th>Findings</th></tr></thead><tbody>");
 
     let packages = sorted_packages(&report.packages);
@@ -3521,8 +3191,6 @@ fn sarif_invocation_audit_metadata(audit: &AuditMetadata) -> Value {
             "mode": audit.command.mode.as_deref(),
             "profiles": &audit.command.profiles,
             "failOn": &audit.command.fail_on,
-            "supplyChain": audit.command.supply_chain,
-            "strictSupplyChain": audit.command.strict_supply_chain
         },
         "platform": audit.platform.as_ref(),
         "repository": audit.repository.as_ref(),
@@ -3559,8 +3227,6 @@ fn sarif_audit_metadata(audit: &AuditMetadata) -> Value {
             "mode": audit.command.mode.as_deref(),
             "profiles": &audit.command.profiles,
             "failOn": &audit.command.fail_on,
-            "supplyChain": audit.command.supply_chain,
-            "strictSupplyChain": audit.command.strict_supply_chain
         },
         "platform": audit.platform.as_ref(),
         "repository": audit.repository.as_ref(),
@@ -3977,18 +3643,13 @@ mod tests {
 
     #[test]
     fn supported_report_modes_match_scan_output_modes() {
-        assert_eq!(
-            SUPPORTED_REPORT_MODES,
-            &["default", "verbose", "research", "ci", "triage"]
-        );
+        assert_eq!(SUPPORTED_REPORT_MODES, &["summary", "triage", "research"]);
     }
 
     #[test]
     fn report_mode_parses_supported_modes() {
-        assert_eq!("default".parse::<ReportMode>(), Ok(ReportMode::Default));
-        assert_eq!("verbose".parse::<ReportMode>(), Ok(ReportMode::Verbose));
+        assert_eq!("summary".parse::<ReportMode>(), Ok(ReportMode::Summary));
         assert_eq!("research".parse::<ReportMode>(), Ok(ReportMode::Research));
-        assert_eq!("ci".parse::<ReportMode>(), Ok(ReportMode::Ci));
         assert_eq!("triage".parse::<ReportMode>(), Ok(ReportMode::Triage));
     }
 
@@ -4001,18 +3662,33 @@ mod tests {
         assert_eq!(error.value(), "debug");
         assert_eq!(
             error.to_string(),
-            "unsupported report mode 'debug' (supported: default, verbose, research, ci, triage)"
+            "unsupported report mode 'debug' (supported: summary, triage, research)"
         );
+    }
+
+    #[test]
+    fn report_mode_rejects_removed_modes() {
+        for removed_mode in ["default", "verbose", "ci"] {
+            let error = removed_mode
+                .parse::<ReportMode>()
+                .expect_err("removed mode should fail");
+
+            assert_eq!(error.value(), removed_mode);
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    "unsupported report mode '{removed_mode}' (supported: summary, triage, research)"
+                )
+            );
+        }
     }
 
     #[test]
     fn report_mode_as_str_matches_supported_metadata() {
         let modes = [
-            ReportMode::Default,
-            ReportMode::Verbose,
-            ReportMode::Research,
-            ReportMode::Ci,
+            ReportMode::Summary,
             ReportMode::Triage,
+            ReportMode::Research,
         ];
 
         assert_eq!(
@@ -4056,10 +3732,8 @@ mod tests {
         let report = repeated_finding_report(4);
 
         for mode in [
-            ReportMode::Default,
-            ReportMode::Verbose,
+            ReportMode::Summary,
             ReportMode::Research,
-            ReportMode::Ci,
             ReportMode::Triage,
         ] {
             let json =
@@ -5279,10 +4953,10 @@ mod tests {
     }
 
     #[test]
-    fn default_summary_mode_keeps_grouped_limited_samples() {
+    fn summary_mode_keeps_grouped_limited_samples() {
         let report = repeated_finding_report(4);
 
-        let summary = render_text_with_mode(&report, ReportMode::Default);
+        let summary = render_text_with_mode(&report, ReportMode::Summary);
 
         assert!(summary.contains("Agent Skill Auditor scan summary"));
         assert!(summary.contains("Finding groups:"));
@@ -5294,7 +4968,7 @@ mod tests {
     }
 
     #[test]
-    fn default_summary_includes_observed_ecosystem_patterns_when_present() {
+    fn summary_includes_observed_ecosystem_patterns_when_present() {
         let mut report = repeated_finding_report(4);
         report.patterns = vec![EcosystemPattern {
             id: "dependency-reproducibility-gaps".to_owned(),
@@ -5670,22 +5344,6 @@ mod tests {
             ],
         );
         assert!(!summary.contains("6 packages use metadata"));
-    }
-
-    #[test]
-    fn verbose_summary_mode_expands_all_findings() {
-        let report = repeated_finding_report(4);
-
-        let summary = render_text_with_mode(&report, ReportMode::Verbose);
-
-        assert!(summary.contains("Agent Skill Auditor verbose scan summary"));
-        assert!(summary.contains("Full findings:"));
-        assert!(summary.contains("skills/repeated-0/scripts/install.sh:2"));
-        assert!(summary.contains("skills/repeated-1/scripts/install.sh:2"));
-        assert!(summary.contains("skills/repeated-2/scripts/install.sh:2"));
-        assert!(summary.contains("skills/repeated-3/scripts/install.sh:2"));
-        assert!(summary.contains("why: Package install without lockfile rationale."));
-        assert!(!summary.contains("Finding groups:"));
     }
 
     #[test]
@@ -6171,47 +5829,6 @@ mod tests {
     }
 
     #[test]
-    fn ci_summary_mode_is_compact_and_reports_top_groups() {
-        let report = repeated_finding_report(4);
-
-        let summary = render_text_with_mode(&report, ReportMode::Ci);
-
-        assert!(summary.contains("Agent Skill Auditor CI scan summary"));
-        assert!(summary.contains("CI policy: fail_on=none blocking_groups=0 non_blocking_groups=1"));
-        assert!(summary.contains("Report output: stdout (format=unknown)"));
-        assert!(summary.contains("Exit code behavior: returns 0 unless scanning or report writing fails; fail_on is not configured."));
-        assert!(summary.contains("Severity totals: critical=0 high=0 medium=4 low=0 info=0"));
-        assert!(summary.contains("Category totals: spec=0 compatibility=0 security=4 quality=0 portability=0 reproducibility=0"));
-        assert!(summary.contains(
-            "Top finding groups: showing 1 of 1 canonical groups (filtered for CI log size)."
-        ));
-        assert!(summary.contains("filtered for CI log size"));
-        assert!(summary.contains("SEC009 [medium/medium/security] x4 packages=4"));
-        assert!(summary.contains("fingerprint=fnv1a64:"));
-        assert!(summary.contains("Top blocking groups: none"));
-        assert!(!summary.contains("sample:"));
-        assert!(!summary.contains("Full findings:"));
-        assert!(!summary.contains("Supply chain:"));
-    }
-
-    #[test]
-    fn ci_summary_reports_blocking_groups_output_path_and_exit_behavior() {
-        let mut report = repeated_finding_report(4);
-        report.audit.command.format = Some("text".to_owned());
-        report.audit.command.output = Some("reports/ci.txt".to_owned());
-        report.audit.command.fail_on = vec!["medium".to_owned(), "high".to_owned()];
-
-        let summary = render_text_with_mode(&report, ReportMode::Ci);
-
-        assert!(summary
-            .contains("CI policy: fail_on=medium,high blocking_groups=1 non_blocking_groups=0"));
-        assert!(summary.contains("Report output: reports/ci.txt (format=text)"));
-        assert!(summary.contains("Exit code behavior: returns 1 after rendering because at least one unsuppressed finding exactly matches fail_on."));
-        assert!(summary.contains("Top blocking groups: showing 1 of 1 canonical blocking groups."));
-        assert!(summary.contains("BLOCKING SEC009 [medium] x4 packages=4"));
-    }
-
-    #[test]
     fn json_output_uses_report_renderer() {
         let report = review_skill_report(
             "SKILL002",
@@ -6375,29 +5992,6 @@ mod tests {
     }
 
     #[test]
-    fn html_verbose_mode_renders_expanded_full_findings() {
-        let report = repeated_finding_report(4);
-
-        let html = render_html_with_mode(&report, ReportMode::Verbose);
-
-        assert!(html.contains("<h2 id=\"findings\">Finding Groups</h2>"));
-        assert!(html.contains("<h2 id=\"finding-evidence\">Finding Evidence</h2>"));
-        assert_in_order(
-            &html,
-            &[
-                "<h2 id=\"findings\">Finding Groups</h2>",
-                "<h2 id=\"finding-evidence\">Finding Evidence</h2>",
-            ],
-        );
-        assert!(html.contains("skills/repeated-0/scripts/install.sh:2"));
-        assert!(html.contains("skills/repeated-1/scripts/install.sh:2"));
-        assert!(html.contains("skills/repeated-2/scripts/install.sh:2"));
-        assert!(html.contains("skills/repeated-3/scripts/install.sh:2"));
-        assert!(html.contains("Package install without lockfile rationale."));
-        assert!(html.contains("Package install without lockfile remediation."));
-    }
-
-    #[test]
     fn html_research_mode_renders_groups_and_full_normalized_evidence() {
         let report = repeated_finding_report(4);
 
@@ -6407,20 +6001,6 @@ mod tests {
         assert!(html.contains("<h2 id=\"full-finding-evidence\">Full Finding Evidence</h2>"));
         assert!(html.contains("<th>Normalized key</th>"));
         assert!(html.contains("skills/repeated-3/scripts/install.sh|2|SEC009|medium|security|"));
-    }
-
-    #[test]
-    fn html_ci_mode_renders_log_sized_report() {
-        let report = repeated_finding_report(4);
-
-        let html = render_html_with_mode(&report, ReportMode::Ci);
-
-        assert!(html.contains("<h2 id=\"summary\">Executive Summary</h2>"));
-        assert!(html.contains("<h2 id=\"ci-summary\">CI Summary</h2>"));
-        assert!(html.contains("Top Finding Groups"));
-        assert!(html.contains("SEC009"));
-        assert!(!html.contains("<h2 id=\"packages\">Packages</h2>"));
-        assert!(!html.contains("<h2 id=\"skill-details\">Skill Details</h2>"));
     }
 
     #[test]
@@ -6776,7 +6356,7 @@ mod tests {
     }
 
     #[test]
-    fn default_summary_uses_canonical_dependency_reproducibility_finding_groups() {
+    fn summary_uses_canonical_dependency_reproducibility_finding_groups() {
         let report = dependency_reproducibility_report();
 
         let summary = render_text(&report);
@@ -6803,22 +6383,7 @@ mod tests {
     }
 
     #[test]
-    fn verbose_summary_preserves_expanded_dependency_reproducibility_findings() {
-        let report = dependency_reproducibility_report();
-
-        let summary = render_text_with_mode(&report, ReportMode::Verbose);
-
-        assert!(summary.contains("SEC009 [low/medium/security] skills/deps/scripts/install.sh:3"));
-        assert!(summary.contains(
-            "SUPPLY003 [medium/medium/reproducibility] skills/deps/scripts/install.sh:3"
-        ));
-        assert!(summary
-            .contains("SUPPLY004 [medium/medium/reproducibility] skills/deps/package.json:7"));
-        assert!(!summary.contains("Dependency install reproducibility risks"));
-    }
-
-    #[test]
-    fn default_html_uses_canonical_dependency_reproducibility_finding_groups() {
+    fn summary_html_uses_canonical_dependency_reproducibility_finding_groups() {
         let report = dependency_reproducibility_report();
 
         let html = render_html(&report);
@@ -6887,7 +6452,7 @@ mod tests {
             .map(|group| (group.rule_id.as_str(), group.group_fingerprint.as_str()))
             .collect::<Vec<_>>();
 
-        let default_summary = render_text_with_mode(&report, ReportMode::Default);
+        let summary = render_text_with_mode(&report, ReportMode::Summary);
         let research_summary = render_text_with_mode(&report, ReportMode::Research);
         let html = render_html(&report);
         let json: Value =
@@ -6895,7 +6460,7 @@ mod tests {
         let json_groups = json["finding_groups"].as_array().expect("finding groups");
 
         assert_eq!(
-            summary_group_line_count(&default_summary, &expected),
+            summary_group_line_count(&summary, &expected),
             expected.len()
         );
         assert_eq!(
@@ -6906,8 +6471,8 @@ mod tests {
         assert_eq!(json_groups.len(), expected.len());
 
         for (rule_id, fingerprint) in expected {
-            assert!(default_summary.contains(rule_id));
-            assert!(default_summary.contains(fingerprint));
+            assert!(summary.contains(rule_id));
+            assert!(summary.contains(fingerprint));
             assert!(research_summary.contains(rule_id));
             assert!(research_summary.contains(fingerprint));
             assert!(html.contains(&format!("<td>{rule_id}</td>")));
@@ -6916,7 +6481,7 @@ mod tests {
                 group["rule_id"] == rule_id && group["group_fingerprint"] == fingerprint
             }));
         }
-        assert!(!default_summary.contains("SEC009/SUPPLY003/SUPPLY004"));
+        assert!(!summary.contains("SEC009/SUPPLY003/SUPPLY004"));
         assert!(!html.contains("SEC009/SUPPLY003/SUPPLY004"));
     }
 

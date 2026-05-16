@@ -30,15 +30,15 @@ Rule status is explicit: `active` rules may emit findings and be suppressed, whi
 | [SKILL040](#skill040-host-specific-or-unrecognized-metadata-field) | `active` | `low` | `compatibility` | Host-specific or unrecognized metadata field |
 | [SKILL041](#skill041-malformed-frontmatter) | `active` | `low` | `spec` | Malformed frontmatter |
 | [SKILL050](#skill050-ignored-host-specific-metadata) | `active` | `low` | `compatibility` | Ignored host-specific metadata |
-| [SUPPLY001](#supply001-missing-repository-license-evidence) | `active` | `low` | `reproducibility` | Missing repository license evidence |
-| [SUPPLY002](#supply002-missing-or-unknown-skill-local-license-evidence) | `active` | `low` | `reproducibility` | Missing or unknown skill-local license evidence |
+| [SUPPLY001](#supply001-repository-license-evidence-policy-reserved) | `reserved` | `low` | `reproducibility` | Repository license evidence policy reserved |
+| [SUPPLY002](#supply002-unknown-skill-local-license-evidence) | `active` | `low` | `reproducibility` | Unknown skill-local license evidence |
 | [SUPPLY003](#supply003-install-command-without-matching-reproducibility-evidence) | `active` | `medium` | `reproducibility` | Install command without matching reproducibility evidence |
 | [SUPPLY004](#supply004-unpinned-package-dependency) | `active` | `medium` | `reproducibility` | Unpinned package dependency |
 | [SUPPLY005](#supply005-unpinned-remote-url-reference) | `active` | `medium` | `security` | Unpinned remote URL reference |
 | [SUPPLY006](#supply006-downloaded-executable-without-checksum) | `active` | `high` | `security` | Downloaded executable without checksum |
 | [SUPPLY007](#supply007-binary-executable-without-provenance-evidence) | `active` | `medium` | `security` | Binary executable without provenance evidence |
 | [SUPPLY009](#supply009-observed-permission-conflicts-with-trust-manifest) | `active` | `medium` | `security` | Observed permission conflicts with trust manifest |
-| [SUPPLY011](#supply011-trust-manifest-missing-under-strict-policy) | `active` | `info` | `reproducibility` | Trust manifest missing under strict policy |
+| [SUPPLY011](#supply011-trust-manifest-policy-reserved) | `reserved` | `info` | `reproducibility` | Trust manifest policy reserved |
 | [SUPPLY012](#supply012-invalid-trust-manifest-diagnostic) | `active` | `low` | `reproducibility` | Invalid trust manifest diagnostic |
 
 ## SEC001: Remote content piped into shell
@@ -801,9 +801,9 @@ tools:
 ---
 ```
 
-## SUPPLY001: Missing repository license evidence
+## SUPPLY001: Repository license evidence policy reserved
 
-- Status: `active`
+- Status: `reserved` (reserved; not emitted)
 - Severity: `low`
 - Category: `reproducibility`
 - Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
@@ -811,19 +811,19 @@ tools:
 
 ### Why It Matters
 
-Repository license evidence gives reviewers local policy context for redistribution and reuse decisions without contacting external systems.
+Repository license evidence can give reviewers local policy context for redistribution and reuse decisions without contacting external systems.
 
 ### How To Fix
 
-Add a repository-level `LICENSE`, `LICENSE.md`, `LICENSE.txt`, `COPYING`, or `NOTICE` file.
+When this reserved policy check becomes active, add a repository-level `LICENSE`, `LICENSE.md`, `LICENSE.txt`, `COPYING`, or `NOTICE` file.
 
 ### Safe Suppression
 
-Suppress `SUPPLY001` only when repository license evidence is reviewed through another documented local process.
+`SUPPLY001` is reserved and cannot be suppressed until an evaluator emits it.
 
 ### Examples
 
-Strict supply-chain policy requires repository license evidence.
+Repository license metadata checks are reserved for future policy support.
 
 Non-compliant:
 
@@ -838,7 +838,7 @@ LICENSE
 SKILL.md
 ```
 
-## SUPPLY002: Missing or unknown skill-local license evidence
+## SUPPLY002: Unknown skill-local license evidence
 
 - Status: `active`
 - Severity: `low`
@@ -848,11 +848,11 @@ SKILL.md
 
 ### Why It Matters
 
-Skill-local license evidence makes offline review and redistribution decisions easier, even when the package may otherwise be safe to run.
+Unrecognized skill-local license evidence makes offline redistribution and reuse review harder, even when the package may otherwise be safe to run.
 
 ### How To Fix
 
-Declare a recognizable SPDX license in `SKILL.md`, or ship a clear skill-local license file.
+Use a recognizable SPDX license declaration in `SKILL.md`, or ship a clear skill-local license file.
 
 ### Safe Suppression
 
@@ -860,12 +860,12 @@ Suppress `SUPPLY002` only when license evidence has been reviewed elsewhere and 
 
 ### Examples
 
-Keep reviewable skill-local license evidence present and recognizable.
+Keep reviewable skill-local license evidence recognizable when it is present.
 
 Non-compliant:
 
 ```text
-skills/review/LICENSE.txt is missing or contains unrecognized placeholder license text.
+skills/review/LICENSE.txt contains unrecognized placeholder license text.
 ```
 
 Compliant:
@@ -1094,9 +1094,9 @@ permissions.network: true
 # or remove the network call.
 ```
 
-## SUPPLY011: Trust manifest missing under strict policy
+## SUPPLY011: Trust manifest policy reserved
 
-- Status: `active`
+- Status: `reserved` (reserved; not emitted)
 - Severity: `info`
 - Category: `reproducibility`
 - Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
@@ -1104,19 +1104,19 @@ permissions.network: true
 
 ### Why It Matters
 
-Strict supply-chain policy requires local trust metadata so provenance, declared permissions, and dependencies can be reviewed without external lookups.
+Local trust metadata can help provenance, declared permissions, and dependencies be reviewed without external lookups.
 
 ### How To Fix
 
-Add `agent-audit.trust.yaml` or `.agent-audit.trust.yaml` with local provenance, permission, and dependency declarations.
+When this reserved policy check becomes active, add `agent-audit.trust.yaml` or `.agent-audit.trust.yaml` with local provenance, permission, and dependency declarations.
 
 ### Safe Suppression
 
-Suppress `SUPPLY011` only when the skill is covered by another documented local trust review process.
+`SUPPLY011` is reserved and cannot be suppressed until an evaluator emits it.
 
 ### Examples
 
-Strict supply-chain policy requires a local trust manifest.
+Required trust manifest checks are reserved for future policy support.
 
 Non-compliant:
 

@@ -1,5 +1,5 @@
 Agent Skill Auditor scan summary
-Audit: schema=1 scanner=agent-audit/0.6.0 ruleset=0.6.0(fnv1a64:bee351a45fa77334) profiles=agent-skills-spec,claude-code,codex,github-copilot,vscode-copilot,generic scan_root=unspecified timestamp=null
+Audit: schema=1 scanner=agent-audit/0.6.0 ruleset=0.6.0(fnv1a64:ce2cbacc2fe36422) profiles=agent-skills-spec,claude-code,codex,github-copilot,vscode-copilot,generic scan_root=unspecified timestamp=null
 Packages: 1
 Findings: 0
 Suppressed findings: 0

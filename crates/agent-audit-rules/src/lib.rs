@@ -296,7 +296,6 @@ pub const ACTIVE_RULE_IDS: &[&str] = &[
     "SKILL040",
     "SKILL041",
     "SKILL050",
-    "SUPPLY001",
     "SUPPLY002",
     "SUPPLY003",
     "SUPPLY004",
@@ -304,11 +303,18 @@ pub const ACTIVE_RULE_IDS: &[&str] = &[
     "SUPPLY006",
     "SUPPLY007",
     "SUPPLY009",
-    "SUPPLY011",
     "SUPPLY012",
 ];
 
-pub const RESERVED_RULE_IDS: &[&str] = &["SEC004", "SEC005", "SEC006", "SEC008", "SEC010"];
+pub const RESERVED_RULE_IDS: &[&str] = &[
+    "SEC004",
+    "SEC005",
+    "SEC006",
+    "SEC008",
+    "SEC010",
+    "SUPPLY001",
+    "SUPPLY011",
+];
 
 pub const ALL_HOST_PROFILES: &[&str] = HOST_PROFILES;
 
@@ -446,14 +452,14 @@ const SKILL050_EXAMPLES: &[RuleExample] = &[RuleExample {
 }];
 
 const SUPPLY001_EXAMPLES: &[RuleExample] = &[RuleExample {
-    summary: "Strict supply-chain policy requires repository license evidence.",
+    summary: "Repository license metadata checks are reserved for future policy support.",
     non_compliant: "SKILL.md exists but no repository license file is present.",
     compliant: "LICENSE\nSKILL.md",
 }];
 
 const SUPPLY002_EXAMPLES: &[RuleExample] = &[RuleExample {
-    summary: "Keep reviewable skill-local license evidence present and recognizable.",
-    non_compliant: "skills/review/LICENSE.txt is missing or contains unrecognized placeholder license text.",
+    summary: "Keep reviewable skill-local license evidence recognizable when it is present.",
+    non_compliant: "skills/review/LICENSE.txt contains unrecognized placeholder license text.",
     compliant: "skills/review/SKILL.md declares `license: Apache-2.0` or ships a recognizable `skills/review/LICENSE.txt`.",
 }];
 
@@ -496,7 +502,7 @@ const SUPPLY009_EXAMPLES: &[RuleExample] = &[RuleExample {
 }];
 
 const SUPPLY011_EXAMPLES: &[RuleExample] = &[RuleExample {
-    summary: "Strict supply-chain policy requires a local trust manifest.",
+    summary: "Required trust manifest checks are reserved for future policy support.",
     non_compliant: "SKILL.md exists but no agent-audit.trust.yaml file is present.",
     compliant: "SKILL.md\nagent-audit.trust.yaml",
 }];
@@ -793,28 +799,28 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
     },
     RuleMetadata {
         id: RuleId::Supply001,
-        status: RuleStatus::Active,
-        title: "Missing repository license evidence",
+        status: RuleStatus::Reserved,
+        title: "Repository license evidence policy reserved",
         severity: RuleSeverity::Low,
         category: RuleCategory::Reproducibility,
         applicable_profiles: ALL_HOST_PROFILES,
         input_node_types: SUPPLY_CHAIN_INPUT,
-        rationale: "Repository license evidence gives reviewers local policy context for redistribution and reuse decisions without contacting external systems.",
-        remediation: "Add a repository-level `LICENSE`, `LICENSE.md`, `LICENSE.txt`, `COPYING`, or `NOTICE` file.",
+        rationale: "Repository license evidence can give reviewers local policy context for redistribution and reuse decisions without contacting external systems.",
+        remediation: "When this reserved policy check becomes active, add a repository-level `LICENSE`, `LICENSE.md`, `LICENSE.txt`, `COPYING`, or `NOTICE` file.",
         suppression_guidance:
-            "Suppress `SUPPLY001` only when repository license evidence is reviewed through another documented local process.",
+            "`SUPPLY001` is reserved and cannot be suppressed until an evaluator emits it.",
         examples: SUPPLY001_EXAMPLES,
     },
     RuleMetadata {
         id: RuleId::Supply002,
         status: RuleStatus::Active,
-        title: "Missing or unknown skill-local license evidence",
+        title: "Unknown skill-local license evidence",
         severity: RuleSeverity::Low,
         category: RuleCategory::Reproducibility,
         applicable_profiles: ALL_HOST_PROFILES,
         input_node_types: SUPPLY_CHAIN_INPUT,
-        rationale: "Skill-local license evidence makes offline review and redistribution decisions easier, even when the package may otherwise be safe to run.",
-        remediation: "Declare a recognizable SPDX license in `SKILL.md`, or ship a clear skill-local license file.",
+        rationale: "Unrecognized skill-local license evidence makes offline redistribution and reuse review harder, even when the package may otherwise be safe to run.",
+        remediation: "Use a recognizable SPDX license declaration in `SKILL.md`, or ship a clear skill-local license file.",
         suppression_guidance:
             "Suppress `SUPPLY002` only when license evidence has been reviewed elsewhere and the suppression reason identifies that reviewed source.",
         examples: SUPPLY002_EXAMPLES,
@@ -905,16 +911,16 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
     },
     RuleMetadata {
         id: RuleId::Supply011,
-        status: RuleStatus::Active,
-        title: "Trust manifest missing under strict policy",
+        status: RuleStatus::Reserved,
+        title: "Trust manifest policy reserved",
         severity: RuleSeverity::Info,
         category: RuleCategory::Reproducibility,
         applicable_profiles: ALL_HOST_PROFILES,
         input_node_types: SUPPLY_CHAIN_INPUT,
-        rationale: "Strict supply-chain policy requires local trust metadata so provenance, declared permissions, and dependencies can be reviewed without external lookups.",
-        remediation: "Add `agent-audit.trust.yaml` or `.agent-audit.trust.yaml` with local provenance, permission, and dependency declarations.",
+        rationale: "Local trust metadata can help provenance, declared permissions, and dependencies be reviewed without external lookups.",
+        remediation: "When this reserved policy check becomes active, add `agent-audit.trust.yaml` or `.agent-audit.trust.yaml` with local provenance, permission, and dependency declarations.",
         suppression_guidance:
-            "Suppress `SUPPLY011` only when the skill is covered by another documented local trust review process.",
+            "`SUPPLY011` is reserved and cannot be suppressed until an evaluator emits it.",
         examples: SUPPLY011_EXAMPLES,
     },
     RuleMetadata {
@@ -988,7 +994,6 @@ pub struct RulePackageDependencyManifestFact {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RuleSupplyChainFacts {
-    pub policy: RuleSupplyChainPolicy,
     pub packages: Vec<RuleSupplyChainPackageFact>,
     pub licenses: Vec<RuleSupplyChainLicenseFact>,
     pub trust_manifests: Vec<RuleSupplyChainTrustManifestFact>,
@@ -1000,13 +1005,6 @@ pub struct RuleSupplyChainFacts {
     pub binaries: Vec<RuleSupplyChainBinaryFact>,
     pub checksums: Vec<RuleSupplyChainChecksumFact>,
     pub permissions: Vec<RuleSupplyChainPermissionFact>,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct RuleSupplyChainPolicy {
-    pub require_repository_license: bool,
-    pub require_skill_license: bool,
-    pub require_trust_manifest: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1332,7 +1330,6 @@ fn evaluate_supply_chain_package_rules(
 ) {
     let scope = SupplyPackageScope::new(package, &facts.packages);
 
-    add_missing_supply_metadata_findings(facts, package, &scope, findings);
     add_unknown_skill_license_findings(facts, &scope, findings);
     add_install_without_lockfile_findings(facts, &scope, findings);
     add_remote_dependency_findings(facts, &scope, findings);
@@ -1340,32 +1337,6 @@ fn evaluate_supply_chain_package_rules(
     add_binary_provenance_findings(facts, &scope, findings);
     add_permission_conflict_findings(facts, &scope, findings);
     add_trust_manifest_diagnostic_findings(facts, &scope, findings);
-}
-
-fn add_missing_supply_metadata_findings(
-    facts: &RuleSupplyChainFacts,
-    package: &RuleSupplyChainPackageFact,
-    scope: &SupplyPackageScope<'_>,
-    findings: &mut BTreeMap<SupplyFindingKey, EvaluatedRuleFinding>,
-) {
-    if facts.policy.require_repository_license && !has_repository_license(facts) {
-        findings.insert(
-            supply_dedup_key(RuleId::Supply001, &package.manifest_path, None, ""),
-            missing_repository_license_finding(package),
-        );
-    }
-    if facts.policy.require_skill_license && !has_skill_license(facts, scope) {
-        findings.insert(
-            supply_dedup_key(RuleId::Supply002, &package.manifest_path, None, "missing"),
-            missing_skill_license_finding(package),
-        );
-    }
-    if facts.policy.require_trust_manifest && !has_trust_manifest(facts, scope) {
-        findings.insert(
-            supply_dedup_key(RuleId::Supply011, &package.manifest_path, None, ""),
-            missing_trust_manifest_finding(package),
-        );
-    }
 }
 
 fn add_unknown_skill_license_findings(
@@ -1713,26 +1684,6 @@ fn has_matching_exact_dependency_manifest_for_manager(
     })
 }
 
-fn has_repository_license(facts: &RuleSupplyChainFacts) -> bool {
-    facts
-        .licenses
-        .iter()
-        .any(|license| license.scope == RuleSupplyChainLicenseScope::Repository)
-}
-
-fn has_skill_license(facts: &RuleSupplyChainFacts, scope: &SupplyPackageScope<'_>) -> bool {
-    facts.licenses.iter().any(|license| {
-        scope.contains(&license.path) && license.scope == RuleSupplyChainLicenseScope::Skill
-    })
-}
-
-fn has_trust_manifest(facts: &RuleSupplyChainFacts, scope: &SupplyPackageScope<'_>) -> bool {
-    facts
-        .trust_manifests
-        .iter()
-        .any(|manifest| scope.contains(&manifest.path))
-}
-
 fn is_downloaded_executable_without_checksum(
     facts: &RuleSupplyChainFacts,
     scope: &SupplyPackageScope<'_>,
@@ -1827,30 +1778,6 @@ fn declares_network_false(facts: &RuleSupplyChainFacts, scope: &SupplyPackageSco
     })
 }
 
-fn missing_repository_license_finding(
-    package: &RuleSupplyChainPackageFact,
-) -> EvaluatedRuleFinding {
-    EvaluatedRuleFinding {
-        rule_id: RuleId::Supply001,
-        message: "Strict supply-chain policy requires repository license evidence, but no repository-level license file was found.".to_owned(),
-        location: RuleFindingLocation {
-            path: package.manifest_path.clone(),
-            line: None,
-        },
-    }
-}
-
-fn missing_skill_license_finding(package: &RuleSupplyChainPackageFact) -> EvaluatedRuleFinding {
-    EvaluatedRuleFinding {
-        rule_id: RuleId::Supply002,
-        message: "Strict supply-chain policy requires skill-local license evidence, but this skill has no local license file or manifest license declaration.".to_owned(),
-        location: RuleFindingLocation {
-            path: package.manifest_path.clone(),
-            line: None,
-        },
-    }
-}
-
 fn unknown_skill_license_finding(license: &RuleSupplyChainLicenseFact) -> EvaluatedRuleFinding {
     EvaluatedRuleFinding {
         rule_id: RuleId::Supply002,
@@ -1858,17 +1785,6 @@ fn unknown_skill_license_finding(license: &RuleSupplyChainLicenseFact) -> Evalua
         location: RuleFindingLocation {
             path: license.path.clone(),
             line: license.line,
-        },
-    }
-}
-
-fn missing_trust_manifest_finding(package: &RuleSupplyChainPackageFact) -> EvaluatedRuleFinding {
-    EvaluatedRuleFinding {
-        rule_id: RuleId::Supply011,
-        message: "Strict supply-chain policy requires a local trust manifest, but this skill has no `agent-audit.trust.yaml` or `.agent-audit.trust.yaml` file.".to_owned(),
-        location: RuleFindingLocation {
-            path: package.manifest_path.clone(),
-            line: None,
         },
     }
 }
@@ -3647,16 +3563,18 @@ mod tests {
     }
 
     #[test]
-    fn reserved_security_rules_are_metadata_only_and_not_suppressible() {
+    fn reserved_rules_are_metadata_only_and_not_suppressible() {
         for rule_id in RESERVED_RULE_IDS {
             let metadata = rule_metadata(rule_id).expect("reserved metadata exists");
 
             assert_eq!(metadata.status, RuleStatus::Reserved, "{rule_id} status");
-            assert_eq!(
-                metadata.category,
-                RuleCategory::Security,
-                "{rule_id} category"
-            );
+            if rule_id.starts_with("SEC") {
+                assert_eq!(
+                    metadata.category,
+                    RuleCategory::Security,
+                    "{rule_id} category"
+                );
+            }
             assert!(
                 metadata
                     .suppression_guidance
@@ -5722,32 +5640,16 @@ mod tests {
     }
 
     #[test]
-    fn supply_chain_rules_only_report_missing_metadata_under_strict_policy() {
-        let default_facts = RuleSupplyChainFacts {
+    fn supply_chain_rules_do_not_report_missing_metadata_without_policy_controls() {
+        let facts = RuleSupplyChainFacts {
             packages: vec![RuleSupplyChainPackageFact {
                 root: "skill".to_owned(),
                 manifest_path: "skill/SKILL.md".to_owned(),
             }],
             ..RuleSupplyChainFacts::default()
         };
-        let strict_facts = RuleSupplyChainFacts {
-            policy: RuleSupplyChainPolicy {
-                require_repository_license: true,
-                require_skill_license: true,
-                require_trust_manifest: true,
-            },
-            ..default_facts.clone()
-        };
 
-        assert_eq!(evaluate_supply_chain_rules(&default_facts), vec![]);
-        assert_eq!(
-            finding_projection(&evaluate_supply_chain_rules(&strict_facts)),
-            vec![
-                (RuleId::Supply001, "skill/SKILL.md", None),
-                (RuleId::Supply002, "skill/SKILL.md", None),
-                (RuleId::Supply011, "skill/SKILL.md", None),
-            ]
-        );
+        assert_eq!(evaluate_supply_chain_rules(&facts), vec![]);
     }
 
     #[test]

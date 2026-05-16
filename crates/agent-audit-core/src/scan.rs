@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::artifact_inventory::inventory_package_artifacts;
-use crate::config::{AuditConfig, ConfigIgnoreEntry, SupplyChainPolicy};
+use crate::config::{AuditConfig, ConfigIgnoreEntry};
 use crate::discovery::discover_skill_manifests;
 use crate::error::{AuditError, AuditResult};
 use crate::license_inventory::{inventory_license_files, inventory_manifest_license};
@@ -46,10 +46,10 @@ use agent_audit_rules::{
     RuleSupplyChainLockfileFact, RuleSupplyChainPackageFact, RuleSupplyChainPackageManagerFact,
     RuleSupplyChainPackageManagerKind, RuleSupplyChainPermissionEvidenceKind,
     RuleSupplyChainPermissionFact, RuleSupplyChainPermissionKind,
-    RuleSupplyChainPolicy as RulePolicy, RuleSupplyChainRemoteDependencyFact,
-    RuleSupplyChainRemoteDependencyKind, RuleSupplyChainSourceKind,
-    RuleSupplyChainTrustManifestDiagnosticFact, RuleSupplyChainTrustManifestDiagnosticKind,
-    RuleSupplyChainTrustManifestFact, RuleSupplyChainUrlFact, RuleSupplyChainUrlKind,
+    RuleSupplyChainRemoteDependencyFact, RuleSupplyChainRemoteDependencyKind,
+    RuleSupplyChainSourceKind, RuleSupplyChainTrustManifestDiagnosticFact,
+    RuleSupplyChainTrustManifestDiagnosticKind, RuleSupplyChainTrustManifestFact,
+    RuleSupplyChainUrlFact, RuleSupplyChainUrlKind,
 };
 use agent_audit_security::{
     analyze_instruction_security_text, classify_security_artifact, javascript_security_analyzer,
@@ -425,12 +425,11 @@ fn dedup_supply_chain_inventory(inventory: &mut SupplyChainInventory) {
 }
 
 fn supply_chain_rule_facts(
-    config: Option<&AuditConfig>,
+    _config: Option<&AuditConfig>,
     packages: &[SkillPackage],
     inventory: &SupplyChainInventory,
 ) -> RuleSupplyChainFacts {
     RuleSupplyChainFacts {
-        policy: rule_supply_chain_policy(config),
         packages: packages
             .iter()
             .map(|package| RuleSupplyChainPackageFact {
@@ -619,20 +618,6 @@ fn rule_trust_manifest_diagnostic_kind(
         TrustManifestDiagnosticKind::UnknownField => {
             RuleSupplyChainTrustManifestDiagnosticKind::UnknownField
         }
-    }
-}
-
-fn rule_supply_chain_policy(config: Option<&AuditConfig>) -> RulePolicy {
-    match config
-        .map(|config| config.supply_chain.policy)
-        .unwrap_or_default()
-    {
-        SupplyChainPolicy::Default => RulePolicy::default(),
-        SupplyChainPolicy::Strict => RulePolicy {
-            require_repository_license: true,
-            require_skill_license: true,
-            require_trust_manifest: true,
-        },
     }
 }
 

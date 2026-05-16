@@ -10,11 +10,9 @@
               "command": {
                 "failOn": [],
                 "format": "sarif",
-                "mode": "default",
+                "mode": "summary",
                 "name": "scan",
-                "profiles": [],
-                "strictSupplyChain": false,
-                "supplyChain": false
+                "profiles": []
               },
               "config": {
                 "hash": null,
@@ -39,11 +37,9 @@
           "command": {
             "failOn": [],
             "format": "sarif",
-            "mode": "default",
+            "mode": "summary",
             "name": "scan",
-            "profiles": [],
-            "strictSupplyChain": false,
-            "supplyChain": false
+            "profiles": []
           },
           "config": {
             "hash": null,
@@ -69,7 +65,7 @@
           },
           "repository": null,
           "ruleset": {
-            "hash": "fnv1a64:bee351a45fa77334",
+            "hash": "fnv1a64:ce2cbacc2fe36422",
             "version": "0.6.0"
           },
           "scan": {
@@ -2413,7 +2409,7 @@
               },
               "outputSchemaVersion": "1",
               "ruleset": {
-                "hash": "fnv1a64:bee351a45fa77334",
+                "hash": "fnv1a64:ce2cbacc2fe36422",
                 "version": "0.6.0"
               },
               "scanner": {

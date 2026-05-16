@@ -140,7 +140,6 @@ fn scalar_string(value: &serde_yaml::Value) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{AuditConfig, SupplyChainPolicy};
     use crate::scan::{scan_path, ScanOptions};
     use crate::test_support::TestWorkspace;
 
@@ -203,48 +202,21 @@ mod tests {
     }
 
     #[test]
-    fn strict_scan_accepts_root_license_as_repository_evidence_for_root_skill() {
-        let workspace = TestWorkspace::new("strict-root-license");
+    fn scan_inventories_root_license_as_repository_and_skill_evidence() {
+        let workspace = TestWorkspace::new("root-license");
         workspace.write_file("LICENSE", "Apache License 2.0 fixture text.\n");
         workspace.write_file(
             "SKILL.md",
             r#"---
-name: strict-root-license
-description: Strict root license fixture.
+name: root-license
+description: Root license fixture.
 ---
 
-# Strict Root License
+# Root License
 "#,
         );
-        workspace.write_file(
-            "agent-audit.trust.yaml",
-            r#"skill:
-  name: strict-root-license
-  version: 1.0.0
-provenance:
-  source: github.com/example/strict-root-license
-  commit: 0123456789abcdef0123456789abcdef01234567
-  signed: false
-permissions:
-  network: false
-  filesystem_write: none
-  secrets: []
-declared_dependencies:
-  commands: []
-  packages: []
-"#,
-        );
-        let mut config = AuditConfig::empty();
-        config.supply_chain.policy = SupplyChainPolicy::Strict;
 
-        let report = scan_path(
-            workspace.root(),
-            &ScanOptions {
-                config: Some(config),
-                ..ScanOptions::default()
-            },
-        )
-        .expect("scan strict root skill");
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
 
         assert_eq!(
             report
@@ -254,13 +226,6 @@ declared_dependencies:
                 .map(|license| license.scope)
                 .collect::<Vec<_>>(),
             vec![LicenseScope::Repository, LicenseScope::Skill]
-        );
-        assert!(
-            !report
-                .findings
-                .iter()
-                .any(|finding| finding.rule_id == "SUPPLY001"),
-            "root LICENSE at scan root should satisfy strict repository license evidence"
         );
     }
 

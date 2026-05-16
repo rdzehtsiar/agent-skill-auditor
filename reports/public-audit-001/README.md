@@ -15,8 +15,6 @@ families for aggregate ecosystem pattern reporting.
 
 ```text
 cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --output reports/public-audit-001/representative-corpus-text.txt
-cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --mode ci --output reports/public-audit-001/representative-corpus-ci.txt
-cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --mode verbose --output reports/public-audit-001/representative-corpus-verbose.txt
 cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --mode research --output reports/public-audit-001/representative-corpus-research.txt
 cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --format json --output reports/public-audit-001/representative-corpus.json --corpus-name "v0.8 public audit" --corpus-entry-id phase1-representative --methodology-version 2026-05 --inclusion-tag synthetic --repo-classification fixture-corpus --scan-batch-id public-audit-001
 cargo run -q -p agent-audit-cli -- scan fixtures/spec/phase1/representative-corpus --format sarif --output reports/public-audit-001/representative-corpus.sarif
@@ -77,8 +75,6 @@ package manifests are:
 Stable artifacts:
 
 - `representative-corpus-text.txt`
-- `representative-corpus-ci.txt`
-- `representative-corpus-verbose.txt`
 - `representative-corpus-research.txt`
 - `representative-corpus.json`
 - `representative-corpus.sarif`
@@ -96,7 +92,7 @@ public-audit methodology metadata:
 
 ## Quality Notes
 
-- Default text, CI, verbose, research, JSON, SARIF, and HTML outputs rendered
+- Summary text, research, JSON, SARIF, and HTML outputs rendered
   without crashes.
 - JSON contains the same 7 canonical finding groups.
 - JSON contains 16 finding fingerprints and 7 group fingerprints.

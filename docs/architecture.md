@@ -45,7 +45,7 @@ Inventory collection lives in `agent-audit-core`:
 - Permission reconciliation merges trust manifest declarations with observed static security evidence.
 - Offline audit readiness calculation derives a transparent auditability status, score, and reason list from the local evidence. It does not claim that a skill can run offline at runtime unless a future analyzer records strong runtime evidence.
 
-`agent-audit-core` converts the inventory into rule facts with relative portable paths and stable ordering. `agent-audit-rules` evaluates active `SUPPLY` rules from those facts. Default policy avoids missing optional metadata findings; strict policy requires local trust manifest and license evidence.
+`agent-audit-core` converts the inventory into rule facts with relative portable paths and stable ordering. `agent-audit-rules` evaluates active `SUPPLY` rules from those facts. Optional trust and license metadata is inventoried when present, but missing optional metadata is not emitted as a finding.
 
 Rendering lives in `agent-audit-report`:
 
@@ -62,7 +62,7 @@ The scanner can report that `provenance.source`, `provenance.commit`, or `proven
 
 ## Report Contracts
 
-`ScanReport` is the shared model between scanning and rendering. Default output uses relative paths and deterministic ordering. JSON reports include:
+`ScanReport` is the shared model between scanning and rendering. Summary output uses relative paths and deterministic ordering. JSON reports include:
 
 ```text
 packages
@@ -81,7 +81,7 @@ The JSON schema in `docs/report.schema.json` documents the full report shape emi
 
 The `summary` object includes separate `actual_secret_evidence_count` and `prompt_secret_exposure_count` fields. Prompt-injection findings such as `SEC011` remain visible as findings, but they do not increase the actual secret evidence count.
 
-The CLI chooses the requested format, writes `--output PATH` when provided, and owns the `--open` workflow. Opening is only valid for explicit HTML output files and happens after rendering and after `fail_on` checks pass. CI mode uses the canonical finding groups from the report model, labels its top-group list as filtered for log size, reports blocking and non-blocking group counts from exact `fail_on` severities, and states whether the rendered scan will return zero or non-zero.
+The CLI chooses the requested format, writes `--output PATH` when provided, and owns the `--open` workflow. Opening is only valid for explicit HTML output files and happens after rendering and after `fail_on` checks pass. The CLI applies exact `fail_on` severity matching after report rendering so configured policy failures still leave a report artifact when `--output` is used.
 
 ## Security Risk Model
 

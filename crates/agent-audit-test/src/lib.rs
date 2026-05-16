@@ -103,14 +103,7 @@ mod tests {
         assert_eq!(metadata["runs"]["using"], "composite");
         let inputs = metadata["inputs"].as_mapping().expect("inputs mapping");
         for input in [
-            "path",
-            "profiles",
-            "fail-on",
-            "format",
-            "report",
-            "output",
-            "config",
-            "strict-supply-chain",
+            "path", "profiles", "fail-on", "format", "report", "output", "config",
         ] {
             assert!(
                 inputs.contains_key(serde_yaml::Value::from(input)),
@@ -131,7 +124,7 @@ mod tests {
         assert!(run.contains("args=(scan"));
         assert!(run.contains("args+=(--profile \"$profile\")"));
         assert!(run.contains("args+=(--fail-on \"$severity\")"));
-        assert!(run.contains("--strict-supply-chain"));
+        assert!(!run.contains("--strict-supply-chain"));
         assert!(!run.contains("curl"));
         assert!(!run.contains("wget"));
     }

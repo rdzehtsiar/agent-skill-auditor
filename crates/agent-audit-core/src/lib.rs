@@ -20,8 +20,7 @@ pub mod trust_manifest;
 mod url_inventory;
 
 pub use config::{
-    parse_audit_config, parse_severity, AuditConfig, ConfigIgnoreEntry, SupplyChainConfig,
-    SupplyChainPolicy, CONFIG_FILENAME,
+    parse_audit_config, parse_severity, AuditConfig, ConfigIgnoreEntry, CONFIG_FILENAME,
 };
 pub use discovery::discover_skill_manifests;
 pub use error::{AuditError, AuditResult};

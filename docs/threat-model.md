@@ -77,16 +77,11 @@ The scanner cannot prove:
 
 Do not treat an absence of findings as approval to run untrusted code. Use findings and inventories as inputs to human or organizational review.
 
-## Strict Supply-Chain Policy
+## Optional Metadata
 
-Default scans avoid noisy missing-metadata findings for optional trust and license evidence. Strict policy can be enabled with `--strict-supply-chain` or config:
+Trust manifests and local license evidence are optional review inputs. The scanner inventories them when present and reports malformed, conflicting, unknown, or risky evidence through active `SUPPLY` findings, but it does not emit missing-metadata findings when optional trust or license files are absent.
 
-```yaml
-supply_chain:
-  policy: strict
-```
-
-Strict policy requires local trust manifest and license evidence and emits the corresponding `SUPPLY` findings when that evidence is absent. Strict mode still stays offline and static; it does not add remote verification.
+Supply-chain analysis is always part of the default offline scan path and is not controlled by CLI flags or config policy.
 
 ## Residual Risk
 

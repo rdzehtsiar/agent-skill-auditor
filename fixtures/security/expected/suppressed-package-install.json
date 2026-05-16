@@ -7,7 +7,7 @@
     },
     "ruleset": {
       "version": "0.6.0",
-      "hash": "fnv1a64:bee351a45fa77334"
+      "hash": "fnv1a64:ce2cbacc2fe36422"
     },
     "host_profiles": {
       "selected": [
@@ -33,9 +33,7 @@
       "format": null,
       "mode": null,
       "profiles": [],
-      "fail_on": [],
-      "supply_chain": false,
-      "strict_supply_chain": false
+      "fail_on": []
     },
     "platform": null,
     "repository": null,

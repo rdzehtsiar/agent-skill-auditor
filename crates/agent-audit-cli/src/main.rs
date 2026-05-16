@@ -11,7 +11,7 @@ use agent_audit_core::model::{
 };
 use agent_audit_core::{
     parse_audit_config, parse_severity, report_matches_fail_on, scan_path, AuditConfig, AuditError,
-    ScanOptions, ScanReport, Severity, SupplyChainPolicy,
+    ScanOptions, ScanReport, Severity,
 };
 use agent_audit_hosts::{canonical_host_profile, HOST_PROFILES};
 use agent_audit_report::{
@@ -53,13 +53,11 @@ Common examples:
 Output:
   --mode <MODE>
       Human output style.
-      Values: default, triage, ci, verbose, research
-      Default: default
+      Values: summary, triage, research
+      Default: summary
 
-      default   concise scan summary
+      summary   concise scan summary
       triage    human-readable review report
-      ci        compact CI gate output
-      verbose   expanded finding details
       research  audit/corpus-oriented detail
 
   --format <FORMAT>
@@ -107,15 +105,6 @@ Policy / CI:
         medium
         high
         critical
-
-Supply chain:
-  --strict-supply-chain
-      Require local trust manifest and license evidence.
-      Emits missing metadata findings.
-
-  --supply-chain
-      Deprecated no-op.
-      Supply-chain inventory and rules already run by default.
 
 Public audit metadata:
   These fields label reproducible corpus scans and public audit datasets.
@@ -169,7 +158,7 @@ struct ScanCommand {
     #[arg(
         long,
         value_parser = parse_report_mode,
-        default_value = "default",
+        default_value = "summary",
         value_name = "MODE",
         help = SUPPORTED_REPORT_MODES_HELP
     )]
@@ -206,16 +195,6 @@ struct ScanCommand {
         help = "Select compatibility profile(s); repeat or comma-separate values; use 'all' for every supported profile"
     )]
     profiles: Vec<String>,
-    #[arg(
-        long,
-        help = "Compatibility no-op; supply-chain inventory and rules already run by default"
-    )]
-    supply_chain: bool,
-    #[arg(
-        long,
-        help = "Require local trust manifest and license evidence, emitting missing metadata findings"
-    )]
-    strict_supply_chain: bool,
     #[arg(
         long,
         value_name = "NAME",
@@ -286,7 +265,6 @@ fn run_scan_with_writer_and_opener(
         .as_deref()
         .map(load_explicit_config)
         .transpose()?;
-    let _supply_chain_requested = command.supply_chain;
     let fail_on = effective_fail_on(
         &command.fail_on,
         loaded_config.as_ref().map(|loaded| &loaded.config),
@@ -299,11 +277,7 @@ fn run_scan_with_writer_and_opener(
     let config_methodology = loaded_config
         .as_ref()
         .and_then(|loaded| loaded.config.methodology.clone());
-    let config = effective_config(
-        loaded_config.map(|loaded| loaded.config),
-        &command.profiles,
-        command.strict_supply_chain,
-    );
+    let config = effective_config(loaded_config.map(|loaded| loaded.config), &command.profiles);
 
     let mut report = scan_path(
         &command.path,
@@ -441,14 +415,12 @@ fn write_report_and_apply_fail_on(
     let command = ScanCommand {
         path: PathBuf::from("."),
         format,
-        mode: ReportMode::Default,
+        mode: ReportMode::Summary,
         config: None,
         fail_on: fail_on.to_vec(),
         output: None,
         open: false,
         profiles: Vec::new(),
-        supply_chain: false,
-        strict_supply_chain: false,
         corpus_name: None,
         corpus_entry_id: None,
         methodology_version: None,
@@ -471,12 +443,8 @@ fn effective_fail_on<'a>(
     config.map_or(&[], |config| config.fail_on.as_slice())
 }
 
-fn effective_config(
-    config: Option<AuditConfig>,
-    cli_profiles: &[String],
-    strict_supply_chain: bool,
-) -> Option<AuditConfig> {
-    if cli_profiles.is_empty() && !strict_supply_chain {
+fn effective_config(config: Option<AuditConfig>, cli_profiles: &[String]) -> Option<AuditConfig> {
+    if cli_profiles.is_empty() {
         return config;
     }
 
@@ -485,18 +453,12 @@ fn effective_config(
             if !cli_profiles.is_empty() {
                 config.profiles = effective_cli_profiles(cli_profiles);
             }
-            if strict_supply_chain {
-                config.supply_chain.policy = SupplyChainPolicy::Strict;
-            }
             config
         }
         None => {
             let mut config = AuditConfig::empty();
             if !cli_profiles.is_empty() {
                 config.profiles = effective_cli_profiles(cli_profiles);
-            }
-            if strict_supply_chain {
-                config.supply_chain.policy = SupplyChainPolicy::Strict;
             }
             config
         }
@@ -602,8 +564,6 @@ fn enrich_report_audit_metadata(
         output: command.output.as_deref().map(path_metadata_string),
         profiles: command.profiles.clone(),
         fail_on: effective_fail_on.iter().map(severity_label).collect(),
-        supply_chain: command.supply_chain,
-        strict_supply_chain: command.strict_supply_chain,
     };
     report.audit.methodology = effective_methodology_metadata(command, config_methodology);
     report.audit.platform = Some(AuditPlatformMetadata {
@@ -795,11 +755,11 @@ mod tests {
             .to_string();
 
         assert!(help.contains("--mode <MODE>"));
-        assert!(help.contains("default"));
-        assert!(help.contains("verbose"));
+        assert!(help.contains("summary"));
         assert!(help.contains("research"));
-        assert!(help.contains("ci"));
         assert!(help.contains("triage"));
+        assert!(!help.contains("verbose"));
+        assert!(!help.contains("compact CI gate output"));
     }
 
     #[test]
@@ -847,7 +807,7 @@ mod tests {
     }
 
     #[test]
-    fn scan_help_lists_supply_chain_policy_options() {
+    fn scan_help_omits_supply_chain_policy_options() {
         let mut command = Cli::command();
         let help = command
             .find_subcommand_mut("scan")
@@ -855,11 +815,9 @@ mod tests {
             .render_long_help()
             .to_string();
 
-        assert!(help.contains("--supply-chain"));
-        assert!(help.contains("Deprecated no-op."));
-        assert!(help.contains("Supply-chain inventory and rules already run by default."));
-        assert!(help.contains("--strict-supply-chain"));
-        assert!(help.contains("Require local trust manifest and license evidence."));
+        assert!(!help.contains("Supply chain:"));
+        assert!(!help.contains("--supply-chain"));
+        assert!(!help.contains("--strict-supply-chain"));
     }
 
     #[test]
@@ -907,14 +865,12 @@ mod tests {
             Command::Scan(command) => {
                 assert_eq!(command.path, PathBuf::from("."));
                 assert_eq!(command.format, ReportFormat::Text);
-                assert_eq!(command.mode, ReportMode::Default);
+                assert_eq!(command.mode, ReportMode::Summary);
                 assert_eq!(command.config, None);
                 assert_eq!(command.fail_on, Vec::<Severity>::new());
                 assert_eq!(command.output, None);
                 assert!(!command.open);
                 assert_eq!(command.profiles, Vec::<String>::new());
-                assert!(!command.supply_chain);
-                assert!(!command.strict_supply_chain);
                 assert_eq!(command.corpus_name, None);
                 assert_eq!(command.corpus_entry_id, None);
                 assert_eq!(command.methodology_version, None);
@@ -961,24 +917,6 @@ mod tests {
                     Some("oss-skill-repo")
                 );
                 assert_eq!(command.scan_batch_id.as_deref(), Some("batch-2026-05"));
-            }
-        }
-    }
-
-    #[test]
-    fn parses_supply_chain_selection_flags() {
-        let cli = Cli::parse_from([
-            "agent-audit",
-            "scan",
-            "fixtures/spec/basic",
-            "--supply-chain",
-            "--strict-supply-chain",
-        ]);
-
-        match cli.command {
-            Command::Scan(command) => {
-                assert!(command.supply_chain);
-                assert!(command.strict_supply_chain);
             }
         }
     }
@@ -1244,10 +1182,8 @@ mod tests {
 
     #[test]
     fn parses_scan_report_modes() {
-        assert_parsed_report_mode("default", ReportMode::Default);
-        assert_parsed_report_mode("verbose", ReportMode::Verbose);
+        assert_parsed_report_mode("summary", ReportMode::Summary);
         assert_parsed_report_mode("research", ReportMode::Research);
-        assert_parsed_report_mode("ci", ReportMode::Ci);
         assert_parsed_report_mode("triage", ReportMode::Triage);
     }
 
@@ -1264,7 +1200,7 @@ mod tests {
             Command::Scan(command) => {
                 assert_eq!(command.path, PathBuf::from("fixtures/spec/basic"));
                 assert_eq!(command.format, expected);
-                assert_eq!(command.mode, ReportMode::Default);
+                assert_eq!(command.mode, ReportMode::Summary);
                 assert_eq!(command.config, None);
                 assert_eq!(command.fail_on, Vec::<Severity>::new());
                 assert_eq!(command.output, None);
@@ -1339,7 +1275,40 @@ mod tests {
         let message = error.to_string();
 
         assert!(message.contains("unsupported report mode 'debug'"));
-        assert!(message.contains("supported: default, verbose, research, ci, triage"));
+        assert!(message.contains("supported: summary, triage, research"));
+    }
+
+    #[test]
+    fn rejects_removed_scan_modes_with_clear_message() {
+        for removed_mode in ["default", "verbose", "ci"] {
+            let error = Cli::try_parse_from([
+                "agent-audit",
+                "scan",
+                "fixtures/spec/basic",
+                "--mode",
+                removed_mode,
+            ])
+            .expect_err("removed mode should fail");
+
+            let message = error.to_string();
+
+            assert!(message.contains(&format!("unsupported report mode '{removed_mode}'")));
+            assert!(message.contains("supported: summary, triage, research"));
+        }
+    }
+
+    #[test]
+    fn rejects_removed_supply_chain_flags() {
+        for removed_flag in ["--supply-chain", "--strict-supply-chain"] {
+            let error =
+                Cli::try_parse_from(["agent-audit", "scan", "fixtures/spec/basic", removed_flag])
+                    .expect_err("removed supply-chain flag should fail");
+
+            assert!(
+                error.to_string().contains("unexpected argument"),
+                "unexpected error for {removed_flag}: {error}"
+            );
+        }
     }
 
     #[test]
@@ -1414,7 +1383,7 @@ description: JSON output fixture.
         );
         assert_eq!(
             value["audit"]["command"]["mode"],
-            serde_json::json!("default")
+            serde_json::json!("summary")
         );
         assert_audit_path_metadata_present(&value["audit"]["scan"]["root"]);
         assert_eq!(value["audit"]["repository"], serde_json::Value::Null);
@@ -1631,40 +1600,6 @@ description: HTML output fixture.
         let report = fs::read_to_string(output_path).expect("read report file");
         assert!(report.starts_with("{\n"));
         assert!(report.contains("\"file-output\""));
-    }
-
-    #[test]
-    fn run_scan_ci_output_reports_policy_path_and_fail_on_exit_behavior() {
-        let workspace = CliTestWorkspace::new("ci-policy-output");
-        workspace.write_file("SKILL.md", missing_name_skill());
-        let output_path = workspace.root.join("reports/ci.txt");
-        let mut stdout = Vec::new();
-
-        let result = run_scan_with_writer(
-            ScanCommand {
-                mode: ReportMode::Ci,
-                output: Some(output_path.clone()),
-                fail_on: vec![Severity::Low],
-                ..scan_command(&workspace, ReportFormat::Text)
-            },
-            &mut stdout,
-        );
-        let error = result.expect_err("CI fail_on low should fail after writing report");
-
-        assert!(stdout.is_empty());
-        assert!(error
-            .to_string()
-            .contains("fail_on matched an unsuppressed finding severity"));
-        let report = fs::read_to_string(&output_path).expect("read CI report file");
-        assert!(report.starts_with("Agent Skill Auditor CI scan summary\n"));
-        assert!(report.contains("CI policy: fail_on=low blocking_groups=1"));
-        assert!(report.contains(&format!(
-            "Report output: {} (format=text)",
-            path_metadata_string(&output_path)
-        )));
-        assert!(report.contains("Exit code behavior: returns 1 after rendering"));
-        assert!(report.contains("Top blocking groups: showing 1 of 1 canonical blocking groups."));
-        assert!(report.ends_with('\n'));
     }
 
     #[test]
@@ -1886,27 +1821,27 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
 
     #[test]
     fn run_scan_passes_report_mode_to_renderer() {
-        let workspace = CliTestWorkspace::new("verbose-mode-output");
+        let workspace = CliTestWorkspace::new("research-mode-output");
         workspace.write_file("SKILL.md", missing_name_skill());
 
         let output = run_scan_output(ScanCommand {
-            mode: ReportMode::Verbose,
+            mode: ReportMode::Research,
             ..scan_command(&workspace, ReportFormat::Text)
         })
-        .expect("run verbose text scan");
+        .expect("run research text scan");
 
-        assert!(output.starts_with("Agent Skill Auditor verbose scan summary\n"));
+        assert!(output.starts_with("Agent Skill Auditor research scan summary\n"));
         assert!(output.contains("Full findings:"));
         assert!(output.contains("The skill manifest does not declare a name."));
     }
 
     #[test]
-    fn run_scan_default_does_not_fail_on_low_findings() {
-        let workspace = CliTestWorkspace::new("default-non-failing");
+    fn run_scan_summary_does_not_fail_on_low_findings() {
+        let workspace = CliTestWorkspace::new("summary-non-failing");
         workspace.write_file("SKILL.md", missing_name_skill());
 
         let output = run_scan_output(scan_command(&workspace, ReportFormat::Text))
-            .expect("default scan should render low findings without failing");
+            .expect("summary scan should render low findings without failing");
 
         assert!(output.contains("SKILL001 [low/high/spec] x1 packages=1"));
     }
@@ -2742,7 +2677,7 @@ description: No config discovery fixture.
     }
 
     #[test]
-    fn run_scan_default_does_not_emit_missing_supply_chain_metadata_findings() {
+    fn run_scan_does_not_emit_missing_supply_chain_metadata_findings() {
         let workspace = CliTestWorkspace::new("default-supply-chain-policy");
         workspace.write_file("SKILL.md", valid_skill("default-supply-chain-policy"));
 
@@ -2756,42 +2691,30 @@ description: No config discovery fixture.
     }
 
     #[test]
-    fn run_scan_supply_chain_flag_keeps_default_policy() {
-        let workspace = CliTestWorkspace::new("supply-chain-default-policy");
-        workspace.write_file("SKILL.md", valid_skill("supply-chain-default-policy"));
-
-        let output = run_scan_output(ScanCommand {
-            supply_chain: true,
-            ..scan_command(&workspace, ReportFormat::Json)
-        })
-        .expect("supply-chain view flag should not enable strict policy");
+    fn run_scan_reports_supply_chain_inventory_without_cli_control() {
+        let workspace = CliTestWorkspace::new("supply-chain-inventory-default");
+        workspace.write_file("SKILL.md", valid_skill("supply-chain-inventory-default"));
+        workspace.write_file(
+            "scripts/install.sh",
+            "#!/bin/sh\nnpm install left-pad@^1.0.0\n",
+        );
+        let output =
+            run_scan_output(scan_command(&workspace, ReportFormat::Json)).expect("run JSON scan");
         let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
 
         assert!(value.get("supply_chain").is_some());
-        assert!(!has_finding(&value, "SUPPLY011"));
+        assert!(has_finding(&value, "SEC009"));
+        assert!(has_finding(&value, "SUPPLY003"));
+        assert!(has_finding(&value, "SUPPLY004"));
     }
 
     #[test]
-    fn run_scan_strict_supply_chain_requires_trust_manifest_and_license_evidence() {
-        let workspace = CliTestWorkspace::new("strict-supply-chain-policy");
-        workspace.write_file("SKILL.md", valid_skill("strict-supply-chain-policy"));
-
-        let output = run_scan_output(ScanCommand {
-            strict_supply_chain: true,
-            ..scan_command(&workspace, ReportFormat::Json)
-        })
-        .expect("strict supply-chain scan should render findings without fail_on");
-        let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
-
-        assert!(has_finding(&value, "SUPPLY001"));
-        assert!(has_finding(&value, "SUPPLY002"));
-        assert!(has_finding(&value, "SUPPLY011"));
-    }
-
-    #[test]
-    fn run_scan_config_strict_supply_chain_policy_requires_metadata() {
-        let workspace = CliTestWorkspace::new("config-strict-supply-chain-policy");
-        workspace.write_file("SKILL.md", valid_skill("config-strict-supply-chain-policy"));
+    fn run_scan_rejects_config_supply_chain_policy() {
+        let workspace = CliTestWorkspace::new("config-supply-chain-policy-removed");
+        workspace.write_file(
+            "SKILL.md",
+            valid_skill("config-supply-chain-policy-removed"),
+        );
         workspace.write_file(
             "agent-audit.yaml",
             r#"
@@ -2800,58 +2723,14 @@ supply_chain:
 "#,
         );
 
-        let output = run_scan_output(configured_scan_command(
+        let error = run_scan_output(configured_scan_command(
             &workspace,
             ReportFormat::Json,
             "agent-audit.yaml",
         ))
-        .expect("config strict supply-chain policy should render findings");
-        let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
+        .expect_err("supply_chain config should be rejected");
 
-        assert!(has_finding(&value, "SUPPLY002"));
-        assert!(has_finding(&value, "SUPPLY011"));
-    }
-
-    #[test]
-    fn run_scan_cli_strict_supply_chain_overrides_default_config_policy() {
-        let workspace = CliTestWorkspace::new("cli-strict-supply-chain-policy");
-        workspace.write_file("SKILL.md", valid_skill("cli-strict-supply-chain-policy"));
-        workspace.write_file(
-            "agent-audit.yaml",
-            r#"
-supply_chain:
-  policy: default
-"#,
-        );
-
-        let output = run_scan_output(ScanCommand {
-            strict_supply_chain: true,
-            ..configured_scan_command(&workspace, ReportFormat::Json, "agent-audit.yaml")
-        })
-        .expect("CLI strict supply-chain policy should override config default");
-        let value: serde_json::Value = serde_json::from_str(&output).expect("parse JSON output");
-
-        assert!(has_finding(&value, "SUPPLY011"));
-    }
-
-    #[test]
-    fn run_scan_fail_on_low_matches_strict_supply_chain_findings_after_json_output() {
-        let workspace = CliTestWorkspace::new("strict-supply-chain-fail-on");
-        workspace.write_file("SKILL.md", valid_skill("strict-supply-chain-fail-on"));
-
-        let (output, result) = run_scan_attempt(ScanCommand {
-            fail_on: vec![Severity::Low],
-            strict_supply_chain: true,
-            ..scan_command(&workspace, ReportFormat::Json)
-        });
-        let error = result.expect_err("low fail_on should match strict supply-chain findings");
-        let value: serde_json::Value =
-            serde_json::from_str(&output).expect("JSON output should be written before fail_on");
-
-        assert!(has_finding(&value, "SUPPLY001"));
-        assert!(error
-            .to_string()
-            .contains("fail_on matched an unsuppressed finding severity"));
+        assert!(error.to_string().contains("unknown field `supply_chain`"));
     }
 
     fn missing_name_skill() -> &'static str {
@@ -2871,14 +2750,12 @@ This manifest intentionally starts with a paragraph so the scanner cannot derive
         ScanCommand {
             path,
             format,
-            mode: ReportMode::Default,
+            mode: ReportMode::Summary,
             config: None,
             fail_on: Vec::new(),
             output: None,
             open: false,
             profiles: Vec::new(),
-            supply_chain: false,
-            strict_supply_chain: false,
             corpus_name: None,
             corpus_entry_id: None,
             methodology_version: None,

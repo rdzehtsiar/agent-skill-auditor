@@ -213,9 +213,7 @@
         "format",
         "mode",
         "profiles",
-        "fail_on",
-        "supply_chain",
-        "strict_supply_chain"
+        "fail_on"
       ],
       "properties": {
         "name": {
@@ -242,12 +240,6 @@
           "items": {
             "type": "string"
           }
-        },
-        "supply_chain": {
-          "type": "boolean"
-        },
-        "strict_supply_chain": {
-          "type": "boolean"
         }
       },
       "additionalProperties": false

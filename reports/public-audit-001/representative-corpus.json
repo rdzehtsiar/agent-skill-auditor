@@ -7,7 +7,7 @@
     },
     "ruleset": {
       "version": "0.6.0",
-      "hash": "fnv1a64:bee351a45fa77334"
+      "hash": "fnv1a64:ce2cbacc2fe36422"
     },
     "host_profiles": {
       "selected": [
@@ -31,12 +31,10 @@
     "command": {
       "name": "scan",
       "format": "json",
-      "mode": "default",
+      "mode": "summary",
       "output": "reports/public-audit-001/representative-corpus.json",
       "profiles": [],
-      "fail_on": [],
-      "supply_chain": false,
-      "strict_supply_chain": false
+      "fail_on": []
     },
     "methodology": {
       "corpus_name": "v0.8 public audit",

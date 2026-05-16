@@ -145,8 +145,6 @@ pub struct AuditCommandMetadata {
     pub profiles: Vec<String>,
     #[serde(default)]
     pub fail_on: Vec<String>,
-    pub supply_chain: bool,
-    pub strict_supply_chain: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

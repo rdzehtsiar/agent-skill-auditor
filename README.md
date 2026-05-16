@@ -48,22 +48,21 @@ cargo run -q -p agent-audit-cli -- scan fixtures/spec/basic
 ## CLI Usage
 
 ```text
-agent-audit scan [PATH] [--format FORMAT] [--mode MODE] [--output PATH] [--open] [--config PATH] [--fail-on SEVERITY] [--profile PROFILE] [--supply-chain] [--strict-supply-chain] [--corpus-name NAME] [--corpus-entry-id ID] [--methodology-version VERSION] [--inclusion-tag TAG] [--repo-classification CLASSIFICATION] [--scan-batch-id ID]
+agent-audit scan [PATH] [--format FORMAT] [--mode MODE] [--output PATH] [--open] [--config PATH] [--fail-on SEVERITY] [--profile PROFILE] [--corpus-name NAME] [--corpus-entry-id ID] [--methodology-version VERSION] [--inclusion-tag TAG] [--repo-classification CLASSIFICATION] [--scan-batch-id ID]
 ```
 
 - `PATH` defaults to `.`.
 - `--format` defaults to `text`.
 - Supported formats are `text`, `json`, `sarif`, and `html`.
-- `--mode` defaults to `default`. Supported modes are `default`, `triage`, `ci`, `verbose`, and `research`.
-- Text and HTML output use `--mode` to control density: grouped default output, human-readable triage review, compact CI logs, expanded verbose findings, or grouped research evidence with normalized keys. Default, research, HTML, and JSON reports use the same canonical finding groups and group fingerprints; CI mode shows a filtered top-group subset and labels it as filtered for log size. JSON and SARIF preserve the full finding set, including finding confidence.
-- `--output PATH` writes the selected report format to a file instead of standard output. CI summaries include the generated output path when it is known.
+- `--mode` defaults to `summary`. Supported modes are `summary`, `triage`, and `research`.
+- Text and HTML output use `--mode` to control density: grouped summary output, human-readable triage review, or grouped research evidence with normalized keys. Summary, research, HTML, and JSON reports use the same canonical finding groups and group fingerprints. JSON and SARIF preserve the full finding set, including finding confidence.
+- `--output PATH` writes the selected report format to a file instead of standard output.
 - `--open` opens an HTML report after it is written. It applies only with `--format html --output PATH`, and only after `fail_on` checks pass.
 - `--config PATH` explicitly reads and validates a YAML audit config before scanning.
 - `--fail-on SEVERITY` fails after rendering the report when any unsuppressed finding exactly matches that severity. Repeat it to match more than one severity.
 - Supported severities are `info`, `low`, `medium`, `high`, and `critical`.
 - `--profile PROFILE` selects compatibility profiles. Repeat it or use comma-separated values. Use `--profile all` for every supported profile.
-- `--supply-chain` is accepted for compatibility with supply-chain-focused workflows; inventory and supply-chain rules already run by default.
-- `--strict-supply-chain` requires local trust manifest and license evidence, adding missing-metadata findings that default scans intentionally avoid.
+- Supply-chain inventory and active supply-chain rules run during normal scans and are not controlled by CLI flags.
 - Optional methodology flags (`--corpus-name`, `--corpus-entry-id`, `--methodology-version`, `--inclusion-tag`, `--repo-classification`, and `--scan-batch-id`) attach audit context to JSON and HTML reports. They are omitted from normal scans when unset.
 
 Examples:
@@ -77,12 +76,11 @@ agent-audit scan fixtures/compatibility/host/mixed-profile-metadata --profile co
 agent-audit scan fixtures/spec/basic --format json
 agent-audit scan fixtures/spec/basic --format sarif
 agent-audit scan fixtures/spec/basic --format html
-agent-audit scan fixtures/spec/basic --mode verbose
-agent-audit scan fixtures/spec/basic --mode ci
+agent-audit scan fixtures/spec/basic --mode triage
+agent-audit scan fixtures/spec/basic --mode research
 agent-audit scan fixtures/spec/basic --format html --output report.html
 agent-audit scan fixtures/spec/basic --format html --output report.html --open
 agent-audit scan fixtures/supply-chain/trust-manifest-valid --format json
-agent-audit scan fixtures/spec/basic --strict-supply-chain
 agent-audit scan fixtures/spec/basic --config .agent-audit.yaml
 agent-audit scan fixtures/spec/basic --fail-on medium --fail-on high
 agent-audit scan fixtures/spec/basic --config .agent-audit.yaml --fail-on high
@@ -92,7 +90,7 @@ Config loading is explicit. The scanner does not auto-discover `.agent-audit.yam
 
 When both config `fail_on` and CLI `--fail-on` values are provided, the CLI values take precedence. For example, a config that fails on `low` can be narrowed for one run with `--fail-on high`.
 
-CI mode keeps output short and action-oriented. It reports the exact `fail_on` severities, blocking canonical finding groups, non-blocking canonical finding groups, top blocking groups, the generated output path or `stdout`, and exit-code behavior. `fail_on` remains exact severity matching: the CLI returns a non-zero exit after rendering when any unsuppressed finding has a configured severity, and returns zero otherwise unless scanning or report writing fails.
+`fail_on` remains exact severity matching: the CLI returns a non-zero exit after rendering when any unsuppressed finding has a configured severity, and returns zero otherwise unless scanning or report writing fails.
 
 When no profile is selected in config or on the CLI, the scanner evaluates all supported compatibility profiles in registry order: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, and `generic`. CLI `--profile` values override config `profiles`.
 
@@ -153,9 +151,8 @@ Configuration is documented in [Config](./docs/config.md). Current behavior:
 - Config loading is explicit with `--config PATH`; `.agent-audit.yaml` is the preferred filename, but it is not auto-discovered.
 - `fail_on` uses exact severity matching, not threshold matching. For example, `fail_on: [medium]` fails on unsuppressed `medium` findings only, not `high` or `critical`.
 - `profiles` values select compatibility evaluation and matrix rendering. Omitted or empty `profiles` evaluates all supported profiles.
-- `supply_chain.policy: strict` requires local trust manifest and license evidence. The default policy records evidence without turning missing optional metadata into findings.
+- Supply-chain inventory and active supply-chain rules always run as part of the default scan. Config files cannot enable, disable, or make supply-chain analysis stricter.
 - CLI `--profile` values override config `profiles`.
-- CLI `--strict-supply-chain` overrides config supply-chain policy to strict for that scan.
 - Suppressions require active rule IDs, clear reasons, and either exact normalized paths or grouped evidence `match` values, including for compatibility findings.
 
 ## Security Model
