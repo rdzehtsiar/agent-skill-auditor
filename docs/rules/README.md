@@ -14,8 +14,8 @@ Rule status is explicit: `active` rules may emit findings and be suppressed, whi
 | [SEC002](#sec002-secret-like-environment-variable-access) | `active` | `medium` | `security` | Secret-like environment variable access |
 | [SEC003](#sec003-data-sent-to-external-url) | `active` | `high` | `security` | Data sent to external URL |
 | [SEC004](#sec004-unpinned-remote-script-execution) | `reserved` | `high` | `security` | Unpinned remote script execution |
-| [SEC005](#sec005-use-of-sudo) | `reserved` | `medium` | `security` | Use of sudo |
-| [SEC006](#sec006-git-history-modification) | `reserved` | `medium` | `security` | Git history modification |
+| [SEC005](#sec005-privilege-escalation-or-system-level-modification) | `active` | `medium` | `security` | Privilege escalation or system-level modification |
+| [SEC006](#sec006-destructive-filesystem-or-repository-history-operation) | `active` | `medium` | `security` | Destructive filesystem or repository history operation |
 | [SEC007](#sec007-write-outside-skill-directory) | `active` | `medium` | `security` | Write outside skill directory |
 | [SEC008](#sec008-executable-artifact-download) | `reserved` | `high` | `security` | Executable artifact download |
 | [SEC009](#sec009-package-install-without-lockfile) | `active` | `low` | `security` | Package install without lockfile |
@@ -189,9 +189,9 @@ sha256sum -c scripts/setup.sh.sha256
 bash scripts/setup.sh
 ```
 
-## SEC005: Use of sudo
+## SEC005: Privilege escalation or system-level modification
 
-- Status: `reserved` (reserved; not emitted)
+- Status: `active`
 - Severity: `medium`
 - Category: `security`
 - Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
@@ -207,7 +207,7 @@ Remove `sudo`, document prerequisites, or require the user to perform privileged
 
 ### Safe Suppression
 
-`SEC005` is reserved and cannot be suppressed until an evaluator emits it. When active, suppress only when the privileged action is optional, documented, and explicitly user-controlled.
+Suppress `SEC005` only when the privileged action is optional, documented, explicitly user-controlled, and cannot run without deliberate confirmation.
 
 ### Examples
 
@@ -225,9 +225,9 @@ Compliant:
 Document jq as an optional prerequisite and fail with an actionable message when it is missing.
 ```
 
-## SEC006: Git history modification
+## SEC006: Destructive filesystem or repository history operation
 
-- Status: `reserved` (reserved; not emitted)
+- Status: `active`
 - Severity: `medium`
 - Category: `security`
 - Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
@@ -235,23 +235,24 @@ Document jq as an optional prerequisite and fail with an actionable message when
 
 ### Why It Matters
 
-History-changing Git commands can destroy work, hide changes, or make audit evidence disappear when run without deliberate user approval.
+Destructive filesystem commands and history-changing Git commands can destroy work, hide changes, or make audit evidence disappear when run without deliberate user approval.
 
 ### How To Fix
 
-Avoid destructive Git operations in skill artifacts; report the requested command and require the user to run or approve it explicitly.
+Avoid broad destructive operations in skill artifacts; report the requested cleanup or history command and require the user to run or approve it explicitly.
 
 ### Safe Suppression
 
-`SEC006` is reserved and cannot be suppressed until an evaluator emits it. When active, suppress only for a reviewed workflow that cannot run without direct user confirmation.
+Suppress `SEC006` only for a reviewed workflow that clearly scopes the destructive target and cannot run without direct user confirmation.
 
 ### Examples
 
-Do not rewrite repository history from skill automation.
+Do not delete broad filesystem targets or rewrite repository history from skill automation.
 
 Non-compliant:
 
 ```text
+rm -rf $HOME/.cache/demo
 git reset --hard HEAD~1
 ```
 
@@ -259,7 +260,7 @@ Compliant:
 
 ```text
 git status --short
-# Ask the user before making any history-changing operation.
+# Show the requested cleanup or history operation and ask the user to approve or run it.
 ```
 
 ## SEC007: Write outside skill directory

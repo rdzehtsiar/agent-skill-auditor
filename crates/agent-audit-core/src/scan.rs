@@ -4566,6 +4566,12 @@ Read [parent](../outside.md), [absolute](/outside.md), and [windows](C:/outside.
         );
         assert_security_finding(
             &report,
+            "SEC006",
+            "destructive-history/scripts/rewrite.sh",
+            Some(3),
+        );
+        assert_security_finding(
+            &report,
             "SEC007",
             "write-outside/scripts/write-outside.sh",
             Some(3),
@@ -4609,15 +4615,83 @@ Read [parent](../outside.md), [absolute](/outside.md), and [windows](C:/outside.
     }
 
     #[test]
-    fn scan_security_sudo_install_fixture_keeps_reserved_sec005_metadata_only() {
+    fn scan_security_sudo_install_fixture_emits_sec005_when_scanned_as_skill_root() {
         let report = scan_security_fixture("sudo-install");
+
+        assert_security_finding(&report, "SEC005", "scripts/install.sh", Some(3));
+    }
+
+    #[test]
+    fn scan_security_reports_sec005_and_sec006_for_executable_skill_scripts() {
+        let workspace = TestWorkspace::new("scan-security-phase-a-active");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: phase-a-active
+description: Exercises active Phase A rules.
+---
+
+# Phase A Active
+
+Review scripts/install.sh and scripts/rewrite.sh.
+"#,
+        );
+        workspace.write_file(
+            "scripts/install.sh",
+            "# SPDX-License-Identifier: Apache-2.0\nset -eu\nsudo apt-get install -y jq\n",
+        );
+        workspace.write_file(
+            "scripts/rewrite.sh",
+            "# SPDX-License-Identifier: Apache-2.0\nset -eu\ngit reset --hard HEAD~1\n",
+        );
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
+
+        assert_security_finding(&report, "SEC005", "scripts/install.sh", Some(3));
+        assert_security_finding(&report, "SEC006", "scripts/rewrite.sh", Some(3));
+
+        let json = serde_json::to_string_pretty(&report).expect("serialize report");
+        assert!(json.contains("\"rule_id\": \"SEC005\""));
+        assert!(json.contains("\"rule_id\": \"SEC006\""));
+        assert!(!json_contains_workspace_root(&json, workspace.root()));
+    }
+
+    #[test]
+    fn scan_security_phase_a_rules_skip_docs_examples_generated_vendor_and_lockfiles() {
+        let workspace = TestWorkspace::new("scan-security-phase-a-context-skip");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: phase-a-context-skip
+description: Exercises skipped Phase A contexts.
+---
+
+# Phase A Context Skip
+
+Review the bundled reference material.
+"#,
+        );
+        for path in [
+            "docs/install.sh",
+            "examples/install.sh",
+            "scripts/generated/install.sh",
+            "vendor/install.sh",
+            "package-lock.json",
+        ] {
+            workspace.write_file(
+                path,
+                "# SPDX-License-Identifier: Apache-2.0\nset -eu\nsudo apt-get install -y jq\nrm -rf $HOME/.cache/demo\n",
+            );
+        }
+
+        let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
 
         assert!(
             report
                 .findings
                 .iter()
-                .all(|finding| finding.rule_id != "SEC005"),
-            "sudo fixture emitted reserved SEC005 finding: {:#?}",
+                .all(|finding| finding.rule_id != "SEC005" && finding.rule_id != "SEC006"),
+            "skipped contexts emitted Phase A findings: {:#?}",
             report.findings
         );
     }

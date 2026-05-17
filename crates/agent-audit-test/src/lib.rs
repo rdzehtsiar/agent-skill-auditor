@@ -1032,8 +1032,8 @@ mod tests {
 
         let value: serde_json::Value =
             serde_json::from_str(&first_json).expect("parse security corpus JSON");
-        assert_eq!(value["summary"]["package_count"], 17);
-        assert_eq!(value["summary"]["finding_count"], 38);
+        assert_eq!(value["summary"]["package_count"], 18);
+        assert_eq!(value["summary"]["finding_count"], 40);
         assert_eq!(value["summary"]["suppressed_finding_count"], 0);
 
         let finding_keys = json_finding_order_keys(&value);

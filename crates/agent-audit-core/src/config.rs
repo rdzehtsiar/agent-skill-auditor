@@ -626,7 +626,7 @@ ignore:
                 r#"
 rule_mode: {mode}
 ignore:
-  - rule: SEC005
+  - rule: SEC004
     path: scripts/install.sh
     reason: Reviewed reserved rule fixture.
 "#
@@ -634,7 +634,7 @@ ignore:
 
             assert_validation_contains(
                 error,
-                "ignore[0].rule uses reserved rule ID `SEC005`; reserved rules are not emitted and cannot be suppressed yet",
+                "ignore[0].rule uses reserved rule ID `SEC004`; reserved rules are not emitted and cannot be suppressed yet",
             );
         }
     }

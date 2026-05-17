@@ -4457,7 +4457,7 @@ mod tests {
 
         assert_eq!(
             summary,
-            "Agent Skill Auditor scan summary\n\nAudit:\n  scanner: agent-audit/0.6.0\n  ruleset: 0.6.0 (fnv1a64:ce2cbacc2fe36422)\n  schema: 1\n  profiles: 0 selected\n  scan root: unspecified\n  git: not-detected\n  platform: not-recorded\n  timestamp: not-recorded\n\nScope:\n  packages: 2\n  invalid manifests: 1\n  broken references: 0\n  suppressed findings: 4\n\nFindings:\n  occurrences: 0\n  groups: 0\n  severity: critical=0 high=0 medium=0 low=0 info=0\n  actual secret evidence: 0\n  prompt secret exposure signals: 0\n\nSupply chain:\n  licenses: 0\n  trust manifests: 0 total, 0 invalid\n  external URLs: 0 total, 0 mutable\n  dependencies: 0 total, 0 unpinned\n  dependency manifests: 0 total, 0 exact-pinned, 0 range-based\n  lockfiles: 0\n  install commands: 0 total, 0 with reproducibility gaps\n  executables/binaries: 0 executable, 0 binary\n  checksums: 0\n  permission conflicts: 0\n  offline audit readiness: ready=0 partial=0 not-ready=0 unknown=0\n\nCompatibility:\n  profiles: 0\n  package rows: 0\n  status totals: pass=0 warn=0 fail=0 unknown=0 untested=0\n\nPatterns:\n  observed skill collection patterns: 0"
+            "Agent Skill Auditor scan summary\n\nAudit:\n  scanner: agent-audit/0.6.0\n  ruleset: 0.6.0 (fnv1a64:527e86c606779973)\n  schema: 1\n  profiles: 0 selected\n  scan root: unspecified\n  git: not-detected\n  platform: not-recorded\n  timestamp: not-recorded\n\nScope:\n  packages: 2\n  invalid manifests: 1\n  broken references: 0\n  suppressed findings: 4\n\nFindings:\n  occurrences: 0\n  groups: 0\n  severity: critical=0 high=0 medium=0 low=0 info=0\n  actual secret evidence: 0\n  prompt secret exposure signals: 0\n\nSupply chain:\n  licenses: 0\n  trust manifests: 0 total, 0 invalid\n  external URLs: 0 total, 0 mutable\n  dependencies: 0 total, 0 unpinned\n  dependency manifests: 0 total, 0 exact-pinned, 0 range-based\n  lockfiles: 0\n  install commands: 0 total, 0 with reproducibility gaps\n  executables/binaries: 0 executable, 0 binary\n  checksums: 0\n  permission conflicts: 0\n  offline audit readiness: ready=0 partial=0 not-ready=0 unknown=0\n\nCompatibility:\n  profiles: 0\n  package rows: 0\n  status totals: pass=0 warn=0 fail=0 unknown=0 untested=0\n\nPatterns:\n  observed skill collection patterns: 0"
         );
         assert!(summary.contains("timestamp: not-recorded"));
     }
@@ -7429,19 +7429,37 @@ mod tests {
         let result = &value["runs"][0]["results"][0];
 
         assert_eq!(rule["id"], "SEC005");
-        assert_eq!(rule["name"], "Use of sudo");
-        assert_eq!(rule["shortDescription"]["text"], "Use of sudo");
-        assert_eq!(rule["fullDescription"]["text"], "Use of sudo rationale.");
+        assert_eq!(
+            rule["name"],
+            "Privilege escalation or system-level modification"
+        );
+        assert_eq!(
+            rule["shortDescription"]["text"],
+            "Privilege escalation or system-level modification"
+        );
+        assert_eq!(
+            rule["fullDescription"]["text"],
+            "Privilege escalation can make a skill modify system state outside the repository and can turn otherwise limited commands into machine-wide changes."
+        );
         assert_eq!(
             rule["help"]["text"],
-            "Use of sudo remediation.\n\nSuppress `SEC005` only with a documented reason."
+            "Remove `sudo`, document prerequisites, or require the user to perform privileged setup outside the skill workflow.\n\nSuppress `SEC005` only when the privileged action is optional, documented, explicitly user-controlled, and cannot run without deliberate confirmation."
         );
-        assert_eq!(rule["defaultConfiguration"]["level"], "error");
-        assert_eq!(rule["properties"]["agentAuditSeverity"], "high");
+        assert_eq!(rule["defaultConfiguration"]["level"], "warning");
+        assert_eq!(rule["properties"]["agentAuditSeverity"], "medium");
         assert_eq!(rule["properties"]["category"], "security");
         assert_eq!(
             rule["properties"]["tags"],
-            json!(["agent-audit", "category:security"])
+            json!([
+                "agent-audit",
+                "category:security",
+                "profile:agent-skills-spec",
+                "profile:claude-code",
+                "profile:codex",
+                "profile:github-copilot",
+                "profile:vscode-copilot",
+                "profile:generic"
+            ])
         );
         assert_eq!(result["ruleId"], "SEC005");
         assert_eq!(result["ruleIndex"], 0);
