@@ -325,6 +325,7 @@ pub const ACTIVE_RULE_IDS: &[&str] = &[
     "SEC005",
     "SEC006",
     "SEC007",
+    "SEC008",
     "SEC009",
     "SEC011",
     "SEC012",
@@ -346,7 +347,7 @@ pub const ACTIVE_RULE_IDS: &[&str] = &[
     "SUPPLY012",
 ];
 
-pub const RESERVED_RULE_IDS: &[&str] = &["SEC004", "SEC008", "SEC010", "SUPPLY001", "SUPPLY011"];
+pub const RESERVED_RULE_IDS: &[&str] = &["SEC004", "SEC010", "SUPPLY001", "SUPPLY011"];
 
 pub const ALL_HOST_PROFILES: &[&str] = HOST_PROFILES;
 
@@ -405,9 +406,9 @@ const SEC007_EXAMPLES: &[RuleExample] = &[RuleExample {
 }];
 
 const SEC008_EXAMPLES: &[RuleExample] = &[RuleExample {
-    summary: "Do not download executable artifacts without pinning and verification.",
-    non_compliant: "curl -L https://example.com/tool.exe -o tool.exe\n./tool.exe",
-    compliant: "curl -L https://example.com/tool-v1.2.3.exe -o tool.exe\nsha256sum -c tool.exe.sha256\n# Run only after user review.",
+    summary: "Avoid evaluating code assembled at runtime.",
+    non_compliant: "payload = read_user_payload()\neval(payload)",
+    compliant: "allowed_actions = {\"status\": show_status}\nallowed_actions[action]()",
 }];
 
 const SEC009_EXAMPLES: &[RuleExample] = &[RuleExample {
@@ -647,16 +648,16 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
     },
     RuleMetadata {
         id: RuleId::Sec008,
-        status: RuleStatus::Reserved,
-        title: "Executable artifact download",
+        status: RuleStatus::Active,
+        title: "Dynamic code evaluation",
         severity: RuleSeverity::High,
         category: RuleCategory::Security,
         applicable_profiles: ALL_HOST_PROFILES,
         input_node_types: SECURITY_ARTIFACT_INPUT,
-        rationale: "Downloaded binaries or executable files are difficult to inspect and can introduce unreviewed code execution into an offline-first audit workflow.",
-        remediation: "Avoid runtime executable downloads; vendor reviewed artifacts when licensing allows, or pin, verify, and document the download with explicit user approval.",
+        rationale: "Dynamic code evaluation can execute strings assembled from files, user input, or network data, bypassing normal review of the skill's executable artifacts.",
+        remediation: "Replace `eval`, `exec`, or function-constructor execution with explicit dispatch over reviewed commands or functions.",
         suppression_guidance:
-            "`SEC008` is reserved and cannot be suppressed until an evaluator emits it. When active, suppress only for a pinned artifact with checksum or signature verification and documented provenance.",
+            "Suppress `SEC008` only when the evaluated input is a narrow, reviewed constant or sandboxed expression language with documented controls.",
         examples: SEC008_EXAMPLES,
     },
     RuleMetadata {
@@ -1347,6 +1348,9 @@ pub fn evaluate_security_signal_rules_for_mode(
         }
         if is_destructive_operation_signal(signal) {
             findings.push(destructive_operation_finding(signal));
+        }
+        if is_dynamic_code_evaluation_signal(signal) {
+            findings.push(dynamic_code_evaluation_finding(signal));
         }
     }
     findings.extend(external_data_exfiltration_findings(signals));
@@ -2747,9 +2751,8 @@ fn hidden_instruction_finding(signal: &SecuritySignal) -> EvaluatedRuleFinding {
     }
 }
 
-fn is_default_phase_a_executable_signal(signal: &SecuritySignal) -> bool {
-    signal.confidence == AnalyzerConfidence::High
-        && signal.context.executable
+fn is_default_phase_a_executable_context(signal: &SecuritySignal) -> bool {
+    signal.context.executable
         && !signal.context.path_classifications.iter().any(|context| {
             matches!(
                 context,
@@ -2759,6 +2762,10 @@ fn is_default_phase_a_executable_signal(signal: &SecuritySignal) -> bool {
                     | SecuritySignalPathContext::Lockfile
             )
         })
+}
+
+fn is_default_phase_a_executable_signal(signal: &SecuritySignal) -> bool {
+    signal.confidence == AnalyzerConfidence::High && is_default_phase_a_executable_context(signal)
 }
 
 fn is_privilege_escalation_signal(signal: &SecuritySignal) -> bool {
@@ -2824,9 +2831,7 @@ fn destructive_command_has_high_risk_target(evidence: &str) -> bool {
 }
 
 fn destructive_target_is_high_risk(target: &str) -> bool {
-    let target = strip_quotes(target)
-        .replace('\\', "/")
-        .to_ascii_lowercase();
+    let target = strip_quotes(target).replace('\\', "/").to_ascii_lowercase();
 
     target == "."
         || target == "*"
@@ -2852,6 +2857,43 @@ fn destructive_operation_finding(signal: &SecuritySignal) -> EvaluatedRuleFindin
         rule_id: RuleId::Sec006,
         message: format!(
             "The executable artifact contains `{target}`, a destructive filesystem or repository history operation. Remove it or require explicit user confirmation before it can run."
+        ),
+        location: RuleFindingLocation {
+            path: signal.location.path.clone(),
+            line: signal.location.line,
+        },
+    }
+}
+
+fn is_dynamic_code_evaluation_signal(signal: &SecuritySignal) -> bool {
+    signal.kind == SecuritySignalKind::DynamicCodeEvaluation
+        && matches!(
+            signal.confidence,
+            AnalyzerConfidence::Medium | AnalyzerConfidence::High
+        )
+        && is_default_phase_a_executable_context(signal)
+        && signal
+            .sink
+            .as_ref()
+            .is_some_and(|sink| sink.kind == SecuritySinkKind::DynamicCodeEvaluation)
+        && signal
+            .sink
+            .as_ref()
+            .and_then(|sink| sink.target.as_deref())
+            .is_some_and(|target| matches!(target, "eval" | "exec" | "Function" | "new Function"))
+}
+
+fn dynamic_code_evaluation_finding(signal: &SecuritySignal) -> EvaluatedRuleFinding {
+    let target = signal
+        .sink
+        .as_ref()
+        .and_then(|sink| sink.target.as_deref())
+        .unwrap_or("dynamic code evaluation");
+
+    EvaluatedRuleFinding {
+        rule_id: RuleId::Sec008,
+        message: format!(
+            "The executable artifact invokes `{target}` for dynamic code evaluation. Replace runtime-evaluated code with explicit, reviewable dispatch."
         ),
         location: RuleFindingLocation {
             path: signal.location.path.clone(),
@@ -3956,6 +3998,23 @@ mod tests {
                 .suppression_guidance
                 .contains("cannot be suppressed"));
         }
+    }
+
+    #[test]
+    fn sec008_is_active_and_removed_from_reserved_rules() {
+        assert!(ACTIVE_RULE_IDS.contains(&"SEC008"));
+        assert!(!RESERVED_RULE_IDS.contains(&"SEC008"));
+
+        let metadata = active_rule_metadata("SEC008").expect("SEC008 must be active");
+
+        assert_eq!(metadata.status, RuleStatus::Active);
+        assert_eq!(metadata.title, "Dynamic code evaluation");
+        assert_eq!(metadata.severity, RuleSeverity::High);
+        assert_eq!(metadata.category, RuleCategory::Security);
+        assert!(!metadata
+            .suppression_guidance
+            .contains("cannot be suppressed"));
+        assert!(metadata.suppression_guidance.contains("sandboxed"));
     }
 
     #[test]
@@ -5156,6 +5215,142 @@ mod tests {
                 .all(|finding| finding.rule_id != RuleId::Sec006),
             "bounded generated cleanup emitted SEC006: {findings:#?}"
         );
+    }
+
+    #[test]
+    fn sec008_reports_dynamic_code_evaluation_in_executable_context() {
+        let scripts = [
+            (
+                "scripts/evaluate.py",
+                python_security_analyzer()
+                    .analyze(&python_analyzer_input(
+                        "scripts/evaluate.py",
+                        b"payload = read_payload()\neval(payload)\nexec(payload)\n",
+                    ))
+                    .signals,
+            ),
+            (
+                "scripts/client.js",
+                javascript_security_analyzer()
+                    .analyze(&javascript_analyzer_input(
+                        "scripts/client.js",
+                        SecurityLanguage::JavaScript,
+                        b"const payload = getPayload();\neval(payload);\nnew Function('payload', payload);\n",
+                    ))
+                    .signals,
+            ),
+            (
+                "scripts/client.ts",
+                javascript_security_analyzer()
+                    .analyze(&javascript_analyzer_input(
+                        "scripts/client.ts",
+                        SecurityLanguage::TypeScript,
+                        b"const payload: string = getPayload();\nFunction('payload', payload);\n",
+                    ))
+                    .signals,
+            ),
+        ];
+        let signals = scripts
+            .into_iter()
+            .flat_map(|(_, signals)| signals)
+            .collect::<Vec<_>>();
+        let findings = evaluate_security_signal_rules(&signals);
+        let sec008 = findings
+            .iter()
+            .filter(|finding| finding.rule_id == RuleId::Sec008)
+            .cloned()
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            finding_projection(&sec008),
+            vec![
+                (RuleId::Sec008, "scripts/client.js", Some(2)),
+                (RuleId::Sec008, "scripts/client.js", Some(3)),
+                (RuleId::Sec008, "scripts/client.ts", Some(2)),
+                (RuleId::Sec008, "scripts/evaluate.py", Some(2)),
+                (RuleId::Sec008, "scripts/evaluate.py", Some(3)),
+            ]
+        );
+        assert!(sec008
+            .iter()
+            .any(|finding| finding.message.contains("eval")));
+        assert!(sec008
+            .iter()
+            .any(|finding| finding.message.contains("exec")));
+        assert!(sec008
+            .iter()
+            .any(|finding| finding.message.contains("new Function")));
+    }
+
+    #[test]
+    fn sec008_requires_dynamic_sink_and_executable_context() {
+        let mut prose = executable_security_signal(
+            SecuritySignalKind::DynamicCodeEvaluation,
+            Some(SecuritySinkKind::DynamicCodeEvaluation),
+            Some("eval"),
+            AnalyzerConfidence::High,
+            "SKILL.md",
+        );
+        prose.context = agent_audit_security::SecuritySignalContext::manifest_prose("SKILL.md");
+
+        let wrong_kind = executable_security_signal(
+            SecuritySignalKind::ObfuscatedCommand,
+            Some(SecuritySinkKind::DynamicCodeEvaluation),
+            Some("eval"),
+            AnalyzerConfidence::High,
+            "scripts/evaluate.sh",
+        );
+        let wrong_sink = executable_security_signal(
+            SecuritySignalKind::DynamicCodeEvaluation,
+            Some(SecuritySinkKind::ProcessExecution),
+            Some("eval"),
+            AnalyzerConfidence::High,
+            "scripts/evaluate.py",
+        );
+        let low_confidence = executable_security_signal(
+            SecuritySignalKind::DynamicCodeEvaluation,
+            Some(SecuritySinkKind::DynamicCodeEvaluation),
+            Some("eval"),
+            AnalyzerConfidence::Low,
+            "scripts/evaluate.py",
+        );
+
+        let findings =
+            evaluate_security_signal_rules(&[prose, wrong_kind, wrong_sink, low_confidence]);
+
+        assert!(findings
+            .iter()
+            .all(|finding| finding.rule_id != RuleId::Sec008));
+    }
+
+    #[test]
+    fn sec008_skips_docs_examples_fixtures_generated_vendor_and_lockfiles() {
+        let cases = [
+            "skills/demo/docs/evaluate.py",
+            "skills/demo/examples/evaluate.py",
+            "fixtures/security/demo/scripts/evaluate.py",
+            "skills/demo/scripts/generated/evaluate.py",
+            "skills/demo/vendor/evaluate.py",
+            "skills/demo/package-lock.json",
+        ];
+
+        for path in cases {
+            let signal = executable_security_signal(
+                SecuritySignalKind::DynamicCodeEvaluation,
+                Some(SecuritySinkKind::DynamicCodeEvaluation),
+                Some("eval"),
+                AnalyzerConfidence::High,
+                path,
+            );
+            let findings = evaluate_security_signal_rules(&[signal]);
+
+            assert!(
+                findings
+                    .iter()
+                    .all(|finding| finding.rule_id != RuleId::Sec008),
+                "{path} emitted SEC008: {findings:#?}"
+            );
+        }
     }
 
     #[test]

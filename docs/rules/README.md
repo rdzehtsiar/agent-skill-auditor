@@ -17,7 +17,7 @@ Rule status is explicit: `active` rules may emit findings and be suppressed, whi
 | [SEC005](#sec005-privilege-escalation-or-system-level-modification) | `active` | `medium` | `security` | Privilege escalation or system-level modification |
 | [SEC006](#sec006-destructive-filesystem-or-repository-history-operation) | `active` | `medium` | `security` | Destructive filesystem or repository history operation |
 | [SEC007](#sec007-write-outside-skill-directory) | `active` | `medium` | `security` | Write outside skill directory |
-| [SEC008](#sec008-executable-artifact-download) | `reserved` | `high` | `security` | Executable artifact download |
+| [SEC008](#sec008-dynamic-code-evaluation) | `active` | `high` | `security` | Dynamic code evaluation |
 | [SEC009](#sec009-package-install-without-lockfile) | `active` | `low` | `security` | Package install without lockfile |
 | [SEC010](#sec010-obfuscated-shell-command) | `reserved` | `medium` | `security` | Obfuscated shell command |
 | [SEC011](#sec011-prompt-injection-like-instruction) | `active` | `medium` | `security` | Prompt-injection-like instruction |
@@ -299,9 +299,9 @@ Compliant:
 cp template.sh ./scripts/generated-template.sh
 ```
 
-## SEC008: Executable artifact download
+## SEC008: Dynamic code evaluation
 
-- Status: `reserved` (reserved; not emitted)
+- Status: `active`
 - Severity: `high`
 - Category: `security`
 - Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
@@ -309,33 +309,32 @@ cp template.sh ./scripts/generated-template.sh
 
 ### Why It Matters
 
-Downloaded binaries or executable files are difficult to inspect and can introduce unreviewed code execution into an offline-first audit workflow.
+Dynamic code evaluation can execute strings assembled from files, user input, or network data, bypassing normal review of the skill's executable artifacts.
 
 ### How To Fix
 
-Avoid runtime executable downloads; vendor reviewed artifacts when licensing allows, or pin, verify, and document the download with explicit user approval.
+Replace `eval`, `exec`, or function-constructor execution with explicit dispatch over reviewed commands or functions.
 
 ### Safe Suppression
 
-`SEC008` is reserved and cannot be suppressed until an evaluator emits it. When active, suppress only for a pinned artifact with checksum or signature verification and documented provenance.
+Suppress `SEC008` only when the evaluated input is a narrow, reviewed constant or sandboxed expression language with documented controls.
 
 ### Examples
 
-Do not download executable artifacts without pinning and verification.
+Avoid evaluating code assembled at runtime.
 
 Non-compliant:
 
 ```text
-curl -L https://example.com/tool.exe -o tool.exe
-./tool.exe
+payload = read_user_payload()
+eval(payload)
 ```
 
 Compliant:
 
 ```text
-curl -L https://example.com/tool-v1.2.3.exe -o tool.exe
-sha256sum -c tool.exe.sha256
-# Run only after user review.
+allowed_actions = {"status": show_status}
+allowed_actions[action]()
 ```
 
 ## SEC009: Package install without lockfile

@@ -1032,8 +1032,8 @@ mod tests {
 
         let value: serde_json::Value =
             serde_json::from_str(&first_json).expect("parse security corpus JSON");
-        assert_eq!(value["summary"]["package_count"], 18);
-        assert_eq!(value["summary"]["finding_count"], 40);
+        assert_eq!(value["summary"]["package_count"], 19);
+        assert_eq!(value["summary"]["finding_count"], 43);
         assert_eq!(value["summary"]["suppressed_finding_count"], 0);
 
         let finding_keys = json_finding_order_keys(&value);
@@ -1065,6 +1065,23 @@ mod tests {
         assert!(!finding_paths
             .iter()
             .any(|path| path.starts_with("heredoc-embedded-code/")));
+        assert!(finding_paths
+            .iter()
+            .any(|path| path == &"dynamic-execution/scripts/evaluate.py"));
+
+        let first_sarif = render_sarif(&first_report).expect("render security corpus SARIF");
+        let second_sarif = render_sarif(&second_report).expect("rerender security corpus SARIF");
+        assert_eq!(first_sarif.as_bytes(), second_sarif.as_bytes());
+        assert!(!json_contains_path(&first_sarif, &workspace_root()));
+        let sarif_value: serde_json::Value =
+            serde_json::from_str(&first_sarif).expect("parse security corpus SARIF");
+        let sarif_rule_ids = sarif_value["runs"][0]["results"]
+            .as_array()
+            .expect("SARIF results")
+            .iter()
+            .map(|result| result["ruleId"].as_str().expect("SARIF rule id"))
+            .collect::<Vec<_>>();
+        assert!(sarif_rule_ids.contains(&"SEC008"));
 
         let heredoc_permissions = value["supply_chain"]["permissions"]
             .as_array()

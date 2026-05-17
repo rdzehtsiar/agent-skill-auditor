@@ -4578,6 +4578,12 @@ Read [parent](../outside.md), [absolute](/outside.md), and [windows](C:/outside.
         );
         assert_security_finding(
             &report,
+            "SEC008",
+            "dynamic-execution/scripts/evaluate.py",
+            Some(3),
+        );
+        assert_security_finding(
+            &report,
             "SEC009",
             "package-install-unpinned/scripts/install.sh",
             Some(3),
@@ -4619,6 +4625,23 @@ Read [parent](../outside.md), [absolute](/outside.md), and [windows](C:/outside.
         let report = scan_security_fixture("sudo-install");
 
         assert_security_finding(&report, "SEC005", "scripts/install.sh", Some(3));
+    }
+
+    #[test]
+    fn scan_security_dynamic_execution_fixture_emits_sec008_when_scanned_as_skill_root() {
+        let report = scan_security_fixture("dynamic-execution");
+
+        assert_security_finding(&report, "SEC008", "scripts/client.js", Some(3));
+        assert_security_finding(&report, "SEC008", "scripts/client.ts", Some(3));
+        assert_security_finding(&report, "SEC008", "scripts/evaluate.py", Some(3));
+        assert_eq!(
+            report
+                .finding_groups
+                .iter()
+                .filter(|group| group.rule_id == "SEC008")
+                .count(),
+            3
+        );
     }
 
     #[test]
@@ -4680,7 +4703,18 @@ Review the bundled reference material.
         ] {
             workspace.write_file(
                 path,
-                "# SPDX-License-Identifier: Apache-2.0\nset -eu\nsudo apt-get install -y jq\nrm -rf $HOME/.cache/demo\n",
+                "# SPDX-License-Identifier: Apache-2.0\nset -eu\nsudo apt-get install -y jq\nrm -rf $HOME/.cache/demo\npython - <<'PY'\neval('1 + 1')\nPY\n",
+            );
+        }
+        for path in [
+            "docs/evaluate.py",
+            "examples/evaluate.py",
+            "scripts/generated/evaluate.py",
+            "vendor/evaluate.py",
+        ] {
+            workspace.write_file(
+                path,
+                "# SPDX-License-Identifier: Apache-2.0\npayload = read_payload()\neval(payload)\n",
             );
         }
 
@@ -4690,9 +4724,56 @@ Review the bundled reference material.
             report
                 .findings
                 .iter()
-                .all(|finding| finding.rule_id != "SEC005" && finding.rule_id != "SEC006"),
+                .all(|finding| !matches!(finding.rule_id.as_str(), "SEC005" | "SEC006" | "SEC008")),
             "skipped contexts emitted Phase A findings: {:#?}",
             report.findings
+        );
+    }
+
+    #[test]
+    fn scan_security_sec008_can_be_suppressed_by_rule_and_path() {
+        let workspace = TestWorkspace::new("scan-security-sec008-suppression");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: sec008-suppression
+description: Exercises SEC008 suppression.
+---
+
+# SEC008 Suppression
+
+Review scripts/evaluate.py.
+"#,
+        );
+        workspace.write_file(
+            "scripts/evaluate.py",
+            "# SPDX-License-Identifier: Apache-2.0\npayload = read_payload()\neval(payload)\n",
+        );
+        let config = parse_audit_config(
+            r#"
+ignore:
+  - rule: SEC008
+    path: scripts/evaluate.py
+    reason: Fixture intentionally evaluates a constant expression in a reviewed sandbox.
+"#,
+        )
+        .expect("valid config");
+        let options = ScanOptions {
+            config: Some(config),
+            ..ScanOptions::default()
+        };
+
+        let report = scan_path(workspace.root(), &options).expect("scan path");
+
+        assert!(report
+            .findings
+            .iter()
+            .all(|finding| finding.rule_id != "SEC008"));
+        assert_eq!(report.suppressed_findings.len(), 1);
+        assert_eq!(report.suppressed_findings[0].finding.rule_id, "SEC008");
+        assert_eq!(
+            report.suppressed_findings[0].suppression.reason,
+            "Fixture intentionally evaluates a constant expression in a reviewed sandbox."
         );
     }
 

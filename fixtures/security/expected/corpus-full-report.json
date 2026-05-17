@@ -7,7 +7,7 @@
     },
     "ruleset": {
       "version": "0.6.0",
-      "hash": "fnv1a64:527e86c606779973"
+      "hash": "fnv1a64:93395363dd26d8f1"
     },
     "host_profiles": {
       "selected": [
@@ -149,6 +149,58 @@
             "artifact": "scripts",
             "kind": "file",
             "size_bytes": 70,
+            "readonly": false
+          }
+        ]
+      }
+    },
+    {
+      "root": "dynamic-execution",
+      "manifest_path": "dynamic-execution/SKILL.md",
+      "manifest": {
+        "name": "dynamic-execution",
+        "description": "Fixture for dynamic code evaluation in executable scripts.",
+        "frontmatter": {
+          "description": "Fixture for dynamic code evaluation in executable scripts.",
+          "name": "dynamic-execution"
+        },
+        "body": "\n# Dynamic Execution\n\nReview the scripts in `scripts/`.\n",
+        "headings": [
+          "Dynamic Execution"
+        ],
+        "links": [],
+        "inline_code": [
+          "scripts/"
+        ],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [
+          "scripts"
+        ],
+        "files": [
+          {
+            "path": "scripts/client.js",
+            "artifact": "scripts",
+            "kind": "file",
+            "size_bytes": 103,
+            "readonly": false
+          },
+          {
+            "path": "scripts/client.ts",
+            "artifact": "scripts",
+            "kind": "file",
+            "size_bytes": 107,
+            "readonly": false
+          },
+          {
+            "path": "scripts/evaluate.py",
+            "artifact": "scripts",
+            "kind": "file",
+            "size_bytes": 77,
             "readonly": false
           }
         ]
@@ -729,6 +781,54 @@
       "rationale": "Destructive filesystem commands and history-changing Git commands can destroy work, hide changes, or make audit evidence disappear when run without deliberate user approval.",
       "remediation": "Avoid broad destructive operations in skill artifacts; report the requested cleanup or history command and require the user to run or approve it explicitly.",
       "suppression": "Suppress `SEC006` only for a reviewed workflow that clearly scopes the destructive target and cannot run without direct user confirmation."
+    },
+    {
+      "rule_id": "SEC008",
+      "fingerprint": "fnv1a64:90302e665c209827",
+      "severity": "high",
+      "confidence": "medium",
+      "category": "security",
+      "title": "Dynamic code evaluation",
+      "message": "The executable artifact invokes `new Function` for dynamic code evaluation. Replace runtime-evaluated code with explicit, reviewable dispatch.",
+      "location": {
+        "path": "dynamic-execution/scripts/client.js",
+        "line": 3
+      },
+      "rationale": "Dynamic code evaluation can execute strings assembled from files, user input, or network data, bypassing normal review of the skill's executable artifacts.",
+      "remediation": "Replace `eval`, `exec`, or function-constructor execution with explicit dispatch over reviewed commands or functions.",
+      "suppression": "Suppress `SEC008` only when the evaluated input is a narrow, reviewed constant or sandboxed expression language with documented controls."
+    },
+    {
+      "rule_id": "SEC008",
+      "fingerprint": "fnv1a64:363a297efb0f2bf3",
+      "severity": "high",
+      "confidence": "medium",
+      "category": "security",
+      "title": "Dynamic code evaluation",
+      "message": "The executable artifact invokes `Function` for dynamic code evaluation. Replace runtime-evaluated code with explicit, reviewable dispatch.",
+      "location": {
+        "path": "dynamic-execution/scripts/client.ts",
+        "line": 3
+      },
+      "rationale": "Dynamic code evaluation can execute strings assembled from files, user input, or network data, bypassing normal review of the skill's executable artifacts.",
+      "remediation": "Replace `eval`, `exec`, or function-constructor execution with explicit dispatch over reviewed commands or functions.",
+      "suppression": "Suppress `SEC008` only when the evaluated input is a narrow, reviewed constant or sandboxed expression language with documented controls."
+    },
+    {
+      "rule_id": "SEC008",
+      "fingerprint": "fnv1a64:232ef5be3beaa5a7",
+      "severity": "high",
+      "confidence": "medium",
+      "category": "security",
+      "title": "Dynamic code evaluation",
+      "message": "The executable artifact invokes `eval` for dynamic code evaluation. Replace runtime-evaluated code with explicit, reviewable dispatch.",
+      "location": {
+        "path": "dynamic-execution/scripts/evaluate.py",
+        "line": 3
+      },
+      "rationale": "Dynamic code evaluation can execute strings assembled from files, user input, or network data, bypassing normal review of the skill's executable artifacts.",
+      "remediation": "Replace `eval`, `exec`, or function-constructor execution with explicit dispatch over reviewed commands or functions.",
+      "suppression": "Suppress `SEC008` only when the evaluated input is a narrow, reviewed constant or sandboxed expression language with documented controls."
     },
     {
       "rule_id": "SEC002",
@@ -1637,6 +1737,87 @@
       ]
     },
     {
+      "rule_id": "SEC008",
+      "group_fingerprint": "fnv1a64:a6e8de2d06b97543",
+      "severity": "high",
+      "confidence": "medium",
+      "category": "security",
+      "title": "Dynamic code evaluation",
+      "rationale": "Dynamic code evaluation can execute strings assembled from files, user input, or network data, bypassing normal review of the skill's executable artifacts.",
+      "remediation": "Replace `eval`, `exec`, or function-constructor execution with explicit dispatch over reviewed commands or functions.",
+      "suppression": "Suppress `SEC008` only when the evaluated input is a narrow, reviewed constant or sandboxed expression language with documented controls.",
+      "evidence_key": "evidence=eval",
+      "dimensions": {},
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "dynamic-execution/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "dynamic-execution/scripts/evaluate.py",
+            "line": 3
+          },
+          "message": "The executable artifact invokes `eval` for dynamic code evaluation. Replace runtime-evaluated code with explicit, reviewable dispatch."
+        }
+      ]
+    },
+    {
+      "rule_id": "SEC008",
+      "group_fingerprint": "fnv1a64:6428b5c4bb080b45",
+      "severity": "high",
+      "confidence": "medium",
+      "category": "security",
+      "title": "Dynamic code evaluation",
+      "rationale": "Dynamic code evaluation can execute strings assembled from files, user input, or network data, bypassing normal review of the skill's executable artifacts.",
+      "remediation": "Replace `eval`, `exec`, or function-constructor execution with explicit dispatch over reviewed commands or functions.",
+      "suppression": "Suppress `SEC008` only when the evaluated input is a narrow, reviewed constant or sandboxed expression language with documented controls.",
+      "evidence_key": "evidence=function",
+      "dimensions": {},
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "dynamic-execution/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "dynamic-execution/scripts/client.ts",
+            "line": 3
+          },
+          "message": "The executable artifact invokes `Function` for dynamic code evaluation. Replace runtime-evaluated code with explicit, reviewable dispatch."
+        }
+      ]
+    },
+    {
+      "rule_id": "SEC008",
+      "group_fingerprint": "fnv1a64:27e6202266802717",
+      "severity": "high",
+      "confidence": "medium",
+      "category": "security",
+      "title": "Dynamic code evaluation",
+      "rationale": "Dynamic code evaluation can execute strings assembled from files, user input, or network data, bypassing normal review of the skill's executable artifacts.",
+      "remediation": "Replace `eval`, `exec`, or function-constructor execution with explicit dispatch over reviewed commands or functions.",
+      "suppression": "Suppress `SEC008` only when the evaluated input is a narrow, reviewed constant or sandboxed expression language with documented controls.",
+      "evidence_key": "evidence=new function",
+      "dimensions": {},
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "dynamic-execution/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "dynamic-execution/scripts/client.js",
+            "line": 3
+          },
+          "message": "The executable artifact invokes `new Function` for dynamic code evaluation. Replace runtime-evaluated code with explicit, reviewable dispatch."
+        }
+      ]
+    },
+    {
       "rule_id": "SEC009",
       "group_fingerprint": "fnv1a64:5f06e4bfdbf8d4ba",
       "severity": "low",
@@ -2193,9 +2374,9 @@
     {
       "id": "low-trust-manifest-adoption",
       "title": "Low trust-manifest adoption",
-      "summary": "Trust manifest evidence is missing for 18 of 18 packages (100%).",
-      "count": 18,
-      "affected_package_count": 18,
+      "summary": "Trust manifest evidence is missing for 19 of 19 packages (100%).",
+      "count": 19,
+      "affected_package_count": 19,
       "affected_package_percent": 100,
       "evidence": [
         {
@@ -2204,21 +2385,21 @@
         },
         {
           "kind": "packages_without_trust_manifest",
-          "count": 18
+          "count": 19
         }
       ]
     },
     {
       "id": "low-checksum-evidence",
       "title": "Low checksum evidence",
-      "summary": "Executable or binary artifact evidence exceeds checksum evidence across 13 of 18 packages (72%).",
-      "count": 15,
-      "affected_package_count": 13,
-      "affected_package_percent": 72,
+      "summary": "Executable or binary artifact evidence exceeds checksum evidence across 14 of 19 packages (74%).",
+      "count": 18,
+      "affected_package_count": 14,
+      "affected_package_percent": 74,
       "evidence": [
         {
           "kind": "executable_or_binary_artifacts",
-          "count": 15
+          "count": 18
         },
         {
           "kind": "checksums",
@@ -2229,10 +2410,10 @@
     {
       "id": "dependency-reproducibility-gaps",
       "title": "Dependency reproducibility gaps in executable skills",
-      "summary": "Executable dependency setup has reproducibility gaps in 5 of 18 packages (28%).",
+      "summary": "Executable dependency setup has reproducibility gaps in 5 of 19 packages (26%).",
       "count": 20,
       "affected_package_count": 5,
-      "affected_package_percent": 28,
+      "affected_package_percent": 26,
       "evidence": [
         {
           "kind": "SEC009",
@@ -2251,10 +2432,10 @@
     {
       "id": "mutable-remote-references",
       "title": "Mutable remote references",
-      "summary": "Mutable remote references appear in 3 of 18 packages (17%).",
+      "summary": "Mutable remote references appear in 3 of 19 packages (16%).",
       "count": 6,
       "affected_package_count": 3,
-      "affected_package_percent": 17,
+      "affected_package_percent": 16,
       "evidence": [
         {
           "kind": "mutable_external_urls",
@@ -2269,10 +2450,10 @@
     {
       "id": "hidden-prompt-like-instructions",
       "title": "Hidden prompt-like instructions in inert contexts",
-      "summary": "Hidden prompt-like instructions appear in comments or code blocks in 3 of 18 packages (17%).",
+      "summary": "Hidden prompt-like instructions appear in comments or code blocks in 3 of 19 packages (16%).",
       "count": 3,
       "affected_package_count": 3,
-      "affected_package_percent": 17,
+      "affected_package_percent": 16,
       "evidence": [
         {
           "kind": "SEC012",
@@ -2283,7 +2464,7 @@
     {
       "id": "prompt-injection-review-signals",
       "title": "Prompt-injection-like review signals",
-      "summary": "Prompt-injection-like review signals appear in 2 of 18 packages (11%).",
+      "summary": "Prompt-injection-like review signals appear in 2 of 19 packages (11%).",
       "count": 2,
       "affected_package_count": 2,
       "affected_package_percent": 11,
@@ -2297,8 +2478,8 @@
   ],
   "suppressed_findings": [],
   "summary": {
-    "package_count": 18,
-    "finding_count": 40,
+    "package_count": 19,
+    "finding_count": 43,
     "suppressed_finding_count": 0,
     "invalid_manifest_count": 0,
     "broken_reference_count": 0,
@@ -2641,6 +2822,42 @@
         "confidence": "high"
       },
       {
+        "path": "dynamic-execution/scripts/client.js",
+        "line": null,
+        "source": "filesystem",
+        "kind": "script",
+        "language": "javascript",
+        "reason": "script extension .js",
+        "referenced": false,
+        "normalized": "dynamic-execution/scripts/client.js",
+        "raw": "scripts/client.js",
+        "confidence": "high"
+      },
+      {
+        "path": "dynamic-execution/scripts/client.ts",
+        "line": null,
+        "source": "filesystem",
+        "kind": "script",
+        "language": "typescript",
+        "reason": "script extension .ts",
+        "referenced": false,
+        "normalized": "dynamic-execution/scripts/client.ts",
+        "raw": "scripts/client.ts",
+        "confidence": "high"
+      },
+      {
+        "path": "dynamic-execution/scripts/evaluate.py",
+        "line": null,
+        "source": "filesystem",
+        "kind": "script",
+        "language": "python",
+        "reason": "script extension .py",
+        "referenced": false,
+        "normalized": "dynamic-execution/scripts/evaluate.py",
+        "raw": "scripts/evaluate.py",
+        "confidence": "high"
+      },
+      {
         "path": "env-exfiltration/scripts/upload.sh",
         "line": null,
         "source": "filesystem",
@@ -2847,6 +3064,36 @@
         "normalized": "git_operations=git history rewrite",
         "raw": "git reset --hard HEAD~1",
         "confidence": "high"
+      },
+      {
+        "path": "dynamic-execution/scripts/client.js",
+        "line": 3,
+        "source": "script",
+        "kind": "subprocess",
+        "evidence": "observed",
+        "normalized": "subprocess=new Function",
+        "raw": "new Function(\"payload\", payload);",
+        "confidence": "medium"
+      },
+      {
+        "path": "dynamic-execution/scripts/client.ts",
+        "line": 3,
+        "source": "script",
+        "kind": "subprocess",
+        "evidence": "observed",
+        "normalized": "subprocess=Function",
+        "raw": "Function(\"payload\", payload);",
+        "confidence": "medium"
+      },
+      {
+        "path": "dynamic-execution/scripts/evaluate.py",
+        "line": 3,
+        "source": "script",
+        "kind": "subprocess",
+        "evidence": "observed",
+        "normalized": "subprocess=eval",
+        "raw": "eval(payload)",
+        "confidence": "medium"
       },
       {
         "path": "env-exfiltration/scripts/upload.sh",
@@ -3201,6 +3448,14 @@
         ]
       },
       {
+        "path": "dynamic-execution/SKILL.md",
+        "status": "ready",
+        "score": 95,
+        "reasons": [
+          "no local license evidence found"
+        ]
+      },
+      {
         "path": "env-exfiltration/SKILL.md",
         "status": "ready",
         "score": 95,
@@ -3437,6 +3692,42 @@
       {
         "path": "destructive-history/SKILL.md",
         "name": "destructive-history",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "pass",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "dynamic-execution/SKILL.md",
+        "name": "dynamic-execution",
         "profiles": [
           {
             "profile": "agent-skills-spec",

@@ -2,7 +2,7 @@ Agent Skill Auditor scan summary
 
 Audit:
   scanner: agent-audit/0.6.0
-  ruleset: 0.6.0 (fnv1a64:527e86c606779973)
+  ruleset: 0.6.0 (fnv1a64:93395363dd26d8f1)
   schema: 1
   profiles: 6 selected
   scan root: unspecified
