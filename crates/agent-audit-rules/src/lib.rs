@@ -203,8 +203,9 @@ impl fmt::Display for RuleStatus {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RuleExecutionMode {
+    #[default]
     Default,
     Strict,
     Research,
@@ -226,12 +227,6 @@ impl RuleExecutionMode {
             b"research" => Some(Self::Research),
             _ => None,
         }
-    }
-}
-
-impl Default for RuleExecutionMode {
-    fn default() -> Self {
-        Self::Default
     }
 }
 

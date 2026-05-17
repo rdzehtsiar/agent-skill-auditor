@@ -3816,11 +3816,9 @@ fn shell_eval_target_variable(line: &str) -> Option<String> {
     let dollar_index = after_eval.find('$')?;
     let after_dollar = after_eval.get(dollar_index + 1..)?;
     let after_dollar = after_dollar
-        .trim_start_matches(|character| matches!(character, '"' | '\'' | '`'))
+        .trim_start_matches(['"', '\'', '`'])
         .strip_prefix('{')
-        .unwrap_or_else(|| {
-            after_dollar.trim_start_matches(|character| matches!(character, '"' | '\'' | '`'))
-        });
+        .unwrap_or_else(|| after_dollar.trim_start_matches(['"', '\'', '`']));
     let variable = after_dollar
         .chars()
         .take_while(|character| character.is_ascii_alphanumeric() || *character == '_')
