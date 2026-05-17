@@ -34,10 +34,11 @@ use agent_audit_hosts::{
     profile_by_id, CompatibilityStatus, ProfileCompatibilityResult, HOST_PROFILES,
 };
 use agent_audit_rules::{
-    active_rule_metadata, evaluate_package_install_rules, evaluate_security_signal_rules,
-    evaluate_structural_rules, evaluate_supply_chain_rules, rule_counts_as_broken_reference,
+    active_rule_metadata, evaluate_package_install_rules_for_mode,
+    evaluate_security_signal_rules_for_mode, evaluate_structural_rules_for_mode,
+    evaluate_supply_chain_rules_for_mode, rule_counts_as_broken_reference,
     rule_counts_as_invalid_manifest, EvaluatedRuleFinding, RuleCategory as RegistryCategory,
-    RuleDependencyManifestPinningKind, RuleFrontmatterFieldFact, RuleId,
+    RuleDependencyManifestPinningKind, RuleExecutionMode, RuleFrontmatterFieldFact, RuleId,
     RuleMalformedFrontmatterFact, RuleManifestFacts, RulePackageDependencyManifestFact,
     RulePackageFacts, RulePackageFileFact, RulePackageInstallContext, RuleParsedManifestFacts,
     RuleReferenceFact, RuleSeverity as RegistrySeverity, RuleSupplyChainBinaryFact,
@@ -85,6 +86,7 @@ impl Default for ScanOptions {
 pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> {
     let manifests = discover_skill_manifests(root)?;
     let profiles = selected_profiles(options.config.as_ref());
+    let rule_mode = selected_rule_execution_mode(options.config.as_ref());
     let mut packages = Vec::new();
     let mut package_facts = Vec::new();
     let mut package_install_contexts = Vec::new();
@@ -260,19 +262,23 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
         });
     }
 
-    let mut findings = evaluate_structural_rules(&package_facts)
+    let mut findings = evaluate_structural_rules_for_mode(&package_facts, rule_mode)
         .into_iter()
         .map(skill_finding_from_evaluated_rule)
         .collect::<Vec<_>>();
     findings.extend(
-        evaluate_security_signal_rules(&security_signals)
+        evaluate_security_signal_rules_for_mode(&security_signals, rule_mode)
             .into_iter()
             .map(skill_finding_from_evaluated_rule),
     );
     findings.extend(
-        evaluate_package_install_rules(&security_signals, &package_install_contexts)
-            .into_iter()
-            .map(skill_finding_from_evaluated_rule),
+        evaluate_package_install_rules_for_mode(
+            &security_signals,
+            &package_install_contexts,
+            rule_mode,
+        )
+        .into_iter()
+        .map(skill_finding_from_evaluated_rule),
     );
     merge_supply_chain_inventory(
         &mut supply_chain,
@@ -283,11 +289,10 @@ pub fn scan_path(root: &Path, options: &ScanOptions) -> AuditResult<ScanReport> 
     supply_chain.external_url_domains =
         build_external_url_domain_summaries(&packages, &supply_chain.external_urls);
     findings.extend(
-        evaluate_supply_chain_rules(&supply_chain_rule_facts(
-            options.config.as_ref(),
-            &packages,
-            &supply_chain,
-        ))
+        evaluate_supply_chain_rules_for_mode(
+            &supply_chain_rule_facts(options.config.as_ref(), &packages, &supply_chain),
+            rule_mode,
+        )
         .into_iter()
         .map(skill_finding_from_evaluated_rule),
     );
@@ -1154,6 +1159,10 @@ fn selected_profiles(config: Option<&AuditConfig>) -> Vec<String> {
             .map(|profile| (*profile).to_owned())
             .collect(),
     }
+}
+
+fn selected_rule_execution_mode(config: Option<&AuditConfig>) -> RuleExecutionMode {
+    config.map_or(RuleExecutionMode::Default, |config| config.rule_mode)
 }
 
 fn skill_finding_from_evaluated_rule(finding: EvaluatedRuleFinding) -> SkillFinding {
@@ -4608,6 +4617,64 @@ Read [parent](../outside.md), [absolute](/outside.md), and [windows](C:/outside.
             "sudo fixture emitted reserved SEC005 finding: {:#?}",
             report.findings
         );
+    }
+
+    #[test]
+    fn scan_rule_execution_modes_preserve_current_default_output() {
+        let workspace = TestWorkspace::new("scan-rule-execution-mode-no-drift");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: rule-mode-no-drift
+---
+
+# Rule Mode No Drift
+
+Read [missing](references/missing.md) and run scripts/install.sh.
+"#,
+        );
+        workspace.write_file(
+            "scripts/install.sh",
+            "# SPDX-License-Identifier: Apache-2.0\n\nnpm install left-pad@^1.0.0\n",
+        );
+
+        let default_report =
+            scan_path(workspace.root(), &ScanOptions::default()).expect("default scan");
+        let default_json =
+            serde_json::to_string_pretty(&default_report).expect("serialize default report");
+
+        for mode in [
+            RuleExecutionMode::Default,
+            RuleExecutionMode::Strict,
+            RuleExecutionMode::Research,
+        ] {
+            let options = ScanOptions {
+                config: Some(AuditConfig {
+                    rule_mode: mode,
+                    ..AuditConfig::empty()
+                }),
+                ..ScanOptions::default()
+            };
+            let first = scan_path(workspace.root(), &options).expect("mode scan");
+            let second = scan_path(workspace.root(), &options).expect("repeat mode scan");
+            let first_json = serde_json::to_string_pretty(&first).expect("serialize first report");
+            let second_json =
+                serde_json::to_string_pretty(&second).expect("serialize second report");
+
+            assert_eq!(first_json.as_bytes(), second_json.as_bytes());
+            assert_eq!(
+                first_json, default_json,
+                "{mode} mode changed default output"
+            );
+            assert_eq!(
+                first
+                    .findings
+                    .iter()
+                    .map(|finding| finding.rule_id.as_str())
+                    .collect::<Vec<_>>(),
+                vec!["SKILL010", "SEC009", "SUPPLY003", "SUPPLY004"]
+            );
+        }
     }
 
     #[test]

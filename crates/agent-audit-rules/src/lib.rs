@@ -204,6 +204,44 @@ impl fmt::Display for RuleStatus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RuleExecutionMode {
+    Default,
+    Strict,
+    Research,
+}
+
+impl RuleExecutionMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::Strict => "strict",
+            Self::Research => "research",
+        }
+    }
+
+    pub const fn parse(value: &str) -> Option<Self> {
+        match value.as_bytes() {
+            b"default" => Some(Self::Default),
+            b"strict" => Some(Self::Strict),
+            b"research" => Some(Self::Research),
+            _ => None,
+        }
+    }
+}
+
+impl Default for RuleExecutionMode {
+    fn default() -> Self {
+        Self::Default
+    }
+}
+
+impl fmt::Display for RuleExecutionMode {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RuleInputNodeType {
     SkillManifest,
     Frontmatter,
@@ -946,9 +984,32 @@ pub fn rule_metadata(rule_id: &str) -> Option<&'static RuleMetadata> {
 }
 
 pub fn active_rule_metadata(rule_id: &str) -> Option<&'static RuleMetadata> {
+    active_rule_metadata_for_mode(rule_id, RuleExecutionMode::Default)
+}
+
+pub fn active_rule_metadata_for_mode(
+    rule_id: &str,
+    mode: RuleExecutionMode,
+) -> Option<&'static RuleMetadata> {
     RULE_REGISTRY
         .metadata(rule_id)
         .filter(|metadata| metadata.status.emits_findings())
+        .filter(|metadata| rule_is_enabled_in_mode(metadata, mode))
+}
+
+pub fn active_rule_ids_for_mode(mode: RuleExecutionMode) -> Vec<&'static str> {
+    RULE_REGISTRY
+        .rules()
+        .iter()
+        .filter(|metadata| {
+            metadata.status.emits_findings() && rule_is_enabled_in_mode(metadata, mode)
+        })
+        .map(|metadata| metadata.id.as_str())
+        .collect()
+}
+
+const fn rule_is_enabled_in_mode(_metadata: &RuleMetadata, _mode: RuleExecutionMode) -> bool {
+    true
 }
 
 pub fn rule_counts_as_invalid_manifest(rule_id: &str) -> bool {
@@ -1229,6 +1290,13 @@ pub struct RuleFindingLocation {
 }
 
 pub fn evaluate_structural_rules(packages: &[RulePackageFacts]) -> Vec<EvaluatedRuleFinding> {
+    evaluate_structural_rules_for_mode(packages, RuleExecutionMode::Default)
+}
+
+pub fn evaluate_structural_rules_for_mode(
+    packages: &[RulePackageFacts],
+    mode: RuleExecutionMode,
+) -> Vec<EvaluatedRuleFinding> {
     let mut findings = Vec::new();
 
     for package in packages {
@@ -1250,11 +1318,20 @@ pub fn evaluate_structural_rules(packages: &[RulePackageFacts]) -> Vec<Evaluated
     }
 
     findings.extend(duplicate_skill_name_findings(packages));
+    findings
+        .retain(|finding| active_rule_metadata_for_mode(finding.rule_id.as_str(), mode).is_some());
     sort_evaluated_findings(&mut findings);
     findings
 }
 
 pub fn evaluate_security_signal_rules(signals: &[SecuritySignal]) -> Vec<EvaluatedRuleFinding> {
+    evaluate_security_signal_rules_for_mode(signals, RuleExecutionMode::Default)
+}
+
+pub fn evaluate_security_signal_rules_for_mode(
+    signals: &[SecuritySignal],
+    mode: RuleExecutionMode,
+) -> Vec<EvaluatedRuleFinding> {
     let mut findings = Vec::new();
 
     for signal in signals {
@@ -1274,6 +1351,8 @@ pub fn evaluate_security_signal_rules(signals: &[SecuritySignal]) -> Vec<Evaluat
     findings.extend(external_data_exfiltration_findings(signals));
     findings.extend(write_outside_skill_directory_findings(signals));
 
+    findings
+        .retain(|finding| active_rule_metadata_for_mode(finding.rule_id.as_str(), mode).is_some());
     sort_evaluated_findings(&mut findings);
     findings
 }
@@ -1281,6 +1360,14 @@ pub fn evaluate_security_signal_rules(signals: &[SecuritySignal]) -> Vec<Evaluat
 pub fn evaluate_package_install_rules(
     signals: &[SecuritySignal],
     contexts: &[RulePackageInstallContext],
+) -> Vec<EvaluatedRuleFinding> {
+    evaluate_package_install_rules_for_mode(signals, contexts, RuleExecutionMode::Default)
+}
+
+pub fn evaluate_package_install_rules_for_mode(
+    signals: &[SecuritySignal],
+    contexts: &[RulePackageInstallContext],
+    mode: RuleExecutionMode,
 ) -> Vec<EvaluatedRuleFinding> {
     let mut findings = BTreeMap::new();
 
@@ -1307,11 +1394,20 @@ pub fn evaluate_package_install_rules(
     }
 
     let mut findings = findings.into_values().collect::<Vec<_>>();
+    findings
+        .retain(|finding| active_rule_metadata_for_mode(finding.rule_id.as_str(), mode).is_some());
     sort_evaluated_findings(&mut findings);
     findings
 }
 
 pub fn evaluate_supply_chain_rules(facts: &RuleSupplyChainFacts) -> Vec<EvaluatedRuleFinding> {
+    evaluate_supply_chain_rules_for_mode(facts, RuleExecutionMode::Default)
+}
+
+pub fn evaluate_supply_chain_rules_for_mode(
+    facts: &RuleSupplyChainFacts,
+    mode: RuleExecutionMode,
+) -> Vec<EvaluatedRuleFinding> {
     let mut findings = BTreeMap::new();
 
     for package in &facts.packages {
@@ -1319,6 +1415,8 @@ pub fn evaluate_supply_chain_rules(facts: &RuleSupplyChainFacts) -> Vec<Evaluate
     }
 
     let mut findings = findings.into_values().collect::<Vec<_>>();
+    findings
+        .retain(|finding| active_rule_metadata_for_mode(finding.rule_id.as_str(), mode).is_some());
     sort_evaluated_findings(&mut findings);
     findings
 }
@@ -3363,6 +3461,54 @@ mod tests {
         assert_eq!(reserved_ids, RESERVED_RULE_IDS);
         assert!(active_ids.windows(2).all(|ids| ids[0] < ids[1]));
         assert!(reserved_ids.windows(2).all(|ids| ids[0] < ids[1]));
+    }
+
+    #[test]
+    fn rule_execution_modes_parse_lowercase_config_values() {
+        assert_eq!(
+            RuleExecutionMode::parse("default"),
+            Some(RuleExecutionMode::Default)
+        );
+        assert_eq!(
+            RuleExecutionMode::parse("strict"),
+            Some(RuleExecutionMode::Strict)
+        );
+        assert_eq!(
+            RuleExecutionMode::parse("research"),
+            Some(RuleExecutionMode::Research)
+        );
+        assert_eq!(RuleExecutionMode::parse("Default"), None);
+        assert_eq!(RuleExecutionMode::parse("experimental"), None);
+    }
+
+    #[test]
+    fn default_rule_execution_mode_keeps_current_active_rules_enabled() {
+        assert_eq!(
+            active_rule_ids_for_mode(RuleExecutionMode::Default),
+            ACTIVE_RULE_IDS
+        );
+    }
+
+    #[test]
+    fn reserved_rules_are_not_enabled_by_rule_execution_mode() {
+        for mode in [
+            RuleExecutionMode::Default,
+            RuleExecutionMode::Strict,
+            RuleExecutionMode::Research,
+        ] {
+            let enabled = active_rule_ids_for_mode(mode);
+
+            for rule_id in RESERVED_RULE_IDS {
+                assert!(
+                    !enabled.contains(rule_id),
+                    "{rule_id} must stay reserved in {mode} mode"
+                );
+                assert!(
+                    active_rule_metadata_for_mode(rule_id, mode).is_none(),
+                    "{rule_id} must not expose active metadata in {mode} mode"
+                );
+            }
+        }
     }
 
     fn metadata_ids_with_status(status: RuleStatus) -> Vec<&'static str> {

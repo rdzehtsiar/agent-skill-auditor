@@ -19,6 +19,8 @@ fail_on:
   - low
   - medium
 
+rule_mode: default
+
 methodology:
   corpus_name: v0.8 public audit
   corpus_entry_id: repo-001
@@ -167,6 +169,18 @@ Suppressed findings do not trigger `fail_on`. Suppression is applied before fail
 CLI `--fail-on` values override config `fail_on` values when both are provided.
 
 A scan exits non-zero after rendering when any unsuppressed finding exactly matches one of the configured severities; suppressed findings and findings at other severities do not block.
+
+## Rule Execution Mode
+
+`rule_mode` selects the rule execution mode for the scan. Supported values are:
+
+- `default`
+- `strict`
+- `research`
+
+When `rule_mode` is omitted or blank, the scanner uses `default`.
+
+In the current release, all active rules are default-on and `strict` and `research` are foundation modes for future rule activation. They do not change default scan findings yet. Reserved rule IDs are not emitted in any rule mode and cannot be suppressed until their evaluators are activated.
 
 ## Methodology Metadata
 

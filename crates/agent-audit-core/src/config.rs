@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use agent_audit_hosts::{canonical_host_profile, HOST_PROFILES};
-use agent_audit_rules::{rule_metadata, RuleStatus};
+use agent_audit_rules::{rule_metadata, RuleExecutionMode, RuleStatus};
 use serde::Deserialize;
 
 use crate::error::{AuditError, AuditResult};
@@ -14,6 +14,7 @@ pub const CONFIG_FILENAME: &str = ".agent-audit.yaml";
 pub struct AuditConfig {
     pub profiles: Vec<String>,
     pub fail_on: Vec<Severity>,
+    pub rule_mode: RuleExecutionMode,
     pub ignore: Vec<ConfigIgnoreEntry>,
     pub methodology: Option<AuditMethodologyMetadata>,
 }
@@ -31,6 +32,7 @@ impl AuditConfig {
         Self {
             profiles: Vec::new(),
             fail_on: Vec::new(),
+            rule_mode: RuleExecutionMode::Default,
             ignore: Vec::new(),
             methodology: None,
         }
@@ -44,6 +46,8 @@ struct RawConfig {
     profiles: Option<Vec<String>>,
     #[serde(default)]
     fail_on: Option<Vec<String>>,
+    #[serde(default)]
+    rule_mode: Option<String>,
     #[serde(default)]
     ignore: Option<Vec<RawIgnoreEntry>>,
     #[serde(default)]
@@ -82,12 +86,14 @@ pub fn parse_audit_config(content: &str) -> AuditResult<AuditConfig> {
 
     let profiles = validate_profiles(raw.profiles.unwrap_or_default())?;
     let fail_on = validate_fail_on(raw.fail_on.unwrap_or_default())?;
+    let rule_mode = validate_rule_mode(raw.rule_mode)?;
     let ignore = validate_ignore(raw.ignore.unwrap_or_default())?;
     let methodology = validate_methodology(raw.methodology)?;
 
     Ok(AuditConfig {
         profiles,
         fail_on,
+        rule_mode,
         ignore,
         methodology,
     })
@@ -124,6 +130,22 @@ fn validate_fail_on(severities: Vec<String>) -> AuditResult<Vec<Severity>> {
             })
         })
         .collect()
+}
+
+fn validate_rule_mode(mode: Option<String>) -> AuditResult<RuleExecutionMode> {
+    let Some(mode) = mode
+        .as_deref()
+        .map(str::trim)
+        .filter(|mode| !mode.is_empty())
+    else {
+        return Ok(RuleExecutionMode::Default);
+    };
+
+    RuleExecutionMode::parse(mode).ok_or_else(|| {
+        validation_error(format!(
+            "rule_mode uses unknown mode `{mode}`; expected one of: default, strict, research"
+        ))
+    })
 }
 
 fn validate_ignore(entries: Vec<RawIgnoreEntry>) -> AuditResult<Vec<ConfigIgnoreEntry>> {
@@ -313,6 +335,7 @@ mod tests {
 
         assert_eq!(full.profiles, vec!["codex", "generic"]);
         assert_eq!(full.fail_on, vec![Severity::Low, Severity::High]);
+        assert_eq!(full.rule_mode, RuleExecutionMode::Default);
         assert_eq!(
             full.ignore,
             vec![ConfigIgnoreEntry {
@@ -370,6 +393,7 @@ profiles:
 fail_on:
   - medium
   - high
+rule_mode: strict
 ignore:
   - rule: SKILL010
     path: skills\reviewer\SKILL.md
@@ -379,6 +403,7 @@ ignore:
 
         assert_eq!(config.profiles, vec!["codex", "generic"]);
         assert_eq!(config.fail_on, vec![Severity::Medium, Severity::High]);
+        assert_eq!(config.rule_mode, RuleExecutionMode::Strict);
         assert_eq!(
             config.ignore,
             vec![ConfigIgnoreEntry {
@@ -428,6 +453,38 @@ profiles:
         assert_eq!(parse("").profiles, Vec::<String>::new());
         assert_eq!(parse("{}").fail_on, Vec::<Severity>::new());
         assert!(parse("profiles:\nfail_on:\nignore:\n").ignore.is_empty());
+        assert_eq!(parse("").rule_mode, RuleExecutionMode::Default);
+        assert_eq!(parse("rule_mode:\n").rule_mode, RuleExecutionMode::Default);
+    }
+
+    #[test]
+    fn parses_rule_execution_modes() {
+        assert_eq!(
+            parse("rule_mode: default\n").rule_mode,
+            RuleExecutionMode::Default
+        );
+        assert_eq!(
+            parse("rule_mode: strict\n").rule_mode,
+            RuleExecutionMode::Strict
+        );
+        assert_eq!(
+            parse("rule_mode: research\n").rule_mode,
+            RuleExecutionMode::Research
+        );
+        assert_eq!(
+            parse("rule_mode: ' research '\n").rule_mode,
+            RuleExecutionMode::Research
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_rule_execution_mode() {
+        let error = parse_error("rule_mode: experimental\n");
+
+        assert_validation_contains(
+            error,
+            "rule_mode uses unknown mode `experimental`; expected one of: default, strict, research",
+        );
     }
 
     #[test]
@@ -560,6 +617,26 @@ ignore:
         );
 
         assert_validation_contains(error, "unknown rule ID `SEC999`");
+    }
+
+    #[test]
+    fn rejects_reserved_ignore_rule_in_all_rule_execution_modes() {
+        for mode in ["default", "strict", "research"] {
+            let error = parse_error(&format!(
+                r#"
+rule_mode: {mode}
+ignore:
+  - rule: SEC005
+    path: scripts/install.sh
+    reason: Reviewed reserved rule fixture.
+"#
+            ));
+
+            assert_validation_contains(
+                error,
+                "ignore[0].rule uses reserved rule ID `SEC005`; reserved rules are not emitted and cannot be suppressed yet",
+            );
+        }
     }
 
     #[test]

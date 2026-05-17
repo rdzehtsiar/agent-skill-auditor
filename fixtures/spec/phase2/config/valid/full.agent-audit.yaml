@@ -4,6 +4,7 @@ profiles:
 fail_on:
   - low
   - high
+rule_mode: default
 ignore:
   - rule: SKILL010
     path: skills\legacy\SKILL.md
