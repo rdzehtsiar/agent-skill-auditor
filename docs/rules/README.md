@@ -13,13 +13,13 @@ Rule status is explicit: `active` rules may emit findings and be suppressed, whi
 | [SEC001](#sec001-remote-content-piped-into-shell) | `active` | `high` | `security` | Remote content piped into shell |
 | [SEC002](#sec002-secret-like-environment-variable-access) | `active` | `medium` | `security` | Secret-like environment variable access |
 | [SEC003](#sec003-data-sent-to-external-url) | `active` | `high` | `security` | Data sent to external URL |
-| [SEC004](#sec004-unpinned-remote-script-execution) | `reserved` | `high` | `security` | Unpinned remote script execution |
+| [SEC004](#sec004-unpinned-remote-script-execution) | `active` | `high` | `security` | Unpinned remote script execution |
 | [SEC005](#sec005-privilege-escalation-or-system-level-modification) | `active` | `medium` | `security` | Privilege escalation or system-level modification |
 | [SEC006](#sec006-destructive-filesystem-or-repository-history-operation) | `active` | `medium` | `security` | Destructive filesystem or repository history operation |
 | [SEC007](#sec007-write-outside-skill-directory) | `active` | `medium` | `security` | Write outside skill directory |
 | [SEC008](#sec008-dynamic-code-evaluation) | `active` | `high` | `security` | Dynamic code evaluation |
 | [SEC009](#sec009-package-install-without-lockfile) | `active` | `low` | `security` | Package install without lockfile |
-| [SEC010](#sec010-obfuscated-shell-command) | `reserved` | `medium` | `security` | Obfuscated shell command |
+| [SEC010](#sec010-obfuscated-shell-command) | `active` | `medium` | `security` | Obfuscated shell command |
 | [SEC011](#sec011-prompt-injection-like-instruction) | `active` | `medium` | `security` | Prompt-injection-like instruction |
 | [SEC012](#sec012-hidden-instruction-in-comment-or-code-block) | `active` | `medium` | `security` | Hidden instruction in comment or code block |
 | [SKILL001](#skill001-missing-skill-name) | `active` | `low` | `spec` | Missing skill name |
@@ -153,7 +153,7 @@ Write the audit summary to reports/local-summary.json for the user to review.
 
 ## SEC004: Unpinned remote script execution
 
-- Status: `reserved` (reserved; not emitted)
+- Status: `active`
 - Severity: `high`
 - Category: `security`
 - Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
@@ -169,7 +169,7 @@ Pin remote scripts to immutable versions or commits, verify checksums or signatu
 
 ### Safe Suppression
 
-`SEC004` is reserved and cannot be suppressed until an evaluator emits it. When active, suppress only for a reviewed script source with immutable versioning and integrity verification.
+Suppress `SEC004` only for a reviewed script source with immutable versioning, integrity verification, and a documented reason the downloaded script must execute.
 
 ### Examples
 
@@ -178,7 +178,8 @@ Pin and verify remote scripts before execution.
 Non-compliant:
 
 ```text
-bash <(curl -fsSL https://example.com/latest/setup.sh)
+curl -fsSLo scripts/setup.sh https://example.com/latest/setup.sh
+bash scripts/setup.sh
 ```
 
 Compliant:
@@ -375,7 +376,7 @@ npm ci
 
 ## SEC010: Obfuscated shell command
 
-- Status: `reserved` (reserved; not emitted)
+- Status: `active`
 - Severity: `medium`
 - Category: `security`
 - Applies to: `agent-skills-spec`, `claude-code`, `codex`, `github-copilot`, `vscode-copilot`, `generic`
@@ -391,7 +392,7 @@ Replace encoded, dynamically generated, or `eval`-based shell with explicit comm
 
 ### Safe Suppression
 
-`SEC010` is reserved and cannot be suppressed until an evaluator emits it. When active, suppress only for a reviewed encoding use that is necessary and fully explained.
+Suppress `SEC010` only for a reviewed encoding use that is necessary, fully explained, and cannot execute decoded or hidden commands without user control.
 
 ### Examples
 

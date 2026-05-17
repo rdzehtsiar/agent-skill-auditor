@@ -322,11 +322,13 @@ pub const ACTIVE_RULE_IDS: &[&str] = &[
     "SEC001",
     "SEC002",
     "SEC003",
+    "SEC004",
     "SEC005",
     "SEC006",
     "SEC007",
     "SEC008",
     "SEC009",
+    "SEC010",
     "SEC011",
     "SEC012",
     "SKILL001",
@@ -347,7 +349,7 @@ pub const ACTIVE_RULE_IDS: &[&str] = &[
     "SUPPLY012",
 ];
 
-pub const RESERVED_RULE_IDS: &[&str] = &["SEC004", "SEC010", "SUPPLY001", "SUPPLY011"];
+pub const RESERVED_RULE_IDS: &[&str] = &["SUPPLY001", "SUPPLY011"];
 
 pub const ALL_HOST_PROFILES: &[&str] = HOST_PROFILES;
 
@@ -382,7 +384,7 @@ const SEC003_EXAMPLES: &[RuleExample] = &[RuleExample {
 
 const SEC004_EXAMPLES: &[RuleExample] = &[RuleExample {
     summary: "Pin and verify remote scripts before execution.",
-    non_compliant: "bash <(curl -fsSL https://example.com/latest/setup.sh)",
+    non_compliant: "curl -fsSLo scripts/setup.sh https://example.com/latest/setup.sh\nbash scripts/setup.sh",
     compliant: "curl -fsSLo scripts/setup.sh https://example.com/releases/v1.2.3/setup.sh\nsha256sum -c scripts/setup.sh.sha256\nbash scripts/setup.sh",
 }];
 
@@ -592,7 +594,7 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
     },
     RuleMetadata {
         id: RuleId::Sec004,
-        status: RuleStatus::Reserved,
+        status: RuleStatus::Active,
         title: "Unpinned remote script execution",
         severity: RuleSeverity::High,
         category: RuleCategory::Security,
@@ -601,7 +603,7 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
         rationale: "Executing a remote script from a floating URL lets upstream changes alter local behavior without a corresponding skill package change.",
         remediation: "Pin remote scripts to immutable versions or commits, verify checksums or signatures, and execute only after local review.",
         suppression_guidance:
-            "`SEC004` is reserved and cannot be suppressed until an evaluator emits it. When active, suppress only for a reviewed script source with immutable versioning and integrity verification.",
+            "Suppress `SEC004` only for a reviewed script source with immutable versioning, integrity verification, and a documented reason the downloaded script must execute.",
         examples: SEC004_EXAMPLES,
     },
     RuleMetadata {
@@ -676,7 +678,7 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
     },
     RuleMetadata {
         id: RuleId::Sec010,
-        status: RuleStatus::Reserved,
+        status: RuleStatus::Active,
         title: "Obfuscated shell command",
         severity: RuleSeverity::Medium,
         category: RuleCategory::Security,
@@ -685,7 +687,7 @@ pub const RULE_METADATA: &[RuleMetadata] = &[
         rationale: "Obfuscated commands make it hard for reviewers and users to understand what a skill will execute before allowing it to run.",
         remediation: "Replace encoded, dynamically generated, or `eval`-based shell with explicit commands that can be reviewed directly.",
         suppression_guidance:
-            "`SEC010` is reserved and cannot be suppressed until an evaluator emits it. When active, suppress only for a reviewed encoding use that is necessary and fully explained.",
+            "Suppress `SEC010` only for a reviewed encoding use that is necessary, fully explained, and cannot execute decoded or hidden commands without user control.",
         examples: SEC010_EXAMPLES,
     },
     RuleMetadata {
@@ -1353,6 +1355,8 @@ pub fn evaluate_security_signal_rules_for_mode(
             findings.push(dynamic_code_evaluation_finding(signal));
         }
     }
+    findings.extend(remote_download_execution_findings(signals));
+    findings.extend(obfuscated_execution_findings(signals));
     findings.extend(external_data_exfiltration_findings(signals));
     findings.extend(write_outside_skill_directory_findings(signals));
 
@@ -2902,6 +2906,293 @@ fn dynamic_code_evaluation_finding(signal: &SecuritySignal) -> EvaluatedRuleFind
     }
 }
 
+fn remote_download_execution_findings(signals: &[SecuritySignal]) -> Vec<EvaluatedRuleFinding> {
+    let mut findings = BTreeMap::new();
+    let downloads = signals
+        .iter()
+        .filter(|signal| is_executable_download_signal(signal))
+        .collect::<Vec<_>>();
+    let executions = signals
+        .iter()
+        .filter(|signal| is_downloaded_script_execution_signal(signal))
+        .collect::<Vec<_>>();
+
+    for download in downloads {
+        for execution in executions.iter().copied() {
+            if !download_and_execution_correlate(download, execution) {
+                continue;
+            }
+
+            findings.insert(
+                security_correlation_key(RuleId::Sec004, execution, download_target(download)),
+                remote_download_execution_finding(download, execution),
+            );
+        }
+    }
+
+    findings.into_values().collect()
+}
+
+fn is_executable_download_signal(signal: &SecuritySignal) -> bool {
+    signal.kind == SecuritySignalKind::ExecutableDownload
+        && signal.confidence == AnalyzerConfidence::High
+        && is_default_phase_a_executable_context(signal)
+        && signal
+            .source
+            .as_ref()
+            .is_some_and(|source| source.kind == SecuritySourceKind::NetworkResponse)
+        && signal
+            .sink
+            .as_ref()
+            .is_some_and(|sink| sink.kind == SecuritySinkKind::FileWrite)
+        && download_target(signal).is_some()
+}
+
+fn is_downloaded_script_execution_signal(signal: &SecuritySignal) -> bool {
+    signal.kind == SecuritySignalKind::SubprocessExecution
+        && matches!(
+            signal.confidence,
+            AnalyzerConfidence::Medium | AnalyzerConfidence::High
+        )
+        && is_default_phase_a_executable_context(signal)
+        && signal
+            .sink
+            .as_ref()
+            .is_some_and(|sink| sink.kind == SecuritySinkKind::ProcessExecution)
+        && execution_target(signal).is_some()
+}
+
+fn download_and_execution_correlate(download: &SecuritySignal, execution: &SecuritySignal) -> bool {
+    download.location.path == execution.location.path
+        && lines_are_near(download.location.line, execution.location.line, 8)
+        && download.location.line <= execution.location.line
+        && targets_correlate(download_target(download), execution_target(execution))
+}
+
+fn remote_download_execution_finding(
+    download: &SecuritySignal,
+    execution: &SecuritySignal,
+) -> EvaluatedRuleFinding {
+    let target = execution_target(execution)
+        .or_else(|| download_target(download))
+        .unwrap_or("downloaded script");
+
+    EvaluatedRuleFinding {
+        rule_id: RuleId::Sec004,
+        message: format!(
+            "The executable artifact downloads remote script `{target}` and executes it nearby. Pin and verify the script before execution, or ship a reviewed local copy."
+        ),
+        location: RuleFindingLocation {
+            path: execution.location.path.clone(),
+            line: execution.location.line,
+        },
+    }
+}
+
+fn obfuscated_execution_findings(signals: &[SecuritySignal]) -> Vec<EvaluatedRuleFinding> {
+    let mut findings = BTreeMap::new();
+    let decodes = signals
+        .iter()
+        .filter(|signal| is_obfuscated_decode_signal(signal))
+        .collect::<Vec<_>>();
+    let executions = signals
+        .iter()
+        .filter(|signal| is_obfuscated_execution_signal(signal))
+        .collect::<Vec<_>>();
+
+    for execution in &executions {
+        if is_direct_obfuscated_execution_signal(execution) {
+            findings.insert(
+                security_correlation_key(RuleId::Sec010, execution, None),
+                obfuscated_execution_finding(execution, None),
+            );
+            continue;
+        }
+
+        for decode in decodes.iter().copied() {
+            if !decode_and_execution_correlate(decode, execution) {
+                continue;
+            }
+
+            findings.insert(
+                security_correlation_key(RuleId::Sec010, execution, decode_variable(decode)),
+                obfuscated_execution_finding(execution, decode_variable(decode)),
+            );
+        }
+    }
+
+    findings.into_values().collect()
+}
+
+fn is_obfuscated_decode_signal(signal: &SecuritySignal) -> bool {
+    signal.kind == SecuritySignalKind::ObfuscatedCommand
+        && matches!(
+            signal.confidence,
+            AnalyzerConfidence::Medium | AnalyzerConfidence::High
+        )
+        && is_default_phase_a_executable_context(signal)
+        && (decode_variable(signal).is_some()
+            || evidence_contains_decode(&signal.evidence)
+            || is_direct_obfuscated_execution_signal(signal))
+}
+
+fn is_obfuscated_execution_signal(signal: &SecuritySignal) -> bool {
+    signal.kind == SecuritySignalKind::ObfuscatedCommand
+        && matches!(
+            signal.confidence,
+            AnalyzerConfidence::Medium | AnalyzerConfidence::High
+        )
+        && is_default_phase_a_executable_context(signal)
+        && signal.sink.as_ref().is_some_and(|sink| {
+            matches!(
+                sink.kind,
+                SecuritySinkKind::DynamicCodeEvaluation | SecuritySinkKind::ShellExecution
+            )
+        })
+}
+
+fn is_direct_obfuscated_execution_signal(signal: &SecuritySignal) -> bool {
+    if !is_obfuscated_execution_signal(signal) {
+        return false;
+    }
+
+    let target = signal.sink.as_ref().and_then(|sink| sink.target.as_deref());
+    target == Some("base64-decode-pipe-shell")
+        || (signal
+            .sink
+            .as_ref()
+            .is_some_and(|sink| sink.kind == SecuritySinkKind::DynamicCodeEvaluation)
+            && evidence_contains_decode(&signal.evidence))
+}
+
+fn decode_and_execution_correlate(decode: &SecuritySignal, execution: &SecuritySignal) -> bool {
+    decode.location.path == execution.location.path
+        && lines_are_near(decode.location.line, execution.location.line, 4)
+        && decode.location.line <= execution.location.line
+        && match (decode_variable(decode), eval_variable(execution)) {
+            (Some(decoded), Some(executed)) => decoded == executed,
+            _ => {
+                decode.location.line == execution.location.line
+                    && evidence_contains_decode(&execution.evidence)
+            }
+        }
+}
+
+fn obfuscated_execution_finding(
+    execution: &SecuritySignal,
+    variable: Option<&str>,
+) -> EvaluatedRuleFinding {
+    let detail = variable
+        .map(|variable| format!(" decoded value `{variable}`"))
+        .unwrap_or_else(|| " decoded or obfuscated content".to_owned());
+
+    EvaluatedRuleFinding {
+        rule_id: RuleId::Sec010,
+        message: format!(
+            "The executable artifact executes{detail} through shell evaluation. Replace it with explicit, reviewable commands."
+        ),
+        location: RuleFindingLocation {
+            path: execution.location.path.clone(),
+            line: execution.location.line,
+        },
+    }
+}
+
+fn security_correlation_key(
+    rule_id: RuleId,
+    signal: &SecuritySignal,
+    detail: Option<&str>,
+) -> (RuleId, String, Option<usize>, String) {
+    (
+        rule_id,
+        signal.location.path.clone(),
+        signal.location.line,
+        detail.unwrap_or_default().to_owned(),
+    )
+}
+
+fn lines_are_near(left: Option<usize>, right: Option<usize>, max_distance: usize) -> bool {
+    match (left, right) {
+        (Some(left), Some(right)) => right >= left && right - left <= max_distance,
+        _ => false,
+    }
+}
+
+fn targets_correlate(download: Option<&str>, execution: Option<&str>) -> bool {
+    let (Some(download), Some(execution)) = (download, execution) else {
+        return false;
+    };
+    let download = normalized_signal_target(download);
+    let execution = normalized_signal_target(execution);
+
+    !download.is_empty()
+        && !execution.is_empty()
+        && (download == execution
+            || path_basename(&download) == execution
+            || download == path_basename(&execution)
+            || path_basename(&download) == path_basename(&execution)
+            || download.ends_with(&format!("/{execution}"))
+            || execution.ends_with(&format!("/{download}")))
+}
+
+fn normalized_signal_target(target: &str) -> String {
+    strip_quotes(target)
+        .trim_start_matches("./")
+        .split(['?', '#'])
+        .next()
+        .unwrap_or(target)
+        .replace('\\', "/")
+}
+
+fn download_target(signal: &SecuritySignal) -> Option<&str> {
+    signal.sink.as_ref().and_then(|sink| sink.target.as_deref())
+}
+
+fn execution_target(signal: &SecuritySignal) -> Option<&str> {
+    signal.sink.as_ref().and_then(|sink| sink.target.as_deref())
+}
+
+fn decode_variable(signal: &SecuritySignal) -> Option<&str> {
+    signal.source.as_ref().and_then(|source| {
+        (source.kind == SecuritySourceKind::ProcessArgument)
+            .then_some(source.name.as_deref())
+            .flatten()
+    })
+}
+
+fn eval_variable(signal: &SecuritySignal) -> Option<&str> {
+    signal
+        .sink
+        .as_ref()
+        .and_then(|sink| sink.target.as_deref())
+        .and_then(|target| target.strip_prefix("eval:"))
+        .or_else(|| shell_eval_variable_from_evidence(&signal.evidence))
+}
+
+fn evidence_contains_decode(evidence: &str) -> bool {
+    let evidence = evidence.to_ascii_lowercase();
+    (contains_command_word(&evidence, "base64")
+        && (contains_command_word(&evidence, "decode")
+            || evidence.contains("-d")
+            || evidence.contains("--decode")))
+        || evidence.contains("frombase64string")
+}
+
+fn shell_eval_variable_from_evidence(evidence: &str) -> Option<&str> {
+    let eval_index = evidence.find("eval")?;
+    let after_eval = &evidence[eval_index + "eval".len()..];
+    let dollar_index = after_eval.find('$')?;
+    let after_dollar = &after_eval[dollar_index + 1..];
+    let after_dollar = after_dollar.strip_prefix('{').unwrap_or(after_dollar);
+    let variable_len = after_dollar
+        .chars()
+        .take_while(|character| character.is_ascii_alphanumeric() || *character == '_')
+        .map(char::len_utf8)
+        .sum::<usize>();
+
+    (variable_len > 0).then_some(&after_dollar[..variable_len])
+}
+
 fn external_data_exfiltration_findings(signals: &[SecuritySignal]) -> Vec<EvaluatedRuleFinding> {
     let mut findings = BTreeMap::new();
 
@@ -4015,6 +4306,26 @@ mod tests {
             .suppression_guidance
             .contains("cannot be suppressed"));
         assert!(metadata.suppression_guidance.contains("sandboxed"));
+    }
+
+    #[test]
+    fn sec004_and_sec010_are_active_and_removed_from_reserved_rules() {
+        for (rule_id, title) in [
+            ("SEC004", "Unpinned remote script execution"),
+            ("SEC010", "Obfuscated shell command"),
+        ] {
+            assert!(ACTIVE_RULE_IDS.contains(&rule_id));
+            assert!(!RESERVED_RULE_IDS.contains(&rule_id));
+
+            let metadata = active_rule_metadata(rule_id).expect("security rule must be active");
+
+            assert_eq!(metadata.status, RuleStatus::Active);
+            assert_eq!(metadata.title, title);
+            assert_eq!(metadata.category, RuleCategory::Security);
+            assert!(!metadata
+                .suppression_guidance
+                .contains("cannot be suppressed"));
+        }
     }
 
     #[test]
@@ -5349,6 +5660,210 @@ mod tests {
                     .iter()
                     .all(|finding| finding.rule_id != RuleId::Sec008),
                 "{path} emitted SEC008: {findings:#?}"
+            );
+        }
+    }
+
+    #[test]
+    fn sec004_reports_downloaded_remote_script_executed_later() {
+        let output = shell_security_analyzer().analyze(&shell_analyzer_input(
+            "scripts/bootstrap.sh",
+            concat!(
+                "curl -fsSLo scripts/setup.sh https://example.test/latest/setup.sh\n",
+                "chmod +x scripts/setup.sh\n",
+                "bash scripts/setup.sh\n",
+            )
+            .as_bytes(),
+        ));
+        let findings = evaluate_security_signal_rules(&output.signals);
+        let sec004 = findings
+            .iter()
+            .filter(|finding| finding.rule_id == RuleId::Sec004)
+            .cloned()
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            finding_projection(&sec004),
+            vec![(RuleId::Sec004, "scripts/bootstrap.sh", Some(3))]
+        );
+        assert!(sec004[0].message.contains("scripts/setup.sh"));
+    }
+
+    #[test]
+    fn sec004_supports_same_line_and_deterministic_ordering() {
+        let signals = [
+            (
+                "zeta/bootstrap.sh",
+                "curl -fsSLo setup.sh https://example.test/setup.sh && sh setup.sh\n",
+            ),
+            (
+                "alpha/bootstrap.sh",
+                "curl -fsSLo scripts/setup.sh https://example.test/setup.sh && bash scripts/setup.sh\n",
+            ),
+        ]
+        .into_iter()
+        .flat_map(|(path, script)| {
+            shell_security_analyzer()
+                .analyze(&shell_analyzer_input(path, script.as_bytes()))
+                .signals
+        })
+        .collect::<Vec<_>>();
+        let findings = evaluate_security_signal_rules(&signals);
+        let sec004 = findings
+            .into_iter()
+            .filter(|finding| finding.rule_id == RuleId::Sec004)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            finding_projection(&sec004),
+            vec![
+                (RuleId::Sec004, "alpha/bootstrap.sh", Some(1)),
+                (RuleId::Sec004, "zeta/bootstrap.sh", Some(1)),
+            ]
+        );
+    }
+
+    #[test]
+    fn sec004_does_not_report_download_only_or_unrelated_nearby_execution() {
+        let scripts = [
+            (
+                "scripts/download-only.sh",
+                "curl -fsSLo scripts/setup.sh https://example.test/setup.sh\n",
+            ),
+            (
+                "scripts/unrelated.sh",
+                concat!(
+                    "curl -fsSLo scripts/setup.sh https://example.test/setup.sh\n",
+                    "bash scripts/local-helper.sh\n",
+                ),
+            ),
+        ];
+        let signals = scripts
+            .into_iter()
+            .flat_map(|(path, script)| {
+                shell_security_analyzer()
+                    .analyze(&shell_analyzer_input(path, script.as_bytes()))
+                    .signals
+            })
+            .collect::<Vec<_>>();
+        let findings = evaluate_security_signal_rules(&signals);
+
+        assert!(
+            findings
+                .iter()
+                .all(|finding| finding.rule_id != RuleId::Sec004),
+            "unexpected SEC004 findings: {findings:#?}"
+        );
+    }
+
+    #[test]
+    fn sec010_reports_same_line_and_multiline_decode_to_execution() {
+        let scripts = [
+            (
+                "scripts/same-line.sh",
+                "printf 'Y3VybCBodHRwczovL2V4YW1wbGUudGVzdA==' | base64 -d | sh\n",
+            ),
+            (
+                "scripts/multiline.sh",
+                concat!(
+                    "payload=$(printf 'ZWNobyBvaAo=' | base64 -d)\n",
+                    "echo reviewed\n",
+                    "eval \"$payload\"\n",
+                ),
+            ),
+        ];
+        let signals = scripts
+            .into_iter()
+            .flat_map(|(path, script)| {
+                shell_security_analyzer()
+                    .analyze(&shell_analyzer_input(path, script.as_bytes()))
+                    .signals
+            })
+            .collect::<Vec<_>>();
+        let findings = evaluate_security_signal_rules(&signals);
+        let sec010 = findings
+            .into_iter()
+            .filter(|finding| finding.rule_id == RuleId::Sec010)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            finding_projection(&sec010),
+            vec![
+                (RuleId::Sec010, "scripts/multiline.sh", Some(3)),
+                (RuleId::Sec010, "scripts/same-line.sh", Some(1)),
+            ]
+        );
+        assert!(sec010
+            .iter()
+            .any(|finding| finding.message.contains("payload")));
+    }
+
+    #[test]
+    fn sec010_does_not_report_encoded_static_data_or_unrelated_eval() {
+        let scripts = [
+            (
+                "scripts/static-data.sh",
+                "certificate='LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t'\n",
+            ),
+            (
+                "scripts/unrelated.sh",
+                concat!(
+                    "payload=$(printf 'ZWNobyBvaAo=' | base64 -d)\n",
+                    "echo \"$payload\" > generated/static.txt\n",
+                    "eval \"$other_payload\"\n",
+                ),
+            ),
+            ("scripts/raw-eval.sh", "eval \"$payload\"\n"),
+        ];
+        let signals = scripts
+            .into_iter()
+            .flat_map(|(path, script)| {
+                shell_security_analyzer()
+                    .analyze(&shell_analyzer_input(path, script.as_bytes()))
+                    .signals
+            })
+            .collect::<Vec<_>>();
+        let findings = evaluate_security_signal_rules(&signals);
+
+        assert!(
+            findings
+                .iter()
+                .all(|finding| finding.rule_id != RuleId::Sec010),
+            "unexpected SEC010 findings: {findings:#?}"
+        );
+    }
+
+    #[test]
+    fn sec004_and_sec010_skip_docs_examples_fixtures_generated_vendor_and_lockfiles() {
+        let cases = [
+            "skills/demo/docs/bootstrap.sh",
+            "skills/demo/examples/bootstrap.sh",
+            "fixtures/security/demo/scripts/bootstrap.sh",
+            "skills/demo/scripts/generated/bootstrap.sh",
+            "skills/demo/vendor/bootstrap.sh",
+            "skills/demo/package-lock.json",
+        ];
+
+        for path in cases {
+            let signals = shell_security_analyzer()
+                .analyze(&shell_analyzer_input(
+                    path,
+                    concat!(
+                        "curl -fsSLo scripts/setup.sh https://example.test/setup.sh\n",
+                        "bash scripts/setup.sh\n",
+                        "payload=$(printf 'ZWNobyBvaAo=' | base64 -d)\n",
+                        "eval \"$payload\"\n",
+                    )
+                    .as_bytes(),
+                ))
+                .signals;
+            let findings = evaluate_security_signal_rules(&signals);
+
+            assert!(
+                findings
+                    .iter()
+                    .all(|finding| !matches!(finding.rule_id, RuleId::Sec004 | RuleId::Sec010)),
+                "{path} emitted default Phase A correlation findings: {findings:#?}"
             );
         }
     }
