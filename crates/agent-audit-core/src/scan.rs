@@ -1776,6 +1776,9 @@ mod tests {
         rule_metadata, RuleCategory as RegistryCategory, RuleId, RuleSeverity as RegistrySeverity,
         ACTIVE_RULE_IDS,
     };
+    use agent_audit_security::{
+        SecuritySignalContentContext, SecuritySignalKind, SecuritySignalPathContext,
+    };
     use std::io::ErrorKind;
 
     #[test]
@@ -5555,6 +5558,87 @@ description: No artifact directories fixture.
         assert_eq!(report.summary.package_count, 1);
         assert!(report.packages[0].graph.artifacts.is_empty());
         assert!(report.packages[0].graph.files.is_empty());
+    }
+
+    #[test]
+    fn scanner_populates_security_signal_context_from_artifact_and_path_classification() {
+        let workspace = TestWorkspace::new("scan-security-signal-context");
+        workspace.write_file(
+            "fixtures/security/context/SKILL.md",
+            r#"---
+name: security-context
+description: Security signal context fixture.
+---
+
+# Security Context
+"#,
+        );
+        workspace.write_file(
+            "fixtures/security/context/scripts/install.sh",
+            "sudo apt-get update\n",
+        );
+        workspace.write_file(
+            "fixtures/security/context/scripts/generated/build.sh",
+            "sudo apt-get update\n",
+        );
+        workspace.write_file(
+            "fixtures/security/context/references/example.sh",
+            "sudo apt-get update\n",
+        );
+        let skill_root = workspace.root().join("fixtures/security/context");
+        let graph = SkillGraph {
+            references: Vec::new(),
+            artifacts: discover_artifacts(&skill_root),
+            files: inventory_artifact_files(&skill_root).expect("inventory artifact files"),
+        };
+        let manifest = empty_skill_manifest();
+
+        let signals = analyze_package_security_artifacts(
+            workspace.root(),
+            &skill_root,
+            "fixtures/security/context/SKILL.md",
+            &manifest,
+            &graph,
+        )
+        .expect("analyze package security artifacts");
+
+        assert_eq!(
+            signals
+                .iter()
+                .filter(|signal| signal.kind == SecuritySignalKind::PrivilegeEscalation)
+                .map(|signal| {
+                    (
+                        signal.location.path.as_str(),
+                        signal.context.content,
+                        signal.context.executable,
+                        signal.context.path_classifications.clone(),
+                    )
+                })
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    "fixtures/security/context/references/example.sh",
+                    SecuritySignalContentContext::ReferencedFile,
+                    false,
+                    vec![SecuritySignalPathContext::Fixture]
+                ),
+                (
+                    "fixtures/security/context/scripts/generated/build.sh",
+                    SecuritySignalContentContext::ExecutableScript,
+                    true,
+                    vec![
+                        SecuritySignalPathContext::Fixture,
+                        SecuritySignalPathContext::GeneratedOrVendorLike
+                    ]
+                ),
+                (
+                    "fixtures/security/context/scripts/install.sh",
+                    SecuritySignalContentContext::ExecutableScript,
+                    true,
+                    vec![SecuritySignalPathContext::Fixture]
+                ),
+            ]
+        );
     }
 
     #[test]
