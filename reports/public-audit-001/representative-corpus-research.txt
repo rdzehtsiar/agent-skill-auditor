@@ -1,5 +1,7 @@
 Agent Skill Auditor research scan summary
-Audit: schema=1 scanner=agent-audit/0.6.0 ruleset=0.6.0(fnv1a64:ce2cbacc2fe36422) profiles=agent-skills-spec,claude-code,codex,github-copilot,vscode-copilot,generic scan_root=fixtures/spec/phase1/representative-corpus timestamp=null platform=windows/windows/x86_64
+Audit: schema=1 scanner=agent-audit/0.6.0 ruleset=0.6.0(fnv1a64:d4de79feb5d7117d)
+       profiles=agent-skills-spec,claude-code,codex,github-copilot,vscode-copilot,generic
+       scan_root=fixtures/spec/phase1/representative-corpus timestamp=not-recorded platform=windows/windows/x86_64
 Packages: 30
 Findings: 16
 Suppressed findings: 0
@@ -36,126 +38,438 @@ Rows: 30 packages omitted from summary
 
 Observed ecosystem patterns:
 - Low trust-manifest adoption: Trust manifest evidence is missing for 30 of 30 packages (100%). count=30 packages=100%
-- Host-specific metadata extensions: Host-specific or unknown metadata appears in 3 of 30 packages (10%). count=3 packages=10%
-- Low checksum evidence: Executable or binary artifact evidence exceeds checksum evidence across 3 of 30 packages (10%). count=3 packages=10%
+- Host-specific metadata extensions: Host-specific or unknown metadata appears in 3 of 30 packages (10%). count=3
+  packages=10%
+- Low checksum evidence: Executable or binary artifact evidence exceeds checksum evidence across 3 of 30 packages (10%).
+  count=3 packages=10%
 
 Finding groups:
-SKILL001 group_fingerprint=fnv1a64:6c3da7af2d36deb5 confidence=high normalized_key=SKILL001|low|spec|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot evidence_key=host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot dimensions= host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot count=3 affected_packages=3: Missing skill name
-  evidence_sample: .github/skills/missing-name/SKILL.md:1: The skill manifest does not declare a name.
-  evidence_sample: generic/missing-name/SKILL.md:1: The skill manifest does not declare a name.
-  evidence_sample: nested/team/portability/missing-name/SKILL.md:1: The skill manifest does not declare a name.
-SKILL002 group_fingerprint=fnv1a64:846266d12f7e80e8 confidence=high normalized_key=SKILL002|low|spec|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot evidence_key=host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot dimensions= host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot count=2 affected_packages=2: Missing skill description
-  evidence_sample: .agents/skills/missing-description/SKILL.md:1: The skill manifest does not declare a description.
-  evidence_sample: generic/missing-description/SKILL.md:1: The skill manifest does not declare a description.
-SKILL010 group_fingerprint=fnv1a64:5b6331b70eaec49f confidence=high normalized_key=SKILL010|low|spec|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot evidence_key=host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot dimensions= host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot count=4 affected_packages=4: Broken relative reference
-  evidence_sample: .agents/skills/broken-reference/SKILL.md:8: The manifest references `references/playbook.md`, but the file was not found.
-  evidence_sample: .github/skills/broken-reference/SKILL.md:8: The manifest references `references/release.md`, but the file was not found.
-  evidence_sample: generic/broken-reference/SKILL.md:8: The manifest references `references/missing-guide.md`, but the file was not found.
-SKILL030 group_fingerprint=fnv1a64:0b15203c4d5649ea confidence=high normalized_key=SKILL030|low|compatibility|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot evidence_key=host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot dimensions= host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot count=4 affected_packages=4: Duplicate skill name
-  evidence_sample: .claude/skills/duplicate-a/SKILL.md:1: The skill name `corpus-host-duplicate` is also declared by other manifest path(s): `.claude/skills/duplicate-b/SKILL.md`.
-  evidence_sample: .claude/skills/duplicate-b/SKILL.md:1: The skill name `corpus-host-duplicate` is also declared by other manifest path(s): `.claude/skills/duplicate-a/SKILL.md`.
-  evidence_sample: generic/duplicate-a/SKILL.md:1: The skill name `corpus-duplicate` is also declared by other manifest path(s): `generic/duplicate-b/SKILL.md`.
-SKILL040 group_fingerprint=fnv1a64:ddda4205713f0217 confidence=medium normalized_key=SKILL040|low|compatibility|frontmatter_field=host|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot|frontmatter_field=host,host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot evidence_key=frontmatter_field=host|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot dimensions= frontmatter_field=host host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot count=1 affected_packages=1: Host-specific or unrecognized metadata field
-  evidence_sample: .claude/skills/unknown-frontmatter/SKILL.md:4: The field `host` is not defined by the selected host profiles and may be ignored or interpreted differently.
-SKILL040 group_fingerprint=fnv1a64:18036a90900fd927 confidence=medium normalized_key=SKILL040|low|compatibility|frontmatter_field=owner|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot|frontmatter_field=owner,host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot evidence_key=frontmatter_field=owner|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot dimensions= frontmatter_field=owner host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot count=1 affected_packages=1: Host-specific or unrecognized metadata field
-  evidence_sample: nested/team/security/checks/SKILL.md:4: The field `owner` is not defined by the selected host profiles and may be ignored or interpreted differently.
-SKILL040 group_fingerprint=fnv1a64:5bdfdf722774e08b confidence=medium normalized_key=SKILL040|low|compatibility|frontmatter_field=x-owner|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot|frontmatter_field=x-owner,host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot evidence_key=frontmatter_field=x-owner|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot dimensions= frontmatter_field=x-owner host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot count=1 affected_packages=1: Host-specific or unrecognized metadata field
-  evidence_sample: generic/unknown-field/SKILL.md:4: The field `x-owner` is not defined by the selected host profiles and may be ignored or interpreted differently.
+
+SKILL001: Missing skill name
+  severity: low
+  confidence: high
+  category: spec
+  count: 3
+  affected packages: 3
+  group fingerprint: fnv1a64:6c3da7af2d36deb5
+  normalized key: SKILL001|low|spec|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot
+  evidence key: host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot
+  dimensions: host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot
+  evidence samples:
+    - .github/skills/missing-name/SKILL.md:1: The skill manifest does not declare a name.
+    - generic/missing-name/SKILL.md:1: The skill manifest does not declare a name.
+    - nested/team/portability/missing-name/SKILL.md:1: The skill manifest does not declare a name.
+
+SKILL002: Missing skill description
+  severity: low
+  confidence: high
+  category: spec
+  count: 2
+  affected packages: 2
+  group fingerprint: fnv1a64:846266d12f7e80e8
+  normalized key: SKILL002|low|spec|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot
+  evidence key: host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot
+  dimensions: host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot
+  evidence samples:
+    - .agents/skills/missing-description/SKILL.md:1: The skill manifest does not declare a description.
+    - generic/missing-description/SKILL.md:1: The skill manifest does not declare a description.
+
+SKILL010: Broken relative reference
+  severity: low
+  confidence: high
+  category: spec
+  count: 4
+  affected packages: 4
+  group fingerprint: fnv1a64:5b6331b70eaec49f
+  normalized key: SKILL010|low|spec|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot
+  evidence key: host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot
+  dimensions: host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot
+  evidence samples:
+    - .agents/skills/broken-reference/SKILL.md:8: The manifest references `references/playbook.md`, but the file was not
+      found.
+    - .github/skills/broken-reference/SKILL.md:8: The manifest references `references/release.md`, but the file was not
+      found.
+    - generic/broken-reference/SKILL.md:8: The manifest references `references/missing-guide.md`, but the file was not
+      found.
+
+SKILL030: Duplicate skill name
+  severity: low
+  confidence: high
+  category: compatibility
+  count: 4
+  affected packages: 4
+  group fingerprint: fnv1a64:0b15203c4d5649ea
+  normalized key: SKILL030|low|compatibility|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot
+  evidence key: host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot
+  dimensions: host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot
+  evidence samples:
+    - .claude/skills/duplicate-a/SKILL.md:1: The skill name `corpus-host-duplicate` is also declared by other manifest
+      path(s): `.claude/skills/duplicate-b/SKILL.md`.
+    - .claude/skills/duplicate-b/SKILL.md:1: The skill name `corpus-host-duplicate` is also declared by other manifest
+      path(s): `.claude/skills/duplicate-a/SKILL.md`.
+    - generic/duplicate-a/SKILL.md:1: The skill name `corpus-duplicate` is also declared by other manifest path(s):
+      `generic/duplicate-b/SKILL.md`.
+
+SKILL040: Host-specific or unrecognized metadata field
+  severity: low
+  confidence: medium
+  category: compatibility
+  count: 1
+  affected packages: 1
+  group fingerprint: fnv1a64:ddda4205713f0217
+  normalized key: SKILL040|low|compatibility|frontmatter_field=host|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot|frontmatter_field=host,host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot
+  evidence key: frontmatter_field=host|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot
+  dimensions: frontmatter_field=host
+              host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot
+  evidence samples:
+    - .claude/skills/unknown-frontmatter/SKILL.md:4: The field `host` is not defined by the selected host profiles and
+      may be ignored or interpreted differently.
+
+SKILL040: Host-specific or unrecognized metadata field
+  severity: low
+  confidence: medium
+  category: compatibility
+  count: 1
+  affected packages: 1
+  group fingerprint: fnv1a64:18036a90900fd927
+  normalized key: SKILL040|low|compatibility|frontmatter_field=owner|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot|frontmatter_field=owner,host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot
+  evidence key: frontmatter_field=owner|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot
+  dimensions: frontmatter_field=owner
+              host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot
+  evidence samples:
+    - nested/team/security/checks/SKILL.md:4: The field `owner` is not defined by the selected host profiles and may be
+      ignored or interpreted differently.
+
+SKILL040: Host-specific or unrecognized metadata field
+  severity: low
+  confidence: medium
+  category: compatibility
+  count: 1
+  affected packages: 1
+  group fingerprint: fnv1a64:5bdfdf722774e08b
+  normalized key: SKILL040|low|compatibility|frontmatter_field=x-owner|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot|frontmatter_field=x-owner,host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot
+  evidence key: frontmatter_field=x-owner|host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot
+  dimensions: frontmatter_field=x-owner
+              host_profile=agent-skills-spec,claude-code,codex,generic,github-copilot,vscode-copilot
+  evidence samples:
+    - generic/unknown-field/SKILL.md:4: The field `x-owner` is not defined by the selected host profiles and may be
+      ignored or interpreted differently.
 
 Full findings:
-SKILL010 [low/high/spec] .agents/skills/broken-reference/SKILL.md:8: Broken relative reference
-  normalized_key: .agents/skills/broken-reference/SKILL.md|8|SKILL010|low|spec|The manifest references `references/playbook.md`, but the file was not found.
-  message: The manifest references `references/playbook.md`, but the file was not found.
-  why: Broken references can make a skill behave differently than documented or fail at runtime.
-  fix: Create the referenced file, update the link, or remove the stale reference.
-  suppress: Suppress `SKILL010` only with a documented reason in the project audit config.
-SKILL002 [low/high/spec] .agents/skills/missing-description/SKILL.md:1: Missing skill description
-  normalized_key: .agents/skills/missing-description/SKILL.md|1|SKILL002|low|spec|The skill manifest does not declare a description.
-  message: The skill manifest does not declare a description.
-  why: Reviewers and host profiles need a concise behavior statement for the skill.
-  fix: Add a non-empty `description` field to frontmatter or an opening paragraph.
-  suppress: Suppress `SKILL002` only with a documented reason in the project audit config.
-SKILL030 [low/high/compatibility] .claude/skills/duplicate-a/SKILL.md:1: Duplicate skill name
-  normalized_key: .claude/skills/duplicate-a/SKILL.md|1|SKILL030|low|compatibility|The skill name `corpus-host-duplicate` is also declared by other manifest path(s): `.claude/skills/duplicate-b/SKILL.md`.
-  message: The skill name `corpus-host-duplicate` is also declared by other manifest path(s): `.claude/skills/duplicate-b/SKILL.md`.
-  why: Duplicate names make inventory, policy, host routing, and review ambiguous.
-  fix: Rename packages so every scanned skill has a unique stable name.
-  suppress: Suppress `SKILL030` only with a documented reason in the project audit config.
-SKILL030 [low/high/compatibility] .claude/skills/duplicate-b/SKILL.md:1: Duplicate skill name
-  normalized_key: .claude/skills/duplicate-b/SKILL.md|1|SKILL030|low|compatibility|The skill name `corpus-host-duplicate` is also declared by other manifest path(s): `.claude/skills/duplicate-a/SKILL.md`.
-  message: The skill name `corpus-host-duplicate` is also declared by other manifest path(s): `.claude/skills/duplicate-a/SKILL.md`.
-  why: Duplicate names make inventory, policy, host routing, and review ambiguous.
-  fix: Rename packages so every scanned skill has a unique stable name.
-  suppress: Suppress `SKILL030` only with a documented reason in the project audit config.
-SKILL040 [low/medium/compatibility] .claude/skills/unknown-frontmatter/SKILL.md:4: Host-specific or unrecognized metadata field
-  normalized_key: .claude/skills/unknown-frontmatter/SKILL.md|4|SKILL040|low|compatibility|The field `host` is not defined by the selected host profiles and may be ignored or interpreted differently.
-  message: The field `host` is not defined by the selected host profiles and may be ignored or interpreted differently.
-  why: Host-specific or unrecognized metadata fields may be ignored, rejected, or interpreted differently by selected host profiles, reducing portability and reviewability.
-  fix: Use metadata defined by the selected host profiles, move the information into the Markdown body, or document a reviewed profile-specific exception.
-  suppress: Suppress `SKILL040` only when the field is intentionally retained for a documented host, wrapper, or ecosystem convention.
-SKILL010 [low/high/spec] .github/skills/broken-reference/SKILL.md:8: Broken relative reference
-  normalized_key: .github/skills/broken-reference/SKILL.md|8|SKILL010|low|spec|The manifest references `references/release.md`, but the file was not found.
-  message: The manifest references `references/release.md`, but the file was not found.
-  why: Broken references can make a skill behave differently than documented or fail at runtime.
-  fix: Create the referenced file, update the link, or remove the stale reference.
-  suppress: Suppress `SKILL010` only with a documented reason in the project audit config.
-SKILL001 [low/high/spec] .github/skills/missing-name/SKILL.md:1: Missing skill name
-  normalized_key: .github/skills/missing-name/SKILL.md|1|SKILL001|low|spec|The skill manifest does not declare a name.
-  message: The skill manifest does not declare a name.
-  why: Skills without stable names are hard to inventory and compare across hosts.
-  fix: Add a non-empty `name` field to frontmatter or a clear top-level heading.
-  suppress: Suppress `SKILL001` only with a documented reason in the project audit config.
-SKILL010 [low/high/spec] generic/broken-reference/SKILL.md:8: Broken relative reference
-  normalized_key: generic/broken-reference/SKILL.md|8|SKILL010|low|spec|The manifest references `references/missing-guide.md`, but the file was not found.
-  message: The manifest references `references/missing-guide.md`, but the file was not found.
-  why: Broken references can make a skill behave differently than documented or fail at runtime.
-  fix: Create the referenced file, update the link, or remove the stale reference.
-  suppress: Suppress `SKILL010` only with a documented reason in the project audit config.
-SKILL030 [low/high/compatibility] generic/duplicate-a/SKILL.md:1: Duplicate skill name
-  normalized_key: generic/duplicate-a/SKILL.md|1|SKILL030|low|compatibility|The skill name `corpus-duplicate` is also declared by other manifest path(s): `generic/duplicate-b/SKILL.md`.
-  message: The skill name `corpus-duplicate` is also declared by other manifest path(s): `generic/duplicate-b/SKILL.md`.
-  why: Duplicate names make inventory, policy, host routing, and review ambiguous.
-  fix: Rename packages so every scanned skill has a unique stable name.
-  suppress: Suppress `SKILL030` only with a documented reason in the project audit config.
-SKILL030 [low/high/compatibility] generic/duplicate-b/SKILL.md:1: Duplicate skill name
-  normalized_key: generic/duplicate-b/SKILL.md|1|SKILL030|low|compatibility|The skill name `corpus-duplicate` is also declared by other manifest path(s): `generic/duplicate-a/SKILL.md`.
-  message: The skill name `corpus-duplicate` is also declared by other manifest path(s): `generic/duplicate-a/SKILL.md`.
-  why: Duplicate names make inventory, policy, host routing, and review ambiguous.
-  fix: Rename packages so every scanned skill has a unique stable name.
-  suppress: Suppress `SKILL030` only with a documented reason in the project audit config.
-SKILL002 [low/high/spec] generic/missing-description/SKILL.md:1: Missing skill description
-  normalized_key: generic/missing-description/SKILL.md|1|SKILL002|low|spec|The skill manifest does not declare a description.
-  message: The skill manifest does not declare a description.
-  why: Reviewers and host profiles need a concise behavior statement for the skill.
-  fix: Add a non-empty `description` field to frontmatter or an opening paragraph.
-  suppress: Suppress `SKILL002` only with a documented reason in the project audit config.
-SKILL001 [low/high/spec] generic/missing-name/SKILL.md:1: Missing skill name
-  normalized_key: generic/missing-name/SKILL.md|1|SKILL001|low|spec|The skill manifest does not declare a name.
-  message: The skill manifest does not declare a name.
-  why: Skills without stable names are hard to inventory and compare across hosts.
-  fix: Add a non-empty `name` field to frontmatter or a clear top-level heading.
-  suppress: Suppress `SKILL001` only with a documented reason in the project audit config.
-SKILL040 [low/medium/compatibility] generic/unknown-field/SKILL.md:4: Host-specific or unrecognized metadata field
-  normalized_key: generic/unknown-field/SKILL.md|4|SKILL040|low|compatibility|The field `x-owner` is not defined by the selected host profiles and may be ignored or interpreted differently.
-  message: The field `x-owner` is not defined by the selected host profiles and may be ignored or interpreted differently.
-  why: Host-specific or unrecognized metadata fields may be ignored, rejected, or interpreted differently by selected host profiles, reducing portability and reviewability.
-  fix: Use metadata defined by the selected host profiles, move the information into the Markdown body, or document a reviewed profile-specific exception.
-  suppress: Suppress `SKILL040` only when the field is intentionally retained for a documented host, wrapper, or ecosystem convention.
-SKILL001 [low/high/spec] nested/team/portability/missing-name/SKILL.md:1: Missing skill name
-  normalized_key: nested/team/portability/missing-name/SKILL.md|1|SKILL001|low|spec|The skill manifest does not declare a name.
-  message: The skill manifest does not declare a name.
-  why: Skills without stable names are hard to inventory and compare across hosts.
-  fix: Add a non-empty `name` field to frontmatter or a clear top-level heading.
-  suppress: Suppress `SKILL001` only with a documented reason in the project audit config.
-SKILL040 [low/medium/compatibility] nested/team/security/checks/SKILL.md:4: Host-specific or unrecognized metadata field
-  normalized_key: nested/team/security/checks/SKILL.md|4|SKILL040|low|compatibility|The field `owner` is not defined by the selected host profiles and may be ignored or interpreted differently.
-  message: The field `owner` is not defined by the selected host profiles and may be ignored or interpreted differently.
-  why: Host-specific or unrecognized metadata fields may be ignored, rejected, or interpreted differently by selected host profiles, reducing portability and reviewability.
-  fix: Use metadata defined by the selected host profiles, move the information into the Markdown body, or document a reviewed profile-specific exception.
-  suppress: Suppress `SKILL040` only when the field is intentionally retained for a documented host, wrapper, or ecosystem convention.
-SKILL010 [low/high/spec] nested/team/security/checks/SKILL.md:9: Broken relative reference
-  normalized_key: nested/team/security/checks/SKILL.md|9|SKILL010|low|spec|The manifest references `references/checklist.md`, but the file was not found.
-  message: The manifest references `references/checklist.md`, but the file was not found.
-  why: Broken references can make a skill behave differently than documented or fail at runtime.
-  fix: Create the referenced file, update the link, or remove the stale reference.
-  suppress: Suppress `SKILL010` only with a documented reason in the project audit config.
+------------------------------------------------------------
+SKILL010 — Broken relative reference
+  severity:   low
+  confidence: high
+  category:   spec
+  location:   .agents/skills/broken-reference/SKILL.md:8
+  Message:
+    The manifest references `references/playbook.md`, but the file was not
+    found.
+  Why it matters:
+    Broken references can make a skill behave differently than documented or
+    fail at runtime.
+  Remediation:
+    Create the referenced file, update the link, or remove the stale
+    reference.
+  Suppression:
+    Suppress `SKILL010` only with a documented reason in the project audit
+    config.
+  Finding identity:
+    fingerprint: fnv1a64:eeebab71a6cab53d
+------------------------------------------------------------
+SKILL002 — Missing skill description
+  severity:   low
+  confidence: high
+  category:   spec
+  location:   .agents/skills/missing-description/SKILL.md:1
+  Message:
+    The skill manifest does not declare a description.
+  Why it matters:
+    Reviewers and host profiles need a concise behavior statement for the
+    skill.
+  Remediation:
+    Add a non-empty `description` field to frontmatter or an opening
+    paragraph.
+  Suppression:
+    Suppress `SKILL002` only with a documented reason in the project audit
+    config.
+  Finding identity:
+    fingerprint: fnv1a64:c3679941cee68276
+------------------------------------------------------------
+SKILL030 — Duplicate skill name
+  severity:   low
+  confidence: high
+  category:   compatibility
+  location:   .claude/skills/duplicate-a/SKILL.md:1
+  Message:
+    The skill name `corpus-host-duplicate` is also declared by other
+    manifest path(s): `.claude/skills/duplicate-b/SKILL.md`.
+  Why it matters:
+    Duplicate names make inventory, policy, host routing, and review
+    ambiguous.
+  Remediation:
+    Rename packages so every scanned skill has a unique stable name.
+  Suppression:
+    Suppress `SKILL030` only with a documented reason in the project audit
+    config.
+  Finding identity:
+    fingerprint: fnv1a64:0c9bac6a6debe4fd
+------------------------------------------------------------
+SKILL030 — Duplicate skill name
+  severity:   low
+  confidence: high
+  category:   compatibility
+  location:   .claude/skills/duplicate-b/SKILL.md:1
+  Message:
+    The skill name `corpus-host-duplicate` is also declared by other
+    manifest path(s): `.claude/skills/duplicate-a/SKILL.md`.
+  Why it matters:
+    Duplicate names make inventory, policy, host routing, and review
+    ambiguous.
+  Remediation:
+    Rename packages so every scanned skill has a unique stable name.
+  Suppression:
+    Suppress `SKILL030` only with a documented reason in the project audit
+    config.
+  Finding identity:
+    fingerprint: fnv1a64:4dacbd1497c8c8a9
+------------------------------------------------------------
+SKILL040 — Host-specific or unrecognized metadata field
+  severity:   low
+  confidence: medium
+  category:   compatibility
+  location:   .claude/skills/unknown-frontmatter/SKILL.md:4
+  Message:
+    The field `host` is not defined by the selected host profiles and may be
+    ignored or interpreted differently.
+  Why it matters:
+    Host-specific or unrecognized metadata fields may be ignored, rejected,
+    or interpreted differently by selected host profiles, reducing
+    portability and reviewability.
+  Remediation:
+    Use metadata defined by the selected host profiles, move the information
+    into the Markdown body, or document a reviewed profile-specific
+    exception.
+  Suppression:
+    Suppress `SKILL040` only when the field is intentionally retained for a
+    documented host, wrapper, or ecosystem convention.
+  Finding identity:
+    fingerprint: fnv1a64:6e9bd5ad72d24530
+------------------------------------------------------------
+SKILL010 — Broken relative reference
+  severity:   low
+  confidence: high
+  category:   spec
+  location:   .github/skills/broken-reference/SKILL.md:8
+  Message:
+    The manifest references `references/release.md`, but the file was not
+    found.
+  Why it matters:
+    Broken references can make a skill behave differently than documented or
+    fail at runtime.
+  Remediation:
+    Create the referenced file, update the link, or remove the stale
+    reference.
+  Suppression:
+    Suppress `SKILL010` only with a documented reason in the project audit
+    config.
+  Finding identity:
+    fingerprint: fnv1a64:d4d7fcce0b6401cc
+------------------------------------------------------------
+SKILL001 — Missing skill name
+  severity:   low
+  confidence: high
+  category:   spec
+  location:   .github/skills/missing-name/SKILL.md:1
+  Message:
+    The skill manifest does not declare a name.
+  Why it matters:
+    Skills without stable names are hard to inventory and compare across
+    hosts.
+  Remediation:
+    Add a non-empty `name` field to frontmatter or a clear top-level
+    heading.
+  Suppression:
+    Suppress `SKILL001` only with a documented reason in the project audit
+    config.
+  Finding identity:
+    fingerprint: fnv1a64:be6487206e8dd660
+------------------------------------------------------------
+SKILL010 — Broken relative reference
+  severity:   low
+  confidence: high
+  category:   spec
+  location:   generic/broken-reference/SKILL.md:8
+  Message:
+    The manifest references `references/missing-guide.md`, but the file was
+    not found.
+  Why it matters:
+    Broken references can make a skill behave differently than documented or
+    fail at runtime.
+  Remediation:
+    Create the referenced file, update the link, or remove the stale
+    reference.
+  Suppression:
+    Suppress `SKILL010` only with a documented reason in the project audit
+    config.
+  Finding identity:
+    fingerprint: fnv1a64:5828dc131918c8dd
+------------------------------------------------------------
+SKILL030 — Duplicate skill name
+  severity:   low
+  confidence: high
+  category:   compatibility
+  location:   generic/duplicate-a/SKILL.md:1
+  Message:
+    The skill name `corpus-duplicate` is also declared by other manifest
+    path(s): `generic/duplicate-b/SKILL.md`.
+  Why it matters:
+    Duplicate names make inventory, policy, host routing, and review
+    ambiguous.
+  Remediation:
+    Rename packages so every scanned skill has a unique stable name.
+  Suppression:
+    Suppress `SKILL030` only with a documented reason in the project audit
+    config.
+  Finding identity:
+    fingerprint: fnv1a64:22f4232fff4167a4
+------------------------------------------------------------
+SKILL030 — Duplicate skill name
+  severity:   low
+  confidence: high
+  category:   compatibility
+  location:   generic/duplicate-b/SKILL.md:1
+  Message:
+    The skill name `corpus-duplicate` is also declared by other manifest
+    path(s): `generic/duplicate-a/SKILL.md`.
+  Why it matters:
+    Duplicate names make inventory, policy, host routing, and review
+    ambiguous.
+  Remediation:
+    Rename packages so every scanned skill has a unique stable name.
+  Suppression:
+    Suppress `SKILL030` only with a documented reason in the project audit
+    config.
+  Finding identity:
+    fingerprint: fnv1a64:8e1613dd3b3d00d4
+------------------------------------------------------------
+SKILL002 — Missing skill description
+  severity:   low
+  confidence: high
+  category:   spec
+  location:   generic/missing-description/SKILL.md:1
+  Message:
+    The skill manifest does not declare a description.
+  Why it matters:
+    Reviewers and host profiles need a concise behavior statement for the
+    skill.
+  Remediation:
+    Add a non-empty `description` field to frontmatter or an opening
+    paragraph.
+  Suppression:
+    Suppress `SKILL002` only with a documented reason in the project audit
+    config.
+  Finding identity:
+    fingerprint: fnv1a64:90ab7685044b7d7c
+------------------------------------------------------------
+SKILL001 — Missing skill name
+  severity:   low
+  confidence: high
+  category:   spec
+  location:   generic/missing-name/SKILL.md:1
+  Message:
+    The skill manifest does not declare a name.
+  Why it matters:
+    Skills without stable names are hard to inventory and compare across
+    hosts.
+  Remediation:
+    Add a non-empty `name` field to frontmatter or a clear top-level
+    heading.
+  Suppression:
+    Suppress `SKILL001` only with a documented reason in the project audit
+    config.
+  Finding identity:
+    fingerprint: fnv1a64:f1183bd20c1574f3
+------------------------------------------------------------
+SKILL040 — Host-specific or unrecognized metadata field
+  severity:   low
+  confidence: medium
+  category:   compatibility
+  location:   generic/unknown-field/SKILL.md:4
+  Message:
+    The field `x-owner` is not defined by the selected host profiles and may
+    be ignored or interpreted differently.
+  Why it matters:
+    Host-specific or unrecognized metadata fields may be ignored, rejected,
+    or interpreted differently by selected host profiles, reducing
+    portability and reviewability.
+  Remediation:
+    Use metadata defined by the selected host profiles, move the information
+    into the Markdown body, or document a reviewed profile-specific
+    exception.
+  Suppression:
+    Suppress `SKILL040` only when the field is intentionally retained for a
+    documented host, wrapper, or ecosystem convention.
+  Finding identity:
+    fingerprint: fnv1a64:be9e4e395b379b46
+------------------------------------------------------------
+SKILL001 — Missing skill name
+  severity:   low
+  confidence: high
+  category:   spec
+  location:   nested/team/portability/missing-name/SKILL.md:1
+  Message:
+    The skill manifest does not declare a name.
+  Why it matters:
+    Skills without stable names are hard to inventory and compare across
+    hosts.
+  Remediation:
+    Add a non-empty `name` field to frontmatter or a clear top-level
+    heading.
+  Suppression:
+    Suppress `SKILL001` only with a documented reason in the project audit
+    config.
+  Finding identity:
+    fingerprint: fnv1a64:5893fb1f4b115343
+------------------------------------------------------------
+SKILL040 — Host-specific or unrecognized metadata field
+  severity:   low
+  confidence: medium
+  category:   compatibility
+  location:   nested/team/security/checks/SKILL.md:4
+  Message:
+    The field `owner` is not defined by the selected host profiles and may
+    be ignored or interpreted differently.
+  Why it matters:
+    Host-specific or unrecognized metadata fields may be ignored, rejected,
+    or interpreted differently by selected host profiles, reducing
+    portability and reviewability.
+  Remediation:
+    Use metadata defined by the selected host profiles, move the information
+    into the Markdown body, or document a reviewed profile-specific
+    exception.
+  Suppression:
+    Suppress `SKILL040` only when the field is intentionally retained for a
+    documented host, wrapper, or ecosystem convention.
+  Finding identity:
+    fingerprint: fnv1a64:ac99ff4ce3daecaa
+------------------------------------------------------------
+SKILL010 — Broken relative reference
+  severity:   low
+  confidence: high
+  category:   spec
+  location:   nested/team/security/checks/SKILL.md:9
+  Message:
+    The manifest references `references/checklist.md`, but the file was not
+    found.
+  Why it matters:
+    Broken references can make a skill behave differently than documented or
+    fail at runtime.
+  Remediation:
+    Create the referenced file, update the link, or remove the stale
+    reference.
+  Suppression:
+    Suppress `SKILL010` only with a documented reason in the project audit
+    config.
+  Finding identity:
+    fingerprint: fnv1a64:982333ebdf749d16

@@ -55,7 +55,7 @@ agent-audit scan [PATH] [--format FORMAT] [--mode MODE] [--output PATH] [--open]
 - `--format` defaults to `text`.
 - Supported formats are `text`, `json`, `sarif`, and `html`.
 - `--mode` defaults to `summary`. Supported modes are `summary`, `triage`, and `research`.
-- Text and HTML output use `--mode` to control density: grouped summary output, human-readable triage review, or grouped research evidence with normalized keys. Summary, research, HTML, and JSON reports use the same canonical finding groups and group fingerprints. JSON and SARIF preserve the full finding set, including finding confidence.
+- Text and HTML output use `--mode` to control density: grouped summary output, human-readable triage review, or human-readable fixed-width research evidence with normalized keys. Summary, research, HTML, and JSON reports use the same canonical finding groups and group fingerprints. JSON and SARIF preserve the full finding set, including finding confidence.
 - `--output PATH` writes the selected report format to a file instead of standard output.
 - `--open` opens an HTML report after it is written. It applies only with `--format html --output PATH`, and only after `fail_on` checks pass.
 - `--config PATH` explicitly reads and validates a YAML audit config before scanning.

@@ -24,6 +24,9 @@ pub const SUPPORTED_REPORT_MODES: &[&str] = &["summary", "triage", "research"];
 pub const SUPPORTED_REPORT_MODES_HELP: &str = "supported: summary, triage, research";
 const SUMMARY_COMPATIBILITY_ROW_LIMIT: usize = 5;
 const TRIAGE_OUTPUT_WIDTH: usize = 120;
+const RESEARCH_CARD_OUTPUT_WIDTH: usize = 76;
+const RESEARCH_FINDING_SEPARATOR: &str =
+    "------------------------------------------------------------";
 const HTML_TOP_PACKAGE_LIMIT: usize = 25;
 const HTML_TOP_DOMAIN_LIMIT: usize = 10;
 const HTML_TOP_URL_LIMIT: usize = 25;
@@ -290,7 +293,7 @@ fn extend_summary_findings_section(lines: &mut Vec<String>, report: &ScanReport)
 }
 
 fn render_research_text(report: &ScanReport) -> String {
-    let mut lines = summary_header("Agent Skill Auditor research scan summary", report);
+    let mut lines = research_summary_header("Agent Skill Auditor research scan summary", report);
 
     extend_supply_chain_summary(&mut lines, report);
     extend_compatibility_summary(&mut lines, &report.compatibility);
@@ -299,6 +302,52 @@ fn render_research_text(report: &ScanReport) -> String {
     extend_full_findings_summary(&mut lines, report, true);
 
     lines.join("\n")
+}
+
+fn push_triage_section_header(lines: &mut Vec<String>, heading: &str) {
+    if !lines.is_empty() && !matches!(lines.last(), Some(last) if last.is_empty()) {
+        lines.push(String::new());
+    }
+    lines.push(RESEARCH_FINDING_SEPARATOR.to_owned());
+    lines.push(heading.to_owned());
+    lines.push(RESEARCH_FINDING_SEPARATOR.to_owned());
+    lines.push(String::new());
+}
+
+fn research_summary_header(title: &str, report: &ScanReport) -> Vec<String> {
+    let mut lines = vec![title.to_owned()];
+    let audit = triage_audit_metadata_summary(&report.audit);
+    let audit_details = audit.strip_prefix("Audit: ").unwrap_or(&audit);
+    push_wrapped_text_with_prefixes(
+        &mut lines,
+        "Audit: ",
+        "       ",
+        audit_details,
+        TRIAGE_OUTPUT_WIDTH,
+    );
+    lines.push(format!("Packages: {}", report.summary.package_count));
+    lines.push(format!("Findings: {}", report.summary.finding_count));
+    lines.push(format!(
+        "Suppressed findings: {}",
+        report.summary.suppressed_finding_count
+    ));
+    lines.push(format!(
+        "Invalid manifests: {}",
+        report.summary.invalid_manifest_count
+    ));
+    lines.push(format!(
+        "Broken references: {}",
+        report.summary.broken_reference_count
+    ));
+    lines.push(format!(
+        "Actual secret evidence: {}",
+        report.summary.actual_secret_evidence_count
+    ));
+    lines.push(format!(
+        "Prompt secret exposure signals: {}",
+        report.summary.prompt_secret_exposure_count
+    ));
+    lines
 }
 
 fn render_triage_text(report: &ScanReport) -> String {
@@ -311,35 +360,6 @@ fn render_triage_text(report: &ScanReport) -> String {
     extend_triage_finding_groups_summary(&mut lines, report);
 
     lines.join("\n")
-}
-
-fn summary_header(title: &str, report: &ScanReport) -> Vec<String> {
-    vec![
-        title.to_owned(),
-        audit_metadata_summary(&report.audit),
-        format!("Packages: {}", report.summary.package_count),
-        format!("Findings: {}", report.summary.finding_count),
-        format!(
-            "Suppressed findings: {}",
-            report.summary.suppressed_finding_count
-        ),
-        format!(
-            "Invalid manifests: {}",
-            report.summary.invalid_manifest_count
-        ),
-        format!(
-            "Broken references: {}",
-            report.summary.broken_reference_count
-        ),
-        format!(
-            "Actual secret evidence: {}",
-            report.summary.actual_secret_evidence_count
-        ),
-        format!(
-            "Prompt secret exposure signals: {}",
-            report.summary.prompt_secret_exposure_count
-        ),
-    ]
 }
 
 fn triage_summary_header(title: &str, report: &ScanReport) -> Vec<String> {
@@ -479,24 +499,51 @@ fn extend_research_finding_groups_summary(lines: &mut Vec<String>, report: &Scan
     lines.push(String::new());
     lines.push("Finding groups:".to_owned());
     for group in finding_groups.iter() {
+        lines.push(String::new());
+        lines.push(format!("{}: {}", group.rule_id, group.title));
+        lines.push(format!("  severity: {}", severity_name(group.severity)));
         lines.push(format!(
-            "{} group_fingerprint={} confidence={} normalized_key={} evidence_key={} dimensions={} count={} affected_packages={}: {}",
-            group.rule_id,
-            group.group_fingerprint,
-            confidence_name(group.confidence),
-            finding_group_normalized_key(group),
-            group.evidence_key,
-            summary_group_dimensions(group),
-            group.finding_count,
-            group.affected_package_count,
-            group.title
+            "  confidence: {}",
+            confidence_name(group.confidence)
         ));
+        lines.push(format!("  category: {}", category_name(group.category)));
+        lines.push(format!("  count: {}", group.finding_count));
+        lines.push(format!(
+            "  affected packages: {}",
+            group.affected_package_count
+        ));
+        lines.push(format!("  group fingerprint: {}", group.group_fingerprint));
+        push_labeled_wrapped_text(
+            lines,
+            "  normalized key: ",
+            &finding_group_normalized_key(group),
+            TRIAGE_OUTPUT_WIDTH,
+        );
+        push_labeled_wrapped_text(
+            lines,
+            "  evidence key: ",
+            &group.evidence_key,
+            TRIAGE_OUTPUT_WIDTH,
+        );
+        push_labeled_wrapped_text(
+            lines,
+            "  dimensions: ",
+            &research_group_dimensions(group),
+            TRIAGE_OUTPUT_WIDTH,
+        );
+        lines.push("  evidence samples:".to_owned());
         for sample in &group.evidence_samples {
-            lines.push(format!(
-                "  evidence_sample: {}: {}",
-                location_display(&sample.location.path, sample.location.line),
-                sample.message
-            ));
+            push_wrapped_text_with_prefixes(
+                lines,
+                "    - ",
+                "      ",
+                &format!(
+                    "{}: {}",
+                    location_display(&sample.location.path, sample.location.line),
+                    sample.message
+                ),
+                TRIAGE_OUTPUT_WIDTH,
+            );
         }
     }
 }
@@ -504,15 +551,16 @@ fn extend_research_finding_groups_summary(lines: &mut Vec<String>, report: &Scan
 fn extend_triage_finding_groups_summary(lines: &mut Vec<String>, report: &ScanReport) {
     let finding_groups = effective_finding_groups(report);
 
-    lines.push(String::new());
+    push_triage_section_header(lines, "Finding groups:");
     if finding_groups.is_empty() {
-        lines.push("Finding groups: none".to_owned());
+        lines.push("none".to_owned());
         return;
     }
 
-    lines.push("Finding groups:".to_owned());
-    for group in triage_finding_groups(finding_groups.as_ref()) {
-        lines.push(String::new());
+    for (index, group) in triage_finding_groups(finding_groups.as_ref()).iter().enumerate() {
+        if index > 0 {
+            lines.push(String::new());
+        }
         lines.push(format!("{}: {}", group.rule_id, group.title));
         lines.push(format!("  Severity: {}", severity_name(group.severity)));
         lines.push(format!(
@@ -675,46 +723,138 @@ fn extend_full_findings_summary(
 
     lines.push("Full findings:".to_owned());
     for finding in findings {
-        lines.push(format!(
-            "{} [{}/{}/{}] {}: {}",
-            finding.rule_id,
-            severity_name(finding.severity),
-            confidence_name(finding.confidence),
-            category_name(finding.category),
-            location_display(&finding.location.path, finding.location.line),
-            finding.title
-        ));
         if include_research_keys {
+            extend_research_finding_card(lines, finding);
+        } else {
             lines.push(format!(
-                "  normalized_key: {}",
-                finding_normalized_key(finding)
+                "{} [{}/{}/{}] {}: {}",
+                finding.rule_id,
+                severity_name(finding.severity),
+                confidence_name(finding.confidence),
+                category_name(finding.category),
+                location_display(&finding.location.path, finding.location.line),
+                finding.title
             ));
+            lines.push(format!("  message: {}", finding.message));
+            lines.push(format!("  why: {}", finding.rationale));
+            lines.push(format!("  fix: {}", finding.remediation));
+            lines.push(format!("  suppress: {}", finding.suppression));
         }
-        lines.push(format!("  message: {}", finding.message));
-        lines.push(format!("  why: {}", finding.rationale));
-        lines.push(format!("  fix: {}", finding.remediation));
-        lines.push(format!("  suppress: {}", finding.suppression));
     }
 }
 
-fn summary_group_dimensions(group: &FindingGroup) -> String {
+fn extend_research_finding_card(lines: &mut Vec<String>, finding: &SkillFinding) {
+    lines.push(RESEARCH_FINDING_SEPARATOR.to_owned());
+    lines.push(format!("{} \u{2014} {}", finding.rule_id, finding.title));
+    lines.push(format!("  severity:   {}", severity_name(finding.severity)));
+    lines.push(format!(
+        "  confidence: {}",
+        confidence_name(finding.confidence)
+    ));
+    lines.push(format!("  category:   {}", category_name(finding.category)));
+    push_labeled_wrapped_value(
+        lines,
+        "  location:   ",
+        &location_display(&finding.location.path, finding.location.line),
+        RESEARCH_CARD_OUTPUT_WIDTH,
+    );
+
+    extend_research_card_prose_block(lines, "Message", &finding.message);
+    extend_research_card_prose_block(lines, "Why it matters", &finding.rationale);
+    extend_research_card_prose_block(lines, "Remediation", &finding.remediation);
+    extend_research_card_prose_block(lines, "Suppression", &finding.suppression);
+
+    if !finding.fingerprint.is_empty() {
+        lines.push("  Finding identity:".to_owned());
+        push_labeled_wrapped_value(
+            lines,
+            "    fingerprint: ",
+            &finding.fingerprint,
+            RESEARCH_CARD_OUTPUT_WIDTH,
+        );
+    }
+}
+
+fn extend_research_card_prose_block(lines: &mut Vec<String>, title: &str, text: &str) {
+    lines.push(format!("  {title}:"));
+    push_wrapped_text(lines, "    ", text, RESEARCH_CARD_OUTPUT_WIDTH);
+}
+
+fn research_group_dimensions(group: &FindingGroup) -> String {
     if group.dimensions.is_empty() {
-        return format!(" evidence={}", group.evidence_key);
+        return "none".to_owned();
     }
 
-    format!(
-        " {}",
-        group
-            .dimensions
-            .iter()
-            .map(|(key, value)| format!("{key}={value}"))
-            .collect::<Vec<_>>()
-            .join(" ")
-    )
+    group
+        .dimensions
+        .iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn push_labeled_wrapped_text(lines: &mut Vec<String>, label: &str, text: &str, width: usize) {
+    let continuation = " ".repeat(label.len());
+    push_wrapped_text_with_prefixes(lines, label, &continuation, text, width);
+}
+
+fn push_labeled_wrapped_value(lines: &mut Vec<String>, label: &str, value: &str, width: usize) {
+    let continuation = " ".repeat(label.len());
+    push_wrapped_value_with_prefixes(lines, label, &continuation, value, width);
 }
 
 fn push_wrapped_text(lines: &mut Vec<String>, indent: &str, text: &str, width: usize) {
     push_wrapped_text_with_prefixes(lines, indent, indent, text, width);
+}
+
+fn push_wrapped_value_with_prefixes(
+    lines: &mut Vec<String>,
+    first_prefix: &str,
+    continuation_prefix: &str,
+    value: &str,
+    width: usize,
+) {
+    let mut remaining = value.trim();
+    let mut prefix = first_prefix;
+
+    while !remaining.is_empty() {
+        let available = width.saturating_sub(prefix.len()).max(1);
+        let split_at = bounded_char_split(remaining, available);
+        let (chunk, rest) = remaining.split_at(split_at);
+        lines.push(format!("{prefix}{chunk}"));
+        remaining = rest.trim_start();
+        prefix = continuation_prefix;
+    }
+}
+
+fn bounded_char_split(value: &str, max_len: usize) -> usize {
+    let max_boundary = value
+        .char_indices()
+        .map(|(index, _)| index)
+        .chain(std::iter::once(value.len()))
+        .take_while(|index| *index <= max_len)
+        .last()
+        .unwrap_or(value.len());
+
+    if max_boundary == value.len() {
+        return max_boundary;
+    }
+
+    if let Some(index) = value[..max_boundary].rfind(['|', '/', '\\', ',', ':']) {
+        let delimiter_len = value[index..]
+            .chars()
+            .next()
+            .map(char::len_utf8)
+            .unwrap_or(1);
+        if index + delimiter_len > 0 {
+            return index + delimiter_len;
+        }
+    }
+
+    value[..max_boundary]
+        .rfind(|ch: char| ch.is_whitespace())
+        .filter(|index| *index > 0)
+        .unwrap_or(max_boundary)
 }
 
 fn push_wrapped_text_with_prefixes(
@@ -750,7 +890,9 @@ fn push_wrapped_text_with_prefixes(
 }
 
 fn extend_supply_chain_summary(lines: &mut Vec<String>, report: &ScanReport) {
-    extend_supply_chain_summary_with_options(lines, report, false);
+    lines.push(String::new());
+    lines.push("Supply chain:".to_owned());
+    extend_supply_chain_summary_lines(lines, report, false);
 }
 
 fn extend_summary_supply_chain_section(lines: &mut Vec<String>, report: &ScanReport) {
@@ -834,10 +976,121 @@ fn extend_summary_supply_chain_section(lines: &mut Vec<String>, report: &ScanRep
 }
 
 fn extend_triage_supply_chain_summary(lines: &mut Vec<String>, report: &ScanReport) {
-    extend_supply_chain_summary_with_options(lines, report, true);
+    push_triage_section_header(lines, "Supply chain:");
+    extend_triage_supply_chain_summary_lines(lines, report);
 }
 
-fn extend_supply_chain_summary_with_options(
+fn extend_triage_supply_chain_summary_lines(
+    lines: &mut Vec<String>,
+    report: &ScanReport,
+) {
+    let supply_chain = &report.supply_chain;
+    let finding_counts = supply_chain_finding_counts(&report.findings);
+    let readiness_counts = offline_readiness_counts(supply_chain);
+    let manifest_counts = dependency_manifest_counts(supply_chain);
+    let install_command_count = install_command_count(supply_chain);
+    let mutable_urls = supply_chain
+        .external_urls
+        .iter()
+        .filter(|url| url.pinned == Some(false))
+        .count();
+    let unpinned_dependencies = supply_chain
+        .remote_dependencies
+        .iter()
+        .filter(|dependency| dependency.pinned == Some(false))
+        .count();
+    let invalid_trust_manifests = supply_chain
+        .trust_manifests
+        .iter()
+        .filter(|manifest| manifest.valid == Some(false))
+        .count();
+
+    lines.push("Review signals:".to_owned());
+    lines.push(format!(
+        "  - Mutable URLs: {}",
+        format_count(mutable_urls)
+    ));
+    lines.push(format!(
+        "  - Unpinned dependencies: {} of {}",
+        format_count(unpinned_dependencies),
+        format_count(supply_chain.remote_dependencies.len())
+    ));
+    lines.push(format!(
+        "  - Install reproducibility gaps: {} of {} installs",
+        format_count(finding_counts.install_without_reproducibility_evidence),
+        format_count(install_command_count)
+    ));
+    lines.push(format!(
+        "  - Trust manifests: {} of {} packages",
+        format_count(invalid_trust_manifests),
+        format_count(report.summary.package_count)
+    ));
+    lines.push(format!("  - Checksums: {}", format_count(supply_chain.checksums.len())));
+    lines.push(String::new());
+    lines.push("External references:".to_owned());
+    lines.push(format!(
+        "  - URLs: {} total",
+        format_count(supply_chain.external_urls.len())
+    ));
+    lines.push("  - Top domains:".to_owned());
+    extend_triage_external_domain_summary(lines, supply_chain, true);
+    lines.push(String::new());
+    lines.push("Dependency evidence:".to_owned());
+    lines.push(format!(
+        "  - Dependencies: {} observed, {} unpinned",
+        format_count(supply_chain.remote_dependencies.len()),
+        format_count(unpinned_dependencies)
+    ));
+    lines.push(format!(
+        "  - Manifests: {} total, {} exact-pinned, {} range-based",
+        format_count(manifest_counts.total),
+        format_count(manifest_counts.exact_pinned),
+        format_count(manifest_counts.range_based)
+    ));
+    lines.push(format!(
+        "  - Lockfiles: {}",
+        format_count(supply_chain.lockfiles.len())
+    ));
+    lines.push(format!(
+        "  - Installs: {} observed, {} with reproducibility gaps",
+        format_count(install_command_count),
+        format_count(finding_counts.install_without_reproducibility_evidence)
+    ));
+    lines.push(String::new());
+    lines.push("Artifact evidence:".to_owned());
+    lines.push(format!(
+        "  - Executables: {}",
+        format_count(supply_chain.executables.len())
+    ));
+    lines.push(format!(
+        "  - Binaries: {}",
+        format_count(supply_chain.binaries.len())
+    ));
+    lines.push(format!(
+        "  - Checksums: {}",
+        format_count(supply_chain.checksums.len())
+    ));
+    lines.push(String::new());
+    lines.push("Other:".to_owned());
+    lines.push(format!(
+        "  - License evidence: {} items",
+        format_count(supply_chain.licenses.len())
+    ));
+    lines.push(format!(
+        "  - Observed permissions: {} evidence items, {} conflicts",
+        format_count(supply_chain.permissions.len()),
+        format_count(finding_counts.permission_conflicts)
+    ));
+    lines.push(format!(
+        "  - Offline audit readiness: ready={} partial={} not-ready={} unknown={}",
+        format_count(readiness_counts.ready),
+        format_count(readiness_counts.partial),
+        format_count(readiness_counts.not_ready),
+        format_count(readiness_counts.unknown)
+    ));
+}
+
+fn extend_supply_chain_summary_lines(
     lines: &mut Vec<String>,
     report: &ScanReport,
     show_empty_external_domains: bool,
@@ -848,8 +1101,6 @@ fn extend_supply_chain_summary_with_options(
     let manifest_counts = dependency_manifest_counts(supply_chain);
     let install_command_count = install_command_count(supply_chain);
 
-    lines.push(String::new());
-    lines.push("Supply chain:".to_owned());
     lines.push(format!(
         "Licenses: {} evidence",
         supply_chain.licenses.len()
@@ -943,6 +1194,33 @@ fn extend_external_domain_summary(
             domain.domain,
             domain.count,
             domain.mutable_count,
+            domain.affected_package_count,
+            external_url_domain_classification_name(domain.classification)
+        ));
+    }
+}
+
+fn extend_triage_external_domain_summary(
+    lines: &mut Vec<String>,
+    supply_chain: &SupplyChainInventory,
+    show_empty: bool,
+) {
+    if supply_chain.external_url_domains.is_empty() {
+        if show_empty {
+            lines.push("    - none".to_owned());
+        }
+        return;
+    }
+
+    for domain in supply_chain
+        .external_url_domains
+        .iter()
+        .take(SUMMARY_TOP_DOMAIN_LIMIT)
+    {
+        lines.push(format!(
+            "    - {}: {} URLs, {} packages, {}",
+            domain.domain,
+            domain.count,
             domain.affected_package_count,
             external_url_domain_classification_name(domain.classification)
         ));
@@ -1128,8 +1406,7 @@ fn extend_triage_compatibility_summary(lines: &mut Vec<String>, report: &ScanRep
         return;
     }
 
-    lines.push(String::new());
-    lines.push("Compatibility:".to_owned());
+    push_triage_section_header(lines, "Compatibility:");
     extend_triage_compatibility_interpretation(lines, report);
     extend_compatibility_summary_content(lines, &report.compatibility);
 }
@@ -1210,13 +1487,12 @@ fn triage_compatibility_interpretation(report: &ScanReport) -> TriageCompatibili
 fn extend_triage_review_priorities(lines: &mut Vec<String>, report: &ScanReport) {
     let priorities = triage_review_priorities(report);
 
-    lines.push(String::new());
+    push_triage_section_header(lines, "Review priorities:");
     if priorities.is_empty() {
-        lines.push("Review priorities: No immediate review priorities.".to_owned());
+        lines.push("No immediate review priorities.".to_owned());
         return;
     }
 
-    lines.push("Review priorities:".to_owned());
     for (index, priority) in priorities.iter().enumerate() {
         lines.push(format!("{}. {}", index + 1, priority));
     }
@@ -1356,10 +1632,16 @@ fn extend_ecosystem_patterns_summary(lines: &mut Vec<String>, report: &ScanRepor
     lines.push(String::new());
     lines.push("Observed ecosystem patterns:".to_owned());
     for pattern in patterns.iter() {
-        lines.push(format!(
-            "- {}: {} count={} packages={}%",
-            pattern.title, pattern.summary, pattern.count, pattern.affected_package_percent
-        ));
+        push_wrapped_text_with_prefixes(
+            lines,
+            "- ",
+            "  ",
+            &format!(
+                "{}: {} count={} packages={}%",
+                pattern.title, pattern.summary, pattern.count, pattern.affected_package_percent
+            ),
+            TRIAGE_OUTPUT_WIDTH,
+        );
     }
 }
 
@@ -1375,7 +1657,7 @@ fn extend_summary_patterns_section(lines: &mut Vec<String>, report: &ScanReport)
 fn extend_triage_skill_collection_patterns_summary(lines: &mut Vec<String>, report: &ScanReport) {
     let patterns = effective_ecosystem_patterns(report);
 
-    lines.push(String::new());
+    push_triage_section_header(lines, "Observed skill collection patterns:");
     if patterns.is_empty() {
         lines.push(
             "Observed skill collection patterns: No notable collection-level patterns.".to_owned(),
@@ -1383,10 +1665,11 @@ fn extend_triage_skill_collection_patterns_summary(lines: &mut Vec<String>, repo
         return;
     }
 
-    lines.push("Observed skill collection patterns:".to_owned());
     for pattern in patterns.iter() {
+        if lines.last().is_some_and(|line| !line.is_empty()) {
+            lines.push(String::new());
+        }
         let card = triage_pattern_card(pattern);
-        lines.push(String::new());
         lines.push(format!("[{}] {}", card.priority, card.title));
         lines.push(format!(
             "  {}/{} {} ({}) | {}: {}",
@@ -4089,7 +4372,7 @@ mod tests {
 
     #[test]
     fn html_view_model_orders_top_risky_skills_by_weight_then_manifest_path() {
-        let report = report_with_packages_and_findings(
+        let mut report = report_with_packages_and_findings(
             vec![
                 package("skills/beta", "skills/beta/SKILL.md", Some("beta"), None),
                 package("skills/alpha", "skills/alpha/SKILL.md", Some("alpha"), None),
@@ -4287,7 +4570,7 @@ mod tests {
 
     #[test]
     fn secret_summary_separates_actual_evidence_from_prompt_risk_text() {
-        let report = report_with_packages_and_findings(
+        let mut report = report_with_packages_and_findings(
             vec![package(
                 "skills/review",
                 "skills/review/SKILL.md",
@@ -4336,7 +4619,7 @@ mod tests {
 
     #[test]
     fn html_view_model_groups_findings_by_manifest_then_root_prefix_with_unmatched_group() {
-        let report = report_with_packages_and_findings(
+        let mut report = report_with_packages_and_findings(
             vec![
                 package(
                     "skills/review",
@@ -4825,10 +5108,15 @@ mod tests {
                 "Permissions: 1 evidence, 1 conflicts",
                 "Offline audit readiness: ready=0 partial=1 not-ready=1 unknown=0",
                 "Finding groups:",
-                "SUPPLY003 group_fingerprint=",
-                "evidence_sample: scripts/install.sh:2: npm install is not paired with matching reproducibility evidence.",
-                "SUPPLY009 group_fingerprint=",
-                "evidence_sample: scripts/upload.sh:4: Network access conflicts with declared permissions.",
+                "SUPPLY003: Install command without matching reproducibility evidence",
+                "  group fingerprint: ",
+                "  normalized key: ",
+                "  evidence key: ",
+                "  evidence samples:",
+                "    - scripts/install.sh:2: npm install is not paired with matching reproducibility evidence.",
+                "SUPPLY009: Observed permission conflicts with trust manifest",
+                "  group fingerprint: ",
+                "    - scripts/upload.sh:4: Network access conflicts with declared permissions.",
             ],
         );
     }
@@ -5134,14 +5422,14 @@ mod tests {
             &summary,
             &[
                 "Finding groups:",
-                "SEC005 group_fingerprint=",
-                "evidence_sample: alpha/SKILL.md:2: Line two.",
-                "SKILL001 group_fingerprint=",
-                "evidence_sample: alpha/SKILL.md:1: Line one.",
-                "SKILL010 group_fingerprint=",
-                "evidence_sample: alpha/SKILL.md: No line sorts before line.",
-                "SKILL020 group_fingerprint=",
-                "evidence_sample: zeta/SKILL.md:1: Later path.",
+                "SEC005: Use of sudo",
+                "    - alpha/SKILL.md:2: Line two.",
+                "SKILL001: Missing skill name",
+                "    - alpha/SKILL.md:1: Line one.",
+                "SKILL010: Broken relative reference",
+                "    - alpha/SKILL.md: No line sorts before line.",
+                "SKILL020: Oversized skill manifest",
+                "    - zeta/SKILL.md:1: Later path.",
             ],
         );
     }
@@ -5274,6 +5562,55 @@ mod tests {
     }
 
     #[test]
+    fn triage_summary_patterns_have_empty_lines_between_cards() {
+        let mut report = report_with_summary(10, 0, 0, 0, 0);
+        report.patterns = vec![
+            ecosystem_pattern(
+                "low-trust-manifest-adoption",
+                "Low trust-manifest adoption",
+                10,
+                10,
+                vec![("trust_manifests", 0), ("packages_without_trust_manifest", 10)],
+            ),
+            ecosystem_pattern(
+                "host-specific-metadata-extensions",
+                "Host-specific metadata extensions",
+                9,
+                8,
+                vec![("SKILL040", 9)],
+            ),
+            ecosystem_pattern(
+                "low-checksum-evidence",
+                "Low checksum evidence",
+                8,
+                1,
+                vec![("executable_or_binary_artifacts", 8), ("checksums", 1)],
+            ),
+        ];
+
+        let summary = render_text_with_mode(&report, ReportMode::Triage);
+        let lines = summary.lines().collect::<Vec<_>>();
+
+        let _first_card = lines
+            .iter()
+            .position(|line| *line == "[HIGH] Missing trust manifests")
+            .unwrap_or_else(|| panic!("missing first pattern card"));
+        let second_card = lines
+            .iter()
+            .position(|line| *line == "[MED] Host-specific metadata extensions")
+            .unwrap_or_else(|| panic!("missing second pattern card"));
+        let third_card = lines
+            .iter()
+            .position(|line| *line == "[LOW] Low checksum coverage")
+            .unwrap_or_else(|| panic!("missing third pattern card"));
+
+        assert_eq!(lines[second_card - 1], "", "missing blank line before second pattern");
+        assert_ne!(lines[second_card - 2], "", "extra blank lines before second pattern");
+        assert_eq!(lines[third_card - 1], "", "missing blank line before third pattern");
+        assert_ne!(lines[third_card - 2], "", "extra blank lines before third pattern");
+    }
+
+    #[test]
     fn triage_pattern_percent_never_rounds_nonzero_to_zero() {
         let mut report = report_with_summary(2000, 0, 0, 0, 0);
         report.patterns = vec![ecosystem_pattern(
@@ -5333,10 +5670,118 @@ mod tests {
                 "Findings: 0 occurrences",
                 "Finding groups: 0",
                 "Rule types triggered: 0",
-                "Top external domains: none",
-                "Review priorities: No immediate review priorities.",
+                "Supply chain:",
+                "Review signals:",
+                "  - Mutable URLs: 0",
+                "External references:",
+                "  - URLs: 0 total",
+                "  - Top domains:",
+                "    - none",
+                "Review priorities:",
+                "No immediate review priorities.",
                 "Observed skill collection patterns: No notable collection-level patterns.",
-                "Finding groups: none",
+                "Finding groups:",
+                "none",
+            ],
+        );
+    }
+
+    #[test]
+    fn triage_summary_supply_chain_sections_have_empty_line_separators() {
+        let mut report = report_with_summary(1, 0, 0, 0, 0);
+        report.supply_chain = supply_chain_inventory(json!({
+            "licenses": [],
+            "trust_manifests": [],
+            "external_urls": [],
+            "external_url_domains": [],
+            "remote_dependencies": [],
+            "dependency_manifests": [],
+            "package_managers": [],
+            "lockfiles": [],
+            "executables": [],
+            "binaries": [],
+            "checksums": [],
+            "permissions": [],
+            "offline_readiness": []
+        }));
+
+        let summary = render_text_with_mode(&report, ReportMode::Triage);
+
+        assert!(summary.contains("  - Checksums: 0\n\nExternal references:"));
+        assert!(summary.contains("    - none\n\nDependency evidence:"));
+        assert!(summary.contains("  - Installs: 0 observed, 0 with reproducibility gaps\n\nArtifact evidence:"));
+        assert!(summary.contains("  - Checksums: 0\n\nOther:"));
+    }
+
+    #[test]
+    fn triage_summary_external_references_are_formatted_with_domain_breakdown() {
+        let mut report = report_with_summary(1, 0, 0, 0, 0);
+        report.supply_chain = supply_chain_inventory(json!({
+            "licenses": [],
+            "trust_manifests": [],
+            "external_urls": [
+                {
+                    "path": "SKILL.md",
+                    "line": 3,
+                    "source": "markdown-link",
+                    "kind": "documentation",
+                    "normalized": "https://example.com/docs",
+                    "raw": "https://example.com/docs",
+                    "confidence": "high",
+                    "pinned": false
+                }
+            ],
+            "external_url_domains": [
+                {
+                    "domain": "example.com",
+                    "count": 1,
+                    "mutable_count": 0,
+                    "examples": ["https://example.com/docs"],
+                    "affected_packages": ["skills/demo/SKILL.md"],
+                    "affected_package_count": 1,
+                    "classification": "docs"
+                }
+            ],
+            "remote_dependencies": [],
+            "dependency_manifests": [],
+            "package_managers": [],
+            "lockfiles": [],
+            "executables": [],
+            "binaries": [],
+            "checksums": [],
+            "permissions": [],
+            "offline_readiness": []
+        }));
+
+        let summary = render_text_with_mode(&report, ReportMode::Triage);
+
+        assert_in_order(
+            &summary,
+            &[
+                "Supply chain:",
+                "Review signals:",
+                "  - Mutable URLs: 1",
+                "  - Unpinned dependencies: 0 of 0",
+                "  - Install reproducibility gaps: 0 of 0 installs",
+                "  - Trust manifests: 0 of 1 packages",
+                "  - Checksums: 0",
+                "External references:",
+                "  - URLs: 1 total",
+                "  - Top domains:",
+                "    - example.com: 1 URLs, 1 packages, docs",
+                "Dependency evidence:",
+                "  - Dependencies: 0 observed, 0 unpinned",
+                "  - Manifests: 0 total, 0 exact-pinned, 0 range-based",
+                "  - Lockfiles: 0",
+                "  - Installs: 0 observed, 0 with reproducibility gaps",
+                "Artifact evidence:",
+                "  - Executables: 0",
+                "  - Binaries: 0",
+                "  - Checksums: 0",
+                "Other:",
+                "  - License evidence: 0 items",
+                "  - Observed permissions: 0 evidence items, 0 conflicts",
+                "  - Offline audit readiness: ready=0 partial=0 not-ready=0 unknown=0",
             ],
         );
     }
@@ -5467,6 +5912,161 @@ mod tests {
     }
 
     #[test]
+    fn triage_summary_includes_section_divider_lines() {
+        let mut report = report_with_packages_and_findings(
+            vec![
+                package(
+                    "skills/inject-a",
+                    "skills/inject-a/SKILL.md",
+                    Some("inject-a"),
+                    None,
+                ),
+                package(
+                    "skills/inject-b",
+                    "skills/inject-b/SKILL.md",
+                    Some("inject-b"),
+                    None,
+                ),
+            ],
+            vec![
+                finding(
+                    "SEC011",
+                    Severity::Medium,
+                    FindingCategory::Security,
+                    "Prompt-injection-like instruction",
+                    "The skill contains prompt-injection-like review text.",
+                    "skills/inject-a/SKILL.md",
+                    Some(4),
+                ),
+                finding(
+                    "SEC012",
+                    Severity::Medium,
+                    FindingCategory::Security,
+                    "Hidden prompt-like instructions",
+                    "Prompt-like text appears in an inert comment.",
+                    "skills/inject-b/SKILL.md",
+                    Some(8),
+                ),
+            ],
+        );
+        report.patterns = vec![
+            ecosystem_pattern(
+                "prompt-injection-review-signals",
+                "Prompt-injection-like review signals",
+                2,
+                2,
+                vec![("SEC011", 2)],
+            ),
+            ecosystem_pattern(
+                "hidden-prompt-like-instructions",
+                "Hidden prompt-like instructions",
+                1,
+                1,
+                vec![("SEC012", 1)],
+            ),
+        ];
+        report.supply_chain = supply_chain_inventory(json!({
+            "external_urls": [
+                {
+                    "path": "skills/inject-a/SKILL.md",
+                    "line": 4,
+                    "source": "markdown-link",
+                    "kind": "github-raw",
+                    "normalized": "https://raw.githubusercontent.com/org/repo/main/install.sh",
+                    "raw": "https://raw.githubusercontent.com/org/repo/main/install.sh",
+                    "confidence": "high",
+                    "pinned": false
+                }
+            ]
+        }));
+
+        let summary = render_text_with_mode(&report, ReportMode::Triage);
+        let separator = RESEARCH_FINDING_SEPARATOR;
+        let review_heading = format!("{separator}\nReview priorities:\n{separator}");
+        let patterns_heading =
+            format!("{separator}\nObserved skill collection patterns:\n{separator}");
+        let groups_heading = format!("{separator}\nFinding groups:\n{separator}");
+
+        assert!(summary.contains(&review_heading));
+        assert!(summary.contains(&patterns_heading));
+        assert!(summary.contains(&groups_heading));
+        assert_one_blank_line_before_and_after_section_heading(
+            &summary,
+            "Supply chain:",
+        );
+        if summary.contains("Compatibility:") {
+            assert_one_blank_line_before_and_after_section_heading(&summary, "Compatibility:");
+        }
+        assert_one_blank_line_before_and_after_section_heading(&summary, "Review priorities:");
+        assert_one_blank_line_before_and_after_section_heading(
+            &summary,
+            "Observed skill collection patterns:",
+        );
+        assert_one_blank_line_before_and_after_section_heading(&summary, "Finding groups:");
+        assert_in_order(
+            &summary,
+            &[
+                "Review priorities:",
+                "1. Inspect 1 prompt-injection-like finding.",
+                "Observed skill collection patterns:",
+                "[MED] Prompt-injection-like review signals",
+                "Finding groups:",
+            ],
+        );
+    }
+
+    #[test]
+    fn triage_summary_uses_single_blank_line_between_finding_groups() {
+        let report = report_with_packages_and_findings(
+            vec![package(
+                "skills/grouped",
+                "skills/grouped/SKILL.md",
+                Some("grouped"),
+                None,
+            )],
+            vec![
+                finding(
+                    "SKILL001",
+                    Severity::Low,
+                    FindingCategory::Spec,
+                    "Missing skill name",
+                    "The skill manifest does not declare a name.",
+                    "skills/grouped/SKILL.md",
+                    Some(1),
+                ),
+                finding(
+                    "SKILL002",
+                    Severity::Low,
+                    FindingCategory::Spec,
+                    "Missing skill description",
+                    "The skill manifest does not declare a description.",
+                    "skills/grouped/SKILL.md",
+                    Some(2),
+                ),
+            ],
+        );
+
+        let summary = render_text_with_mode(&report, ReportMode::Triage);
+        let lines = summary.lines().collect::<Vec<_>>();
+        let first_group_index = lines
+            .iter()
+            .position(|line| line.starts_with("SKILL001: Missing skill name"))
+            .unwrap_or_else(|| panic!("missing first finding group"));
+        let second_group_index = lines
+            .iter()
+            .position(|line| line.starts_with("SKILL002: Missing skill description"))
+            .unwrap_or_else(|| panic!("missing second finding group"));
+
+        assert!(first_group_index < second_group_index);
+        assert_eq!(lines[second_group_index - 1], "", "missing blank line between groups");
+        assert_ne!(
+            lines[second_group_index - 2],
+            "",
+            "extra blank line between finding groups"
+        );
+    }
+
+    #[test]
     fn triage_compatibility_interpretation_deduplicates_profile_multiplied_counts() {
         let mut report = report_with_packages_and_findings(
             vec![
@@ -5550,14 +6150,30 @@ mod tests {
 
         assert!(summary.contains("Agent Skill Auditor research scan summary"));
         assert!(summary.contains("Audit: "));
-        assert!(summary.contains("timestamp=null"));
+        assert!(summary.contains("timestamp=not-recorded"));
+        assert!(!summary.contains("timestamp=null"));
         assert!(summary.contains("Finding groups:"));
-        assert!(summary.contains("normalized_key=SEC009|medium|security|"));
-        assert!(summary.contains("evidence_key="));
+        assert!(summary.contains("SEC009: Package install without lockfile"));
+        assert!(summary.contains("  group fingerprint: "));
+        assert!(summary.contains("  normalized key: SEC009|medium|security|"));
+        assert!(summary.contains("  evidence key: "));
+        assert!(summary.contains("  dimensions: "));
+        assert!(summary.contains("  evidence samples:"));
         assert!(summary.contains("Full findings:"));
-        assert!(summary.contains(
-            "normalized_key: skills/repeated-3/scripts/install.sh|2|SEC009|medium|security|"
-        ));
+        assert!(summary.contains(RESEARCH_FINDING_SEPARATOR));
+        assert!(summary.contains("SEC009 \u{2014} Package install without lockfile"));
+        assert!(summary.contains("  Message:"));
+        assert!(summary.contains("  Why it matters:"));
+        assert!(summary.contains("  Remediation:"));
+        assert!(summary.contains("  Suppression:"));
+        let full_findings = full_findings_section(&summary);
+        assert!(!full_findings.contains("  message:"));
+        assert!(!full_findings.contains("  why:"));
+        assert!(!full_findings.contains("  fix:"));
+        assert!(!full_findings.contains("  suppress:"));
+        assert!(!full_findings.contains("Finding identity:"));
+        assert!(!full_findings.contains("Research metadata:"));
+        assert!(!full_findings.contains("normalized key:"));
     }
 
     #[test]
@@ -5608,7 +6224,9 @@ mod tests {
 
         let sample_location_lines = summary
             .lines()
-            .filter(|line| line.starts_with("    - "))
+            .skip_while(|line| *line != "  Sample locations:")
+            .skip(1)
+            .take_while(|line| line.starts_with("    - "))
             .collect::<Vec<_>>();
         assert_eq!(
             sample_location_lines,
@@ -5761,6 +6379,187 @@ mod tests {
                 "triage audit line exceeded width: {line}"
             );
         }
+    }
+
+    #[test]
+    fn research_summary_wraps_audit_metadata_header() {
+        let mut report = repeated_finding_report(1);
+        report.audit.host_profiles.selected = vec![
+            "agent-skills-spec".to_owned(),
+            "claude-code".to_owned(),
+            "codex".to_owned(),
+            "github-copilot".to_owned(),
+            "vscode-copilot".to_owned(),
+            "generic".to_owned(),
+        ];
+        report.audit.scan.root =
+            Some("fixtures/research/corpus/with/a/reasonably/long/portable/root".to_owned());
+        report.audit.config.path = Some(
+            "fixtures/research/corpus/with/a/reasonably/long/portable/root/agent-audit.yaml"
+                .to_owned(),
+        );
+        report.audit.config.hash = Some("fnv1a64:0123456789abcdef".to_owned());
+        report.audit.platform = Some(agent_audit_core::model::AuditPlatformMetadata {
+            family: "windows".to_owned(),
+            os: "windows".to_owned(),
+            arch: "x86_64".to_owned(),
+        });
+
+        let summary = render_text_with_mode(&report, ReportMode::Research);
+        let audit_lines = summary
+            .lines()
+            .filter(|line| line.starts_with("Audit: ") || line.starts_with("       "))
+            .collect::<Vec<_>>();
+
+        assert!(audit_lines.len() > 1, "audit metadata should wrap");
+        assert!(summary.contains("timestamp=not-recorded"));
+        assert!(!summary.contains("timestamp=null"));
+        for line in audit_lines {
+            assert!(
+                line.len() <= TRIAGE_OUTPUT_WIDTH,
+                "research audit line exceeded width: {line}"
+            );
+        }
+    }
+
+    #[test]
+    fn research_summary_wraps_group_and_full_finding_fields() {
+        let report = report_with_packages_and_findings(
+            vec![package(
+                "skills/long",
+                "skills/long/SKILL.md",
+                Some("long-skill"),
+                None,
+            )],
+            vec![finding_with_details(
+                finding(
+                    "SEC009",
+                    Severity::Medium,
+                    FindingCategory::Security,
+                    "Package install without lockfile",
+                    "The artifact runs a JavaScript package install without nearby lockfile evidence, exact version pinning, or a reproducibility manifest that reviewers can inspect offline.",
+                    "skills/long/scripts/install.sh",
+                    Some(42),
+                ),
+                "Package installs without a lockfile can resolve different dependency versions across machines and over time, which makes deterministic offline review difficult.",
+                "Add a committed lockfile or pin exact package versions and document the reproducible installation path for reviewers.",
+                "Suppress `SEC009` only when the package installation is intentionally dynamic and the review record explains the operational reason.",
+            )],
+        );
+
+        let summary = render_text_with_mode(&report, ReportMode::Research);
+        let second_summary = render_text_with_mode(&report, ReportMode::Research);
+
+        assert_eq!(summary, second_summary);
+        assert_in_order(
+            &summary,
+            &[
+                "SEC009: Package install without lockfile",
+                "  group fingerprint: ",
+                "  normalized key: SEC009|medium|security|",
+                "  evidence key: ",
+                "  dimensions: ",
+                "  evidence samples:",
+                "    - skills/long/scripts/install.sh:42: The artifact runs a JavaScript package install without nearby",
+                "Full findings:",
+                RESEARCH_FINDING_SEPARATOR,
+                "SEC009 \u{2014} Package install without lockfile",
+                "  severity:   medium",
+                "  confidence: medium",
+                "  category:   security",
+                "  location:   skills/long/scripts/install.sh:42",
+                "  Message:",
+                "    The artifact runs a JavaScript package install without nearby lockfile",
+                "  Why it matters:",
+                "    Package installs without a lockfile can resolve different dependency",
+                "  Remediation:",
+                "    Add a committed lockfile or pin exact package versions and document the",
+                "  Suppression:",
+                "    Suppress `SEC009` only when the package installation is intentionally",
+            ],
+        );
+
+        let full_findings = full_findings_section(&summary);
+        assert!(
+            full_findings
+                .lines()
+                .filter(|line| *line == RESEARCH_FINDING_SEPARATOR)
+                .count()
+                >= 1
+        );
+        assert!(!full_findings.contains("  message:"));
+        assert!(!full_findings.contains("  why:"));
+        assert!(!full_findings.contains("  fix:"));
+        assert!(!full_findings.contains("  suppress:"));
+        assert!(!full_findings.contains("Finding identity:"));
+        assert!(!full_findings.contains("fingerprint:"));
+        assert!(!full_findings.contains("Research metadata:"));
+        assert!(!full_findings.contains("normalized key:"));
+        assert_in_order(
+            full_findings,
+            &[
+                "  Message:",
+                "  Why it matters:",
+                "  Remediation:",
+                "  Suppression:",
+            ],
+        );
+        for line in summary.lines() {
+            assert!(
+                line.len() <= TRIAGE_OUTPUT_WIDTH,
+                "research line exceeded width: {line}"
+            );
+        }
+        for line in full_findings.lines().filter(|line| !line.is_empty()) {
+            assert!(
+                line.len() <= RESEARCH_CARD_OUTPUT_WIDTH,
+                "research finding card line exceeded width: {line}"
+            );
+        }
+    }
+
+    #[test]
+    fn research_full_finding_cards_render_only_populated_fingerprints() {
+        let mut with_fingerprint = finding(
+            "SKILL001",
+            Severity::Low,
+            FindingCategory::Spec,
+            "Missing skill name",
+            "The skill manifest does not declare a name.",
+            "skills/fingerprinted/SKILL.md",
+            Some(1),
+        );
+        with_fingerprint.fingerprint = "fnv1a64:0123456789abcdef".to_owned();
+        let report = report_with_packages_and_findings(
+            vec![package(
+                "skills/fingerprinted",
+                "skills/fingerprinted/SKILL.md",
+                None,
+                None,
+            )],
+            vec![
+                with_fingerprint,
+                finding(
+                    "SKILL002",
+                    Severity::Low,
+                    FindingCategory::Spec,
+                    "Missing skill description",
+                    "The skill manifest does not declare a description.",
+                    "skills/plain/SKILL.md",
+                    Some(1),
+                ),
+            ],
+        );
+
+        let summary = render_text_with_mode(&report, ReportMode::Research);
+        let full_findings = full_findings_section(&summary);
+
+        assert!(full_findings.contains("  Finding identity:"));
+        assert!(full_findings.contains("    fingerprint: fnv1a64:0123456789abcdef"));
+        assert_eq!(full_findings.matches("    fingerprint:").count(), 1);
+        assert!(!full_findings.contains("group fingerprint:"));
+        assert!(!full_findings.contains("Research metadata:"));
+        assert!(!full_findings.contains("normalized key:"));
     }
 
     #[test]
@@ -8539,6 +9338,41 @@ mod tests {
         }
     }
 
+    fn assert_one_blank_line_before_and_after_section_heading(haystack: &str, heading: &str) {
+        let section_marker = format!(
+            "{RESEARCH_FINDING_SEPARATOR}\n{heading}\n{RESEARCH_FINDING_SEPARATOR}"
+        );
+        let marker_index = haystack
+            .find(&section_marker)
+            .unwrap_or_else(|| panic!("missing section marker for {heading:?}"));
+
+        assert!(
+            haystack[..marker_index].ends_with("\n\n"),
+            "missing one blank line before section {heading:?}"
+        );
+        assert!(
+            !haystack[..marker_index].ends_with("\n\n\n"),
+            "extra blank line before section {heading:?}"
+        );
+
+        let after_index = marker_index + section_marker.len();
+        assert!(
+            haystack[after_index..].starts_with("\n\n"),
+            "missing one blank line after section {heading:?}"
+        );
+        assert!(
+            !haystack[after_index + 2..].starts_with("\n"),
+            "extra blank line after section {heading:?}"
+        );
+    }
+
+    fn full_findings_section(summary: &str) -> &str {
+        summary
+            .split_once("Full findings:")
+            .map(|(_, section)| section)
+            .expect("full findings section")
+    }
+
     fn html_section(html: &str, section_id: &str) -> String {
         let heading = format!("<h2 id=\"{section_id}\">");
         let heading_start = html
@@ -8556,12 +9390,32 @@ mod tests {
     }
 
     fn summary_group_line_count(summary: &str, groups: &[(&str, &str)]) -> usize {
-        summary
-            .lines()
-            .filter(|line| {
-                groups.iter().any(|(rule_id, fingerprint)| {
-                    line.starts_with(rule_id) && line.contains(fingerprint)
-                })
+        groups
+            .iter()
+            .filter(|(rule_id, fingerprint)| {
+                let mut in_matching_group = false;
+
+                for line in summary.lines() {
+                    if line.is_empty() {
+                        in_matching_group = false;
+                        continue;
+                    }
+                    if line.starts_with(&format!("{rule_id}: ")) {
+                        in_matching_group = true;
+                        continue;
+                    }
+                    if in_matching_group && line.contains(fingerprint) {
+                        return true;
+                    }
+                    if line.starts_with(|ch: char| ch.is_ascii_uppercase())
+                        && line.contains(": ")
+                        && !line.starts_with("Full findings:")
+                    {
+                        in_matching_group = false;
+                    }
+                }
+
+                false
             })
             .count()
     }
