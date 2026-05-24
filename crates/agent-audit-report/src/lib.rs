@@ -570,7 +570,7 @@ fn extend_triage_finding_groups_summary(lines: &mut Vec<String>, report: &ScanRe
             "  Confidence: {}",
             confidence_name(group.confidence)
         ));
-        lines.push(format!("  Category: {}", triage_category_name(&group)));
+        lines.push(format!("  Category: {}", triage_category_name(group)));
         lines.push(format!("  Findings: {}", group.finding_count));
         lines.push(format!("  Packages: {}", group.package_count()));
         if let Some(message) = group.message.as_deref() {
@@ -2059,34 +2059,21 @@ fn extend_html_audit_metadata(html: &mut String, audit: &AuditMetadata) {
         audit.timestamp.as_deref().unwrap_or("null"),
     );
 
-    if let Some(path) = audit.config.path.as_deref() {
-        extend_html_metadata_row(html, "Config path", path);
-    }
-    if let Some(hash) = audit.config.hash.as_deref() {
-        extend_html_metadata_row(html, "Config hash", hash);
-    }
+    extend_html_optional_metadata_rows(
+        html,
+        &[
+            ("Config path", audit.config.path.as_deref()),
+            ("Config hash", audit.config.hash.as_deref()),
+        ],
+    );
     if let Some(methodology) = audit.methodology.as_ref() {
-        if let Some(corpus_name) = methodology.corpus_name.as_deref() {
-            extend_html_metadata_row(html, "Corpus name", corpus_name);
-        }
-        if let Some(corpus_entry_id) = methodology.corpus_entry_id.as_deref() {
-            extend_html_metadata_row(html, "Corpus entry ID", corpus_entry_id);
-        }
-        if let Some(methodology_version) = methodology.methodology_version.as_deref() {
-            extend_html_metadata_row(html, "Methodology version", methodology_version);
-        }
+        extend_html_methodology_metadata_rows(html, methodology);
         if !methodology.inclusion_tags.is_empty() {
             extend_html_metadata_row(
                 html,
                 "Inclusion tags",
                 &methodology.inclusion_tags.join(", "),
             );
-        }
-        if let Some(repo_classification) = methodology.repo_classification.as_deref() {
-            extend_html_metadata_row(html, "Repository classification", repo_classification);
-        }
-        if let Some(scan_batch_id) = methodology.scan_batch_id.as_deref() {
-            extend_html_metadata_row(html, "Scan batch ID", scan_batch_id);
         }
     }
     if let Some(platform) = audit.platform.as_ref() {
@@ -2097,18 +2084,56 @@ fn extend_html_audit_metadata(html: &mut String, audit: &AuditMetadata) {
         );
     }
     if let Some(repository) = audit.repository.as_ref() {
-        if let Some(remote_url) = repository.remote_url.as_deref() {
-            extend_html_metadata_row(html, "Repository remote", remote_url);
-        }
-        if let Some(commit) = repository.commit.as_deref() {
-            extend_html_metadata_row(html, "Repository commit", commit);
-        }
-        if let Some(dirty) = repository.dirty {
-            extend_html_metadata_row(html, "Repository dirty", &dirty.to_string());
-        }
+        extend_html_repository_metadata_rows(html, repository);
     }
 
     html.push_str("</tbody></table></section>\n");
+}
+
+fn extend_html_methodology_metadata_rows(
+    html: &mut String,
+    methodology: &agent_audit_core::model::AuditMethodologyMetadata,
+) {
+    extend_html_optional_metadata_rows(
+        html,
+        &[
+            ("Corpus name", methodology.corpus_name.as_deref()),
+            ("Corpus entry ID", methodology.corpus_entry_id.as_deref()),
+            (
+                "Methodology version",
+                methodology.methodology_version.as_deref(),
+            ),
+            (
+                "Repository classification",
+                methodology.repo_classification.as_deref(),
+            ),
+            ("Scan batch ID", methodology.scan_batch_id.as_deref()),
+        ],
+    );
+}
+
+fn extend_html_repository_metadata_rows(
+    html: &mut String,
+    repository: &agent_audit_core::model::AuditRepositoryMetadata,
+) {
+    extend_html_optional_metadata_rows(
+        html,
+        &[
+            ("Repository remote", repository.remote_url.as_deref()),
+            ("Repository commit", repository.commit.as_deref()),
+        ],
+    );
+    if let Some(dirty) = repository.dirty {
+        extend_html_metadata_row(html, "Repository dirty", &dirty.to_string());
+    }
+}
+
+fn extend_html_optional_metadata_rows(html: &mut String, rows: &[(&str, Option<&str>)]) {
+    rows.iter().for_each(|(label, value)| {
+        if let Some(value) = value {
+            extend_html_metadata_row(html, label, value);
+        }
+    });
 }
 
 fn extend_html_metadata_row(html: &mut String, label: &str, value: &str) {
@@ -3627,6 +3652,14 @@ fn sarif_run_properties(report: &ScanReport) -> Value {
 }
 
 fn sarif_driver_audit_metadata(audit: &AuditMetadata) -> Value {
+    sarif_static_audit_metadata(audit)
+}
+
+fn sarif_invocation_audit_metadata(audit: &AuditMetadata) -> Value {
+    sarif_execution_audit_metadata(audit)
+}
+
+fn sarif_static_audit_metadata(audit: &AuditMetadata) -> Value {
     json!({
         "outputSchemaVersion": audit.output_schema_version.as_str(),
         "scanner": {
@@ -3645,7 +3678,7 @@ fn sarif_driver_audit_metadata(audit: &AuditMetadata) -> Value {
     })
 }
 
-fn sarif_invocation_audit_metadata(audit: &AuditMetadata) -> Value {
+fn sarif_execution_audit_metadata(audit: &AuditMetadata) -> Value {
     json!({
         "config": {
             "path": audit.config.path.as_deref(),
@@ -3668,39 +3701,19 @@ fn sarif_invocation_audit_metadata(audit: &AuditMetadata) -> Value {
 }
 
 fn sarif_audit_metadata(audit: &AuditMetadata) -> Value {
-    json!({
-        "outputSchemaVersion": audit.output_schema_version.as_str(),
-        "scanner": {
-            "name": audit.scanner.name.as_str(),
-            "version": audit.scanner.version.as_str()
-        },
-        "ruleset": {
-            "version": audit.ruleset.version.as_str(),
-            "hash": audit.ruleset.hash.as_str()
-        },
-        "hostProfiles": {
-            "selected": &audit.host_profiles.selected,
-            "version": audit.host_profiles.version.as_str(),
-            "hash": audit.host_profiles.hash.as_str()
-        },
-        "config": {
-            "path": audit.config.path.as_deref(),
-            "hash": audit.config.hash.as_deref()
-        },
-        "scan": {
-            "root": audit.scan.root.as_deref()
-        },
-        "command": {
-            "name": audit.command.name.as_deref(),
-            "format": audit.command.format.as_deref(),
-            "mode": audit.command.mode.as_deref(),
-            "profiles": &audit.command.profiles,
-            "failOn": &audit.command.fail_on,
-        },
-        "platform": audit.platform.as_ref(),
-        "repository": audit.repository.as_ref(),
-        "timestamp": audit.timestamp.as_deref()
-    })
+    merge_json_objects(
+        sarif_static_audit_metadata(audit),
+        sarif_execution_audit_metadata(audit),
+    )
+}
+
+fn merge_json_objects(mut left: Value, right: Value) -> Value {
+    let (Some(left_object), Some(right_object)) = (left.as_object_mut(), right.as_object()) else {
+        return left;
+    };
+
+    left_object.extend(right_object.clone());
+    left
 }
 
 fn sarif_compatibility_matrix(compatibility: &CompatibilityMatrix) -> Value {
@@ -4372,7 +4385,7 @@ mod tests {
 
     #[test]
     fn html_view_model_orders_top_risky_skills_by_weight_then_manifest_path() {
-        let mut report = report_with_packages_and_findings(
+        let report = report_with_packages_and_findings(
             vec![
                 package("skills/beta", "skills/beta/SKILL.md", Some("beta"), None),
                 package("skills/alpha", "skills/alpha/SKILL.md", Some("alpha"), None),
@@ -4570,7 +4583,7 @@ mod tests {
 
     #[test]
     fn secret_summary_separates_actual_evidence_from_prompt_risk_text() {
-        let mut report = report_with_packages_and_findings(
+        let report = report_with_packages_and_findings(
             vec![package(
                 "skills/review",
                 "skills/review/SKILL.md",
@@ -4619,7 +4632,7 @@ mod tests {
 
     #[test]
     fn html_view_model_groups_findings_by_manifest_then_root_prefix_with_unmatched_group() {
-        let mut report = report_with_packages_and_findings(
+        let report = report_with_packages_and_findings(
             vec![
                 package(
                     "skills/review",
@@ -9413,32 +9426,41 @@ mod tests {
     fn summary_group_line_count(summary: &str, groups: &[(&str, &str)]) -> usize {
         groups
             .iter()
-            .filter(|(rule_id, fingerprint)| {
-                let mut in_matching_group = false;
-
-                for line in summary.lines() {
-                    if line.is_empty() {
-                        in_matching_group = false;
-                        continue;
-                    }
-                    if line.starts_with(&format!("{rule_id}: ")) {
-                        in_matching_group = true;
-                        continue;
-                    }
-                    if in_matching_group && line.contains(fingerprint) {
-                        return true;
-                    }
-                    if line.starts_with(|ch: char| ch.is_ascii_uppercase())
-                        && line.contains(": ")
-                        && !line.starts_with("Full findings:")
-                    {
-                        in_matching_group = false;
-                    }
-                }
-
-                false
-            })
+            .filter(|(rule_id, fingerprint)| summary_contains_group(summary, rule_id, fingerprint))
             .count()
+    }
+
+    fn summary_contains_group(summary: &str, rule_id: &str, fingerprint: &str) -> bool {
+        let mut in_matching_group = false;
+
+        for line in summary.lines() {
+            in_matching_group = next_summary_group_state(line, rule_id, in_matching_group);
+            if in_matching_group && line.contains(fingerprint) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn next_summary_group_state(line: &str, rule_id: &str, in_matching_group: bool) -> bool {
+        if line.is_empty() {
+            return false;
+        }
+        if line.starts_with(&format!("{rule_id}: ")) {
+            return true;
+        }
+        if starts_new_summary_group(line) {
+            return false;
+        }
+
+        in_matching_group
+    }
+
+    fn starts_new_summary_group(line: &str) -> bool {
+        line.starts_with(|ch: char| ch.is_ascii_uppercase())
+            && line.contains(": ")
+            && !line.starts_with("Full findings:")
     }
 
     fn html_group_row_count(html: &str, groups: &[(&str, &str)]) -> usize {

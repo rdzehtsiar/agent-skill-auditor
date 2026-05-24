@@ -15,6 +15,211 @@ pub const INITIAL_SECURITY_RULE_IDS: &[&str] = &[
     "SEC010", "SEC011", "SEC012",
 ];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DependencyManifestInstallKind {
+    JavaScript,
+    Python,
+    Cargo,
+    Gem,
+}
+
+pub fn command_matches_dependency_manifest(
+    install: DependencyManifestInstallKind,
+    evidence: &str,
+    manifest_relative_path: &str,
+    command_relative_path: &str,
+) -> bool {
+    let tokens = shellish_tokens(evidence);
+    match install {
+        DependencyManifestInstallKind::Python => python_install_references_manifest(
+            &tokens,
+            manifest_relative_path,
+            command_relative_path,
+        ),
+        DependencyManifestInstallKind::JavaScript => {
+            path_basename(manifest_relative_path) == "package.json"
+                && javascript_install_implies_package_json_manifest(&tokens)
+        }
+        DependencyManifestInstallKind::Cargo => {
+            path_basename(manifest_relative_path) == "cargo.toml"
+                && tokens.windows(2).any(|window| {
+                    window[0] == "cargo" && matches!(window[1].as_str(), "build" | "check" | "test")
+                })
+        }
+        DependencyManifestInstallKind::Gem => {
+            path_basename(manifest_relative_path).eq_ignore_ascii_case("gemfile")
+                && tokens
+                    .windows(2)
+                    .any(|window| window[0] == "bundle" && window[1] == "install")
+        }
+    }
+}
+
+fn python_install_references_manifest(
+    tokens: &[String],
+    manifest_relative_path: &str,
+    command_relative_path: &str,
+) -> bool {
+    python_requirement_references(tokens)
+        .iter()
+        .any(|reference| {
+            command_reference_matches_manifest(
+                reference,
+                manifest_relative_path,
+                command_relative_path,
+            )
+        })
+}
+
+fn python_requirement_references(tokens: &[String]) -> Vec<String> {
+    let mut references = Vec::new();
+
+    for (index, token) in tokens.iter().enumerate() {
+        if matches!(token.as_str(), "-r" | "--requirement") {
+            if let Some(reference) = tokens.get(index + 1) {
+                references.push(reference.clone());
+            }
+        } else if let Some(reference) = token.strip_prefix("--requirement=") {
+            references.push(reference.to_owned());
+        } else if let Some(reference) = token.strip_prefix("-r") {
+            if !reference.is_empty() {
+                references.push(reference.to_owned());
+            }
+        }
+    }
+
+    references
+}
+
+fn javascript_install_implies_package_json_manifest(tokens: &[String]) -> bool {
+    tokens
+        .windows(2)
+        .any(|window| is_javascript_package_manager(&window[0]) && window[1] == "ci")
+        || tokens.windows(2).any(|window| {
+            is_javascript_package_manager(&window[0])
+                && matches!(window[1].as_str(), "install" | "i")
+                && install_command_has_no_package_args(tokens, &window[0], &window[1])
+        })
+}
+
+fn is_javascript_package_manager(token: &str) -> bool {
+    matches!(token, "npm" | "pnpm" | "yarn" | "bun")
+}
+
+fn install_command_has_no_package_args(tokens: &[String], manager: &str, command: &str) -> bool {
+    let Some(command_index) = tokens
+        .windows(2)
+        .position(|window| window[0] == manager && window[1] == command)
+        .map(|index| index + 1)
+    else {
+        return false;
+    };
+
+    !tokens[command_index + 1..]
+        .iter()
+        .take_while(|token| !is_shell_command_separator(token))
+        .any(|token| !is_package_manager_option_token(token))
+}
+
+fn is_package_manager_option_token(token: &str) -> bool {
+    token.starts_with('-')
+        || matches!(
+            token,
+            "true" | "false" | "always" | "auto" | "never" | "production" | "development"
+        )
+}
+
+fn is_shell_command_separator(token: &str) -> bool {
+    matches!(token, "&&" | "||" | "|" | "&" | ";")
+}
+
+fn command_reference_matches_manifest(
+    reference: &str,
+    manifest_relative_path: &str,
+    command_relative_path: &str,
+) -> bool {
+    let Some(manifest_relative_path) = normalize_relative_reference(manifest_relative_path) else {
+        return false;
+    };
+
+    if normalize_relative_reference(reference).is_some_and(|package_relative_reference| {
+        package_relative_reference == manifest_relative_path
+    }) {
+        return true;
+    }
+
+    let command_dir = path_parent(command_relative_path);
+    if command_dir.is_empty() {
+        return false;
+    }
+
+    normalize_relative_reference(&format!("{command_dir}/{reference}")).is_some_and(
+        |script_relative_reference| script_relative_reference == manifest_relative_path,
+    )
+}
+
+fn normalize_relative_reference(path: &str) -> Option<String> {
+    let path = path.replace('\\', "/");
+    let path = strip_quotes(&path);
+    if path.starts_with('/') || path.contains(":/") {
+        return None;
+    }
+
+    let mut segments = Vec::new();
+    for segment in path.split('/') {
+        match segment {
+            "" | "." => {}
+            ".." => {
+                segments.pop()?;
+            }
+            _ => segments.push(segment),
+        }
+    }
+
+    Some(segments.join("/"))
+}
+
+fn path_parent(path: &str) -> String {
+    path.rsplit_once('/').map_or(String::new(), |(parent, _)| {
+        parent.trim_matches('/').to_owned()
+    })
+}
+
+fn path_basename(path: &str) -> &str {
+    path.rsplit_once('/').map_or(path, |(_, basename)| basename)
+}
+
+fn strip_quotes(value: &str) -> &str {
+    value.trim_matches(|character| matches!(character, '"' | '\'' | '`'))
+}
+
+fn shellish_tokens(text: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+
+    for character in text.chars() {
+        if character.is_ascii_whitespace()
+            || matches!(character, '"' | '\'' | '`' | ',' | '(' | ')' | '[' | ']')
+        {
+            push_shellish_token(&mut tokens, &mut current);
+        } else if matches!(character, ';' | '|' | '&') {
+            push_shellish_token(&mut tokens, &mut current);
+            tokens.push(character.to_string());
+        } else {
+            current.push(character.to_ascii_lowercase());
+        }
+    }
+
+    push_shellish_token(&mut tokens, &mut current);
+    tokens
+}
+
+fn push_shellish_token(tokens: &mut Vec<String>, current: &mut String) {
+    if !current.is_empty() {
+        tokens.push(std::mem::take(current));
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct SecurityScan {
     pub artifacts: Vec<SecurityArtifact>,
@@ -5742,6 +5947,32 @@ mod tests {
         sorted.sort_unstable();
         sorted.dedup();
         assert_eq!(sorted.len(), INITIAL_SECURITY_RULE_IDS.len());
+    }
+
+    #[test]
+    fn dependency_manifest_matching_normalizes_command_case_and_punctuation() {
+        assert!(command_matches_dependency_manifest(
+            DependencyManifestInstallKind::JavaScript,
+            "NPM install; echo done",
+            "package.json",
+            "scripts/setup.sh",
+        ));
+        assert!(command_matches_dependency_manifest(
+            DependencyManifestInstallKind::Python,
+            "pip install -r `requirements.txt`; echo done",
+            "requirements.txt",
+            "scripts/setup.sh",
+        ));
+    }
+
+    #[test]
+    fn dependency_manifest_matching_resolves_script_relative_requirements() {
+        assert!(command_matches_dependency_manifest(
+            DependencyManifestInstallKind::Python,
+            "python -m pip install --requirement requirements.txt",
+            "scripts/requirements.txt",
+            "scripts/setup.sh",
+        ));
     }
 
     #[test]

@@ -5,8 +5,9 @@ use std::fmt;
 
 use agent_audit_hosts::HOST_PROFILES;
 use agent_audit_security::{
-    AnalyzerConfidence, SecuritySignal, SecuritySignalKind, SecuritySignalPathContext,
-    SecuritySink, SecuritySinkKind, SecuritySource, SecuritySourceKind,
+    command_matches_dependency_manifest, AnalyzerConfidence, DependencyManifestInstallKind,
+    SecuritySignal, SecuritySignalKind, SecuritySignalPathContext, SecuritySink, SecuritySinkKind,
+    SecuritySource, SecuritySourceKind,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -2098,6 +2099,16 @@ impl PackageInstall {
             Self::System => "system package",
         }
     }
+
+    fn dependency_manifest_kind(self) -> Option<DependencyManifestInstallKind> {
+        match self {
+            Self::JavaScript => Some(DependencyManifestInstallKind::JavaScript),
+            Self::Python => Some(DependencyManifestInstallKind::Python),
+            Self::Cargo => Some(DependencyManifestInstallKind::Cargo),
+            Self::Gem => Some(DependencyManifestInstallKind::Gem),
+            Self::System => None,
+        }
+    }
 }
 
 fn package_context_for_signal<'a>(
@@ -2167,175 +2178,22 @@ fn command_has_exact_package_pin(install: PackageInstall, evidence: &str) -> boo
 
 fn package_install_for_manager(
     manager: RuleSupplyChainPackageManagerKind,
-) -> Option<PackageInstall> {
+) -> Option<DependencyManifestInstallKind> {
     match manager {
         RuleSupplyChainPackageManagerKind::Npm
         | RuleSupplyChainPackageManagerKind::Yarn
-        | RuleSupplyChainPackageManagerKind::Pnpm => Some(PackageInstall::JavaScript),
+        | RuleSupplyChainPackageManagerKind::Pnpm => {
+            Some(DependencyManifestInstallKind::JavaScript)
+        }
         RuleSupplyChainPackageManagerKind::Pip
         | RuleSupplyChainPackageManagerKind::Poetry
-        | RuleSupplyChainPackageManagerKind::Uv => Some(PackageInstall::Python),
-        RuleSupplyChainPackageManagerKind::Cargo => Some(PackageInstall::Cargo),
-        RuleSupplyChainPackageManagerKind::Gem => Some(PackageInstall::Gem),
+        | RuleSupplyChainPackageManagerKind::Uv => Some(DependencyManifestInstallKind::Python),
+        RuleSupplyChainPackageManagerKind::Cargo => Some(DependencyManifestInstallKind::Cargo),
+        RuleSupplyChainPackageManagerKind::Gem => Some(DependencyManifestInstallKind::Gem),
         RuleSupplyChainPackageManagerKind::Go
         | RuleSupplyChainPackageManagerKind::Composer
         | RuleSupplyChainPackageManagerKind::Unknown => None,
     }
-}
-
-fn command_matches_dependency_manifest(
-    install: PackageInstall,
-    evidence: &str,
-    manifest_relative_path: &str,
-    command_relative_path: &str,
-) -> bool {
-    let tokens = shellish_tokens(evidence);
-    match install {
-        PackageInstall::Python => python_install_references_manifest(
-            &tokens,
-            manifest_relative_path,
-            command_relative_path,
-        ),
-        PackageInstall::JavaScript => {
-            path_basename(manifest_relative_path) == "package.json"
-                && javascript_install_implies_package_json_manifest(&tokens)
-        }
-        PackageInstall::Cargo => {
-            path_basename(manifest_relative_path) == "cargo.toml"
-                && tokens.windows(2).any(|window| {
-                    window[0] == "cargo" && matches!(window[1].as_str(), "build" | "check" | "test")
-                })
-        }
-        PackageInstall::Gem => {
-            path_basename(manifest_relative_path).eq_ignore_ascii_case("gemfile")
-                && tokens
-                    .windows(2)
-                    .any(|window| window[0] == "bundle" && window[1] == "install")
-        }
-        PackageInstall::System => false,
-    }
-}
-
-fn python_install_references_manifest(
-    tokens: &[String],
-    manifest_relative_path: &str,
-    command_relative_path: &str,
-) -> bool {
-    python_requirement_references(tokens)
-        .iter()
-        .any(|reference| {
-            command_reference_matches_manifest(
-                reference,
-                manifest_relative_path,
-                command_relative_path,
-            )
-        })
-}
-
-fn python_requirement_references(tokens: &[String]) -> Vec<String> {
-    let mut references = Vec::new();
-
-    for (index, token) in tokens.iter().enumerate() {
-        if matches!(token.as_str(), "-r" | "--requirement") {
-            if let Some(reference) = tokens.get(index + 1) {
-                references.push(reference.clone());
-            }
-        } else if let Some(reference) = token.strip_prefix("--requirement=") {
-            references.push(reference.to_owned());
-        } else if let Some(reference) = token.strip_prefix("-r") {
-            if !reference.is_empty() {
-                references.push(reference.to_owned());
-            }
-        }
-    }
-
-    references
-}
-
-fn javascript_install_implies_package_json_manifest(tokens: &[String]) -> bool {
-    tokens
-        .windows(2)
-        .any(|window| is_javascript_package_manager(&window[0]) && window[1] == "ci")
-        || tokens.windows(2).any(|window| {
-            is_javascript_package_manager(&window[0])
-                && matches!(window[1].as_str(), "install" | "i")
-                && install_command_has_no_package_args(tokens, &window[0], &window[1])
-        })
-}
-
-fn is_javascript_package_manager(token: &str) -> bool {
-    matches!(token, "npm" | "pnpm" | "yarn" | "bun")
-}
-
-fn install_command_has_no_package_args(tokens: &[String], manager: &str, command: &str) -> bool {
-    let Some(command_index) = tokens
-        .windows(2)
-        .position(|window| window[0] == manager && window[1] == command)
-        .map(|index| index + 1)
-    else {
-        return false;
-    };
-
-    !tokens[command_index + 1..]
-        .iter()
-        .take_while(|token| !is_shell_command_separator(token))
-        .any(|token| !is_package_manager_option_token(token))
-}
-
-fn is_package_manager_option_token(token: &str) -> bool {
-    token.starts_with('-')
-        || matches!(
-            token,
-            "true" | "false" | "always" | "auto" | "never" | "production" | "development"
-        )
-}
-
-fn is_shell_command_separator(token: &str) -> bool {
-    matches!(token, "&&" | "||" | "|" | "&")
-}
-
-fn command_reference_matches_manifest(
-    reference: &str,
-    manifest_relative_path: &str,
-    command_relative_path: &str,
-) -> bool {
-    let Some(manifest_relative_path) = normalize_relative_reference(manifest_relative_path) else {
-        return false;
-    };
-    if normalize_relative_reference(reference).is_some_and(|package_relative_reference| {
-        package_relative_reference == manifest_relative_path
-    }) {
-        return true;
-    }
-
-    let command_dir = path_parent(command_relative_path);
-    if command_dir.is_empty() {
-        return false;
-    }
-
-    normalize_relative_reference(&format!("{command_dir}/{reference}")).is_some_and(
-        |script_relative_reference| script_relative_reference == manifest_relative_path,
-    )
-}
-
-fn normalize_relative_reference(path: &str) -> Option<String> {
-    let path = normalize_rule_path(strip_quotes(path));
-    if path.starts_with('/') || path.contains(":/") {
-        return None;
-    }
-
-    let mut segments = Vec::new();
-    for segment in path.split('/') {
-        match segment {
-            "" | "." => {}
-            ".." => {
-                segments.pop()?;
-            }
-            _ => segments.push(segment),
-        }
-    }
-
-    Some(segments.join("/"))
 }
 
 fn context_has_relevant_lockfile(
@@ -2386,6 +2244,9 @@ fn context_has_relevant_exact_dependency_manifest(
     context: &RulePackageInstallContext,
     signal_path: &str,
 ) -> bool {
+    let Some(manifest_install) = install.dependency_manifest_kind() else {
+        return false;
+    };
     let Some(signal_relative_path) =
         package_relative_path(signal_path, context.package_root.as_str())
     else {
@@ -2410,7 +2271,7 @@ fn context_has_relevant_exact_dependency_manifest(
 
         lockfile_scope_covers_signal(&manifest_relative_path, &signal_relative_path)
             && command_matches_dependency_manifest(
-                install,
+                manifest_install,
                 evidence,
                 &manifest_relative_path,
                 &signal_relative_path,
@@ -2827,6 +2688,10 @@ fn destructive_command_has_high_risk_target(evidence: &str) -> bool {
         .take_while(|token| !is_shell_command_separator(token))
         .filter(|token| !token.starts_with('-'))
         .any(|token| destructive_target_is_high_risk(token))
+}
+
+fn is_shell_command_separator(token: &str) -> bool {
+    matches!(token, "&&" | "||" | "|" | "&")
 }
 
 fn destructive_target_is_high_risk(target: &str) -> bool {

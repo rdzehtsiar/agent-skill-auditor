@@ -1728,25 +1728,19 @@ fn frontmatter_field_for_finding(finding: &SkillFinding) -> Option<String> {
 fn command_pattern_for_finding(finding: &SkillFinding) -> Option<String> {
     let message = finding.message.to_ascii_lowercase();
 
-    if message.contains("npm install") {
-        Some("npm install".to_owned())
-    } else if message.contains("pip install") {
-        Some("pip install".to_owned())
-    } else if message.contains("cargo install") {
-        Some("cargo install".to_owned())
-    } else if message.contains("gem install") {
-        Some("gem install".to_owned())
-    } else if message.contains("javascript package install") {
-        Some("javascript package install".to_owned())
-    } else if message.contains("python package install") {
-        Some("python package install".to_owned())
-    } else if message.contains("ruby gem install") {
-        Some("ruby gem install".to_owned())
-    } else if message.contains("system package install") {
-        Some("system package install".to_owned())
-    } else {
-        None
-    }
+    [
+        "npm install",
+        "pip install",
+        "cargo install",
+        "gem install",
+        "javascript package install",
+        "python package install",
+        "ruby gem install",
+        "system package install",
+    ]
+    .iter()
+    .find(|pattern| message.contains(**pattern))
+    .map(|pattern| (*pattern).to_owned())
 }
 
 fn package_manager_for_finding(finding: &SkillFinding) -> Option<String> {

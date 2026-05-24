@@ -109,6 +109,42 @@ macro_rules! name_description_tools_profile {
     }};
 }
 
+macro_rules! portable_host_profile {
+    (
+        id: $id:expr,
+        display_name: $display_name:expr,
+        name: $name_description:expr,
+        description: $description_description:expr,
+        tools: $tools_description:expr,
+        ignored_allowed_tools: $ignored_allowed_tools_description:expr,
+        metadata_fields: $metadata_fields:expr,
+        metadata_namespaces: $metadata_namespaces:expr,
+        path_conventions: $path_conventions:expr,
+        manifest_size_limit: $recommended_manifest_size_limit:expr,
+        capabilities: $capabilities:expr,
+        known_incompatibilities: $known_incompatibilities:expr,
+        warnings: $warnings:expr,
+        documentation_notes: $documentation_notes:expr $(,)?
+    ) => {
+        name_description_tools_profile!(
+            id: $id,
+            display_name: $display_name,
+            name: $name_description,
+            description: $description_description,
+            tools: $tools_description,
+            ignored_allowed_tools: $ignored_allowed_tools_description,
+            metadata_fields: $metadata_fields,
+            metadata_namespaces: $metadata_namespaces,
+            path_conventions: $path_conventions,
+            manifest_size_limit: $recommended_manifest_size_limit,
+            capabilities: $capabilities,
+            known_incompatibilities: $known_incompatibilities,
+            warnings: $warnings,
+            documentation_notes: $documentation_notes,
+        )
+    };
+}
+
 macro_rules! single_metadata_field {
     ($field:expr, $namespace:expr, $description:expr $(,)?) => {
         &[metadata_field($field, Some($namespace), $description)]
@@ -134,6 +170,73 @@ macro_rules! capabilities {
             expectation($tool_summary, &[$tool_note]),
             expectation($script_summary, &[$script_note]),
             expectation($artifact_summary, &[$artifact_note]),
+        )
+    };
+}
+
+macro_rules! profile_capabilities {
+    (codex) => {
+        capabilities!(
+            tools: (
+                "Tool needs should be documented explicitly and treated as host-mediated capabilities.",
+                "Tool declarations do not imply automatic access.",
+            ),
+            scripts: (
+                "Scripts can be included as artifacts, but execution is host-mediated and should be reviewed.",
+                "Auditors should inspect scripts without running them.",
+            ),
+            artifacts: (
+                "scripts/, references/, and assets/ are supported package conventions.",
+                "Artifact links should be relative and deterministic.",
+            ),
+        )
+    };
+    (github_copilot) => {
+        capabilities!(
+            tools: (
+                "Tool expectations should be documented but may not map to explicit host permissions.",
+                "Repository context and available tools vary by host surface.",
+            ),
+            scripts: (
+                "Scripts should be treated as reviewable artifacts, not automatically supported actions.",
+                "CI and local developer environments may differ.",
+            ),
+            artifacts: (
+                "Reference files are useful; executable artifacts require careful review.",
+                "Keep package references repository-relative.",
+            ),
+        )
+    };
+    (vscode_copilot) => {
+        capabilities!(
+            tools: (
+                "Local tool expectations should be described rather than assumed.",
+                "Available editor tools depend on extensions, workspace trust, and user configuration.",
+            ),
+            scripts: (
+                "Scripts are local artifacts and should require explicit user or host action.",
+                "Workspace trust and shell availability affect script behavior.",
+            ),
+            artifacts: (
+                "References and assets can be useful when paths remain workspace-relative.",
+                "Absolute local paths reduce portability.",
+            ),
+        )
+    };
+    (generic) => {
+        capabilities!(
+            tools: (
+                "Tool requirements should be documented as assumptions, not guarantees.",
+                "Generic agents may not expose matching tools or permission controls.",
+            ),
+            scripts: (
+                "Do not assume script execution support.",
+                "Generic compatibility requires behavior to be understandable without running code.",
+            ),
+            artifacts: (
+                "Artifacts are optional and should degrade gracefully when ignored.",
+                "Core behavior should remain clear from SKILL.md.",
+            ),
         )
     };
 }
@@ -272,7 +375,7 @@ pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
         )],
         &["Model this profile around Claude Code skill packaging and permission metadata."],
     ),
-    name_description_tools_profile!(
+    portable_host_profile!(
         id: "codex",
         display_name: "Codex",
         name: "Skill name used by Codex to present available skills.",
@@ -301,20 +404,7 @@ pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
             32 * 1024,
             "Keep instructions short enough to fit predictable context budgets.",
         ),
-        capabilities: capabilities!(
-            tools: (
-                "Tool needs should be documented explicitly and treated as host-mediated capabilities.",
-                "Tool declarations do not imply automatic access.",
-            ),
-            scripts: (
-                "Scripts can be included as artifacts, but execution is host-mediated and should be reviewed.",
-                "Auditors should inspect scripts without running them.",
-            ),
-            artifacts: (
-                "scripts/, references/, and assets/ are supported package conventions.",
-                "Artifact links should be relative and deterministic.",
-            ),
-        ),
+        capabilities: profile_capabilities!(codex),
         known_incompatibilities: single_notice!(
             "CODEX001",
             "Claude-only permission metadata may not be enforced.",
@@ -325,7 +415,7 @@ pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
         ),
         documentation_notes: &["Use this profile for Codex-compatible offline skill package review."],
     ),
-    name_description_tools_profile!(
+    portable_host_profile!(
         id: "github-copilot",
         display_name: "GitHub Copilot",
         name: "Skill or instruction package name.",
@@ -353,20 +443,7 @@ pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
             24 * 1024,
             "Prefer compact repository instructions for predictable host consumption.",
         ),
-        capabilities: capabilities!(
-            tools: (
-                "Tool expectations should be documented but may not map to explicit host permissions.",
-                "Repository context and available tools vary by host surface.",
-            ),
-            scripts: (
-                "Scripts should be treated as reviewable artifacts, not automatically supported actions.",
-                "CI and local developer environments may differ.",
-            ),
-            artifacts: (
-                "Reference files are useful; executable artifacts require careful review.",
-                "Keep package references repository-relative.",
-            ),
-        ),
+        capabilities: profile_capabilities!(github_copilot),
         known_incompatibilities: single_notice!(
             "GHCOPILOT001",
             "Skill packages that depend on explicit host tool allowlists may not transfer directly.",
@@ -377,7 +454,7 @@ pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
         ),
         documentation_notes: &["Use this profile for GitHub-hosted skill package compatibility notes."],
     ),
-    name_description_tools_profile!(
+    portable_host_profile!(
         id: "vscode-copilot",
         display_name: "VS Code Copilot",
         name: "Skill or instruction package name.",
@@ -402,20 +479,7 @@ pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
             24 * 1024,
             "Keep local editor instructions compact and scannable.",
         ),
-        capabilities: capabilities!(
-            tools: (
-                "Local tool expectations should be described rather than assumed.",
-                "Available editor tools depend on extensions, workspace trust, and user configuration.",
-            ),
-            scripts: (
-                "Scripts are local artifacts and should require explicit user or host action.",
-                "Workspace trust and shell availability affect script behavior.",
-            ),
-            artifacts: (
-                "References and assets can be useful when paths remain workspace-relative.",
-                "Absolute local paths reduce portability.",
-            ),
-        ),
+        capabilities: profile_capabilities!(vscode_copilot),
         known_incompatibilities: single_notice!(
             "VSCOPILOT001",
             "Workspace-specific assumptions may not hold outside VS Code.",
@@ -426,7 +490,7 @@ pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
         ),
         documentation_notes: &["Use this profile for editor-oriented Copilot compatibility checks."],
     ),
-    name_description_tools_profile!(
+    portable_host_profile!(
         id: "generic",
         display_name: "Generic Agent",
         name: "Portable skill name.",
@@ -453,20 +517,7 @@ pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
             16 * 1024,
             "Use a conservative manifest size for broad agent portability.",
         ),
-        capabilities: capabilities!(
-            tools: (
-                "Tool requirements should be documented as assumptions, not guarantees.",
-                "Generic agents may not expose matching tools or permission controls.",
-            ),
-            scripts: (
-                "Do not assume script execution support.",
-                "Generic compatibility requires behavior to be understandable without running code.",
-            ),
-            artifacts: (
-                "Artifacts are optional and should degrade gracefully when ignored.",
-                "Core behavior should remain clear from SKILL.md.",
-            ),
-        ),
+        capabilities: profile_capabilities!(generic),
         known_incompatibilities: single_notice!(
             "GENERIC001",
             "Host-specific metadata and path conventions may not be recognized.",
