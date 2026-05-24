@@ -6961,7 +6961,7 @@ mod tests {
             count: 2,
             affected_package_count: 2,
             affected_package_percent: 100,
-            evidence: vec![agent_audit_core::EcosystemPatternEvidence {
+            evidence: vec![EcosystemPatternEvidence {
                 kind: "SEC009".to_owned(),
                 count: 2,
             }],
