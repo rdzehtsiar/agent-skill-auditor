@@ -557,7 +557,10 @@ fn extend_triage_finding_groups_summary(lines: &mut Vec<String>, report: &ScanRe
         return;
     }
 
-    for (index, group) in triage_finding_groups(finding_groups.as_ref()).iter().enumerate() {
+    for (index, group) in triage_finding_groups(finding_groups.as_ref())
+        .iter()
+        .enumerate()
+    {
         if index > 0 {
             lines.push(String::new());
         }
@@ -980,10 +983,7 @@ fn extend_triage_supply_chain_summary(lines: &mut Vec<String>, report: &ScanRepo
     extend_triage_supply_chain_summary_lines(lines, report);
 }
 
-fn extend_triage_supply_chain_summary_lines(
-    lines: &mut Vec<String>,
-    report: &ScanReport,
-) {
+fn extend_triage_supply_chain_summary_lines(lines: &mut Vec<String>, report: &ScanReport) {
     let supply_chain = &report.supply_chain;
     let finding_counts = supply_chain_finding_counts(&report.findings);
     let readiness_counts = offline_readiness_counts(supply_chain);
@@ -1006,10 +1006,7 @@ fn extend_triage_supply_chain_summary_lines(
         .count();
 
     lines.push("Review signals:".to_owned());
-    lines.push(format!(
-        "  - Mutable URLs: {}",
-        format_count(mutable_urls)
-    ));
+    lines.push(format!("  - Mutable URLs: {}", format_count(mutable_urls)));
     lines.push(format!(
         "  - Unpinned dependencies: {} of {}",
         format_count(unpinned_dependencies),
@@ -1025,7 +1022,10 @@ fn extend_triage_supply_chain_summary_lines(
         format_count(invalid_trust_manifests),
         format_count(report.summary.package_count)
     ));
-    lines.push(format!("  - Checksums: {}", format_count(supply_chain.checksums.len())));
+    lines.push(format!(
+        "  - Checksums: {}",
+        format_count(supply_chain.checksums.len())
+    ));
     lines.push(String::new());
     lines.push("External references:".to_owned());
     lines.push(format!(
@@ -5570,7 +5570,10 @@ mod tests {
                 "Low trust-manifest adoption",
                 10,
                 10,
-                vec![("trust_manifests", 0), ("packages_without_trust_manifest", 10)],
+                vec![
+                    ("trust_manifests", 0),
+                    ("packages_without_trust_manifest", 10),
+                ],
             ),
             ecosystem_pattern(
                 "host-specific-metadata-extensions",
@@ -5604,10 +5607,26 @@ mod tests {
             .position(|line| *line == "[LOW] Low checksum coverage")
             .unwrap_or_else(|| panic!("missing third pattern card"));
 
-        assert_eq!(lines[second_card - 1], "", "missing blank line before second pattern");
-        assert_ne!(lines[second_card - 2], "", "extra blank lines before second pattern");
-        assert_eq!(lines[third_card - 1], "", "missing blank line before third pattern");
-        assert_ne!(lines[third_card - 2], "", "extra blank lines before third pattern");
+        assert_eq!(
+            lines[second_card - 1],
+            "",
+            "missing blank line before second pattern"
+        );
+        assert_ne!(
+            lines[second_card - 2],
+            "",
+            "extra blank lines before second pattern"
+        );
+        assert_eq!(
+            lines[third_card - 1],
+            "",
+            "missing blank line before third pattern"
+        );
+        assert_ne!(
+            lines[third_card - 2],
+            "",
+            "extra blank lines before third pattern"
+        );
     }
 
     #[test]
@@ -5709,7 +5728,9 @@ mod tests {
 
         assert!(summary.contains("  - Checksums: 0\n\nExternal references:"));
         assert!(summary.contains("    - none\n\nDependency evidence:"));
-        assert!(summary.contains("  - Installs: 0 observed, 0 with reproducibility gaps\n\nArtifact evidence:"));
+        assert!(summary.contains(
+            "  - Installs: 0 observed, 0 with reproducibility gaps\n\nArtifact evidence:"
+        ));
         assert!(summary.contains("  - Checksums: 0\n\nOther:"));
     }
 
@@ -5990,10 +6011,7 @@ mod tests {
         assert!(summary.contains(&review_heading));
         assert!(summary.contains(&patterns_heading));
         assert!(summary.contains(&groups_heading));
-        assert_one_blank_line_before_and_after_section_heading(
-            &summary,
-            "Supply chain:",
-        );
+        assert_one_blank_line_before_and_after_section_heading(&summary, "Supply chain:");
         if summary.contains("Compatibility:") {
             assert_one_blank_line_before_and_after_section_heading(&summary, "Compatibility:");
         }
@@ -6058,7 +6076,11 @@ mod tests {
             .unwrap_or_else(|| panic!("missing second finding group"));
 
         assert!(first_group_index < second_group_index);
-        assert_eq!(lines[second_group_index - 1], "", "missing blank line between groups");
+        assert_eq!(
+            lines[second_group_index - 1],
+            "",
+            "missing blank line between groups"
+        );
         assert_ne!(
             lines[second_group_index - 2],
             "",
@@ -9339,9 +9361,8 @@ mod tests {
     }
 
     fn assert_one_blank_line_before_and_after_section_heading(haystack: &str, heading: &str) {
-        let section_marker = format!(
-            "{RESEARCH_FINDING_SEPARATOR}\n{heading}\n{RESEARCH_FINDING_SEPARATOR}"
-        );
+        let section_marker =
+            format!("{RESEARCH_FINDING_SEPARATOR}\n{heading}\n{RESEARCH_FINDING_SEPARATOR}");
         let marker_index = haystack
             .find(&section_marker)
             .unwrap_or_else(|| panic!("missing section marker for {heading:?}"));
