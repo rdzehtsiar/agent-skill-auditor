@@ -109,42 +109,6 @@ macro_rules! name_description_tools_profile {
     }};
 }
 
-macro_rules! portable_host_profile {
-    (
-        id: $id:expr,
-        display_name: $display_name:expr,
-        name: $name_description:expr,
-        description: $description_description:expr,
-        tools: $tools_description:expr,
-        ignored_allowed_tools: $ignored_allowed_tools_description:expr,
-        metadata_fields: $metadata_fields:expr,
-        metadata_namespaces: $metadata_namespaces:expr,
-        path_conventions: $path_conventions:expr,
-        manifest_size_limit: $recommended_manifest_size_limit:expr,
-        capabilities: $capabilities:expr,
-        known_incompatibilities: $known_incompatibilities:expr,
-        warnings: $warnings:expr,
-        documentation_notes: $documentation_notes:expr $(,)?
-    ) => {
-        name_description_tools_profile!(
-            id: $id,
-            display_name: $display_name,
-            name: $name_description,
-            description: $description_description,
-            tools: $tools_description,
-            ignored_allowed_tools: $ignored_allowed_tools_description,
-            metadata_fields: $metadata_fields,
-            metadata_namespaces: $metadata_namespaces,
-            path_conventions: $path_conventions,
-            manifest_size_limit: $recommended_manifest_size_limit,
-            capabilities: $capabilities,
-            known_incompatibilities: $known_incompatibilities,
-            warnings: $warnings,
-            documentation_notes: $documentation_notes,
-        )
-    };
-}
-
 macro_rules! single_metadata_field {
     ($field:expr, $namespace:expr, $description:expr $(,)?) => {
         &[metadata_field($field, Some($namespace), $description)]
@@ -375,7 +339,7 @@ pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
         )],
         &["Model this profile around Claude Code skill packaging and permission metadata."],
     ),
-    portable_host_profile!(
+    name_description_tools_profile!(
         id: "codex",
         display_name: "Codex",
         name: "Skill name used by Codex to present available skills.",
@@ -415,7 +379,7 @@ pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
         ),
         documentation_notes: &["Use this profile for Codex-compatible offline skill package review."],
     ),
-    portable_host_profile!(
+    name_description_tools_profile!(
         id: "github-copilot",
         display_name: "GitHub Copilot",
         name: "Skill or instruction package name.",
@@ -454,7 +418,7 @@ pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
         ),
         documentation_notes: &["Use this profile for GitHub-hosted skill package compatibility notes."],
     ),
-    portable_host_profile!(
+    name_description_tools_profile!(
         id: "vscode-copilot",
         display_name: "VS Code Copilot",
         name: "Skill or instruction package name.",
@@ -490,7 +454,7 @@ pub const HOST_PROFILE_DEFINITIONS: &[HostProfile] = &[
         ),
         documentation_notes: &["Use this profile for editor-oriented Copilot compatibility checks."],
     ),
-    portable_host_profile!(
+    name_description_tools_profile!(
         id: "generic",
         display_name: "Generic Agent",
         name: "Portable skill name.",
