@@ -40,6 +40,18 @@ All coding agents must follow these rules:
 - Follow Rust best practices for ownership, error handling, typed data, and dependency use.
 - Keep public APIs conservative and documented enough for future crates to use safely.
 
+## Formatting Validation Requirements
+
+All coding agents must validate Rust formatting after making code changes.
+
+Formatting expectations:
+
+- Run `cargo fmt --check` after code changes and before reporting completion.
+- If formatting issues are found, run `cargo fmt`, review the resulting diff, and then run `cargo fmt --check` again.
+- Treat formatting validation as a required post-change check for Rust source edits, alongside the relevant tests or build checks.
+- Do not leave formatting-only drift mixed into unrelated behavior changes when it can be committed separately.
+- If `cargo fmt --check` cannot be run, state the reason clearly in the final response.
+
 ## Test-First Development Requirements
 
 All coding agents must follow a test-first pattern whenever practical.
